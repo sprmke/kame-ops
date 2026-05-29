@@ -1,0 +1,39 @@
+{
+  "name": "kame-ops",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "setup:local": "bun run scripts/setup-local-dev.ts",
+    "dev:local": "bun run scripts/setup-local-dev.ts --start",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "dev": "turbo run dev",
+    "dev:kill-port": "lsof -ti :3005,:3006 | xargs kill -9 2>/dev/null || true",
+    "build": "turbo run build",
+    "start": "turbo run start",
+    "lint": "turbo run lint",
+    "type-check": "turbo run type-check",
+    "test": "turbo run test",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,md,json}\"",
+    "db:generate": "turbo run db:generate",
+    "db:migrate": "turbo run db:migrate",
+    "db:push": "turbo run db:push",
+    "db:seed": "turbo run db:seed --filter=@kame-ops/web",
+    "db:studio": "turbo run db:studio",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2",
+    "prettier-plugin-tailwindcss": "^0.6.9",
+    "turbo": "^2.4.0"
+  },
+  "packageManager": "bun@1.1.45",
+  "engines": {
+    "node": ">=20.0.0",
+    "bun": ">=1.1.0"
+  }
+}

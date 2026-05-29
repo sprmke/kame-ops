@@ -1,0 +1,545 @@
+---
+description: Form handling with React Hook Form and Zod validation patterns
+globs:
+  - '**/*Form*.tsx'
+  - '**/*form*.tsx'
+  - '**/validations/**/*.ts'
+---
+
+# Form Handling Rules
+
+## React Hook Form + Zod Setup
+
+```typescript
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
+// 1. Define Zod schema
+const bookingSchema = z
+  .object({
+    guestName: z
+      .string()
+      .min(2, 'Name must be at least 2 characters')
+      .max(100, 'Name must be less than 100 characters'),
+    guestEmail: z.string().email('Invalid email address'),
+    guestPhone: z
+      .string()
+      .regex(/^\+?[\d\s-]+$/, 'Invalid phone number')
+      .optional()
+      .or(z.literal('')),
+    checkInDate: z.date({ required_error: 'Check-in date is required' }),
+    checkOutDate: z.date({ required_error: 'Check-out date is required' }),
+    guestCount: z.coerce.number().min(1, 'At least 1 guest required'),
+    hasPets: z.boolean().default(false),
+    specialRequests: z.string().max(1000).optional(),
+  })
+  .refine((data) => data.checkOutDate > data.checkInDate, {
+    message: 'Check-out must be after check-in',
+    path: ['checkOutDate'],
+  });
+
+// 2. Infer TypeScript type from schema
+type BookingFormData = z.infer<typeof bookingSchema>;
+```
+
+## Form Component Pattern
+
+```typescript
+interface BookingFormProps {
+  propertyId: string;
+  defaultValues?: Partial<BookingFormData>;
+  onSuccess?: () => void;
+}
+
+export function BookingForm({ propertyId, defaultValues, onSuccess }: BookingFormProps) {
+  // 1. Initialize form with Zod resolver
+  const form = useForm<BookingFormData>({
+    resolver: zodResolver(bookingSchema),
+    defaultValues: {
+      guestName: '',
+      guestEmail: '',
+      guestPhone: '',
+      guestCount: 1,
+      hasPets: false,
+      specialRequests: '',
+      ...defaultValues,
+    },
+  });
+
+  // 2. Setup mutation
+  const createBooking = api.bookings.create.useMutation({
+    onSuccess: () => {
+      toast.success('Booking created successfully');
+      form.reset();
+      onSuccess?.();
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
+  // 3. Handle submit
+  const onSubmit = async (data: BookingFormData) => {
+    await createBooking.mutateAsync({
+      propertyId,
+      ...data,
+    });
+  };
+
+  // 4. Render form
+  return (
+    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      {/* Guest Name */}
+      <FormField
+        control={form.control}
+        name="guestName"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Guest Name</FormLabel>
+            <FormControl>
+              <Input placeholder="John Doe" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      {/* Guest Email */}
+      <FormField
+        control={form.control}
+        name="guestEmail"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Email</FormLabel>
+            <FormControl>
+              <Input type="email" placeholder="john@example.com" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      {/* Date Range */}
+      <div className="grid grid-cols-2 gap-4">
+        <FormField
+          control={form.control}
+          name="checkInDate"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Check-in Date</FormLabel>
+              <FormControl>
+                <DatePicker
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="checkOutDate"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Check-out Date</FormLabel>
+              <FormControl>
+                <DatePicker
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
+      {/* Has Pets Checkbox */}
+      <FormField
+        control={form.control}
+        name="hasPets"
+        render={({ field }) => (
+          <FormItem className="flex items-center gap-2">
+            <FormControl>
+              <Checkbox
+                checked={field.value}
+                onCheckedChange={field.onChange}
+              />
+            </FormControl>
+            <FormLabel className="!mt-0">Bringing pets</FormLabel>
+          </FormItem>
+        )}
+      />
+
+      {/* Submit Button */}
+      <Button
+        type="submit"
+        disabled={createBooking.isPending}
+        className="w-full"
+      >
+        {createBooking.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        Create Booking
+      </Button>
+    </form>
+  );
+}
+```
+
+## Zod Schema Patterns
+
+### Basic Types
+
+```typescript
+import { z } from 'zod';
+
+// Strings
+z.string();
+z.string().min(2).max(100);
+z.string().email();
+z.string().url();
+z.string().uuid();
+z.string().regex(/pattern/);
+z.string().optional();
+z.string().nullable();
+
+// Numbers
+z.number();
+z.number().min(1).max(100);
+z.number().positive();
+z.number().int();
+z.coerce.number(); // Coerce string to number
+
+// Booleans
+z.boolean();
+z.boolean().default(false);
+
+// Dates
+z.date();
+z.date().min(new Date()); // Future dates only
+
+// Enums
+z.enum(['PENDING', 'APPROVED', 'CANCELLED']);
+
+// Literals
+z.literal('PENDING');
+
+// Arrays
+z.array(z.string());
+z.array(z.string()).min(1).max(10);
+
+// Objects
+z.object({
+  name: z.string(),
+  email: z.string().email(),
+});
+```
+
+### Advanced Patterns
+
+```typescript
+// Optional with transform
+const phoneSchema = z
+  .string()
+  .optional()
+  .or(z.literal(''))
+  .transform((val) => val || undefined);
+
+// Conditional validation
+const formSchema = z
+  .object({
+    hasPets: z.boolean(),
+    petCount: z.number().optional(),
+  })
+  .refine((data) => !data.hasPets || (data.petCount && data.petCount > 0), {
+    message: 'Pet count required when has pets',
+    path: ['petCount'],
+  });
+
+// Union types
+const paymentSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('PROFIT'), amount: z.number().positive() }),
+  z.object({
+    type: z.literal('EXPENSE'),
+    amount: z.number().positive(),
+    receipt: z.string().optional(),
+  }),
+]);
+
+// Custom validation
+const passwordSchema = z
+  .string()
+  .min(8, 'Password must be at least 8 characters')
+  .refine((val) => /[A-Z]/.test(val), { message: 'Password must contain an uppercase letter' })
+  .refine((val) => /[0-9]/.test(val), { message: 'Password must contain a number' });
+
+// Transform data
+const currencySchema = z
+  .string()
+  .transform((val) => parseFloat(val.replace(/[^\d.]/g, '')))
+  .pipe(z.number().positive());
+```
+
+## Form Components with shadcn/ui
+
+```typescript
+// components/ui/form.tsx is from shadcn/ui
+
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+```
+
+## Multi-Step Form
+
+```typescript
+const STEPS = ['Basic Info', 'Location', 'Details', 'Pricing'] as const;
+
+export function PropertyWizard() {
+  const [step, setStep] = useState(0);
+
+  const form = useForm<PropertyFormData>({
+    resolver: zodResolver(propertySchema),
+    mode: 'onChange', // Validate on change for multi-step
+  });
+
+  const nextStep = async () => {
+    // Validate current step fields before proceeding
+    const fieldsToValidate = getFieldsForStep(step);
+    const isValid = await form.trigger(fieldsToValidate);
+
+    if (isValid) {
+      setStep((s) => Math.min(s + 1, STEPS.length - 1));
+    }
+  };
+
+  const prevStep = () => {
+    setStep((s) => Math.max(s - 1, 0));
+  };
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)}>
+        {/* Progress indicator */}
+        <div className="flex gap-2 mb-8">
+          {STEPS.map((label, index) => (
+            <div
+              key={label}
+              className={cn(
+                'flex-1 h-2 rounded',
+                index <= step ? 'bg-primary' : 'bg-muted'
+              )}
+            />
+          ))}
+        </div>
+
+        {/* Step content */}
+        {step === 0 && <BasicInfoStep form={form} />}
+        {step === 1 && <LocationStep form={form} />}
+        {step === 2 && <DetailsStep form={form} />}
+        {step === 3 && <PricingStep form={form} />}
+
+        {/* Navigation */}
+        <div className="flex justify-between mt-8">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={prevStep}
+            disabled={step === 0}
+          >
+            Previous
+          </Button>
+
+          {step < STEPS.length - 1 ? (
+            <Button type="button" onClick={nextStep}>
+              Next
+            </Button>
+          ) : (
+            <Button type="submit">
+              Create Property
+            </Button>
+          )}
+        </div>
+      </form>
+    </Form>
+  );
+}
+```
+
+## Dynamic Form Fields (Forms Output)
+
+```typescript
+interface DynamicFormProps {
+  fields: FormField[];
+  onSubmit: (data: Record<string, any>) => void;
+}
+
+export function DynamicForm({ fields, onSubmit }: DynamicFormProps) {
+  // Generate Zod schema from fields
+  const schema = useMemo(() => generateZodSchema(fields), [fields]);
+
+  const form = useForm({
+    resolver: zodResolver(schema),
+  });
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        {fields.map((field) => (
+          <DynamicField
+            key={field.id}
+            field={field}
+            control={form.control}
+          />
+        ))}
+        <Button type="submit">Submit</Button>
+      </form>
+    </Form>
+  );
+}
+
+function DynamicField({ field, control }) {
+  switch (field.type) {
+    case 'TEXT':
+      return (
+        <FormField
+          control={control}
+          name={field.id}
+          render={({ field: formField }) => (
+            <FormItem>
+              <FormLabel>{field.label}</FormLabel>
+              <FormControl>
+                <Input {...formField} placeholder={field.placeholder} />
+              </FormControl>
+              {field.description && <FormDescription>{field.description}</FormDescription>}
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      );
+    case 'SELECT':
+      return (
+        <FormField
+          control={control}
+          name={field.id}
+          render={({ field: formField }) => (
+            <FormItem>
+              <FormLabel>{field.label}</FormLabel>
+              <Select onValueChange={formField.onChange} defaultValue={formField.value}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder={field.placeholder} />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  {field.options?.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      );
+    // Add more field types...
+    default:
+      return null;
+  }
+}
+```
+
+## Form Best Practices
+
+### 1. Always Use Zod Resolver
+
+```typescript
+// ✅ Good
+useForm({
+  resolver: zodResolver(schema),
+});
+
+// ❌ Bad - Manual validation
+useForm({
+  validate: (data) => { ... },
+});
+```
+
+### 2. Show Validation Errors
+
+```typescript
+// Always include FormMessage for each field
+<FormField
+  name="email"
+  render={({ field }) => (
+    <FormItem>
+      <FormLabel>Email</FormLabel>
+      <FormControl>
+        <Input {...field} />
+      </FormControl>
+      <FormMessage /> {/* Shows validation error */}
+    </FormItem>
+  )}
+/>
+```
+
+### 3. Handle Loading States
+
+```typescript
+<Button
+  type="submit"
+  disabled={form.formState.isSubmitting || mutation.isPending}
+>
+  {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+  Submit
+</Button>
+```
+
+### 4. Reset Form After Success
+
+```typescript
+const mutation = api.bookings.create.useMutation({
+  onSuccess: () => {
+    form.reset();
+    toast.success('Created successfully');
+  },
+});
+```
+
+### 5. Scroll to First Error
+
+```typescript
+const onSubmit = form.handleSubmit(
+  (data) => {
+    /* success */
+  },
+  (errors) => {
+    // Scroll to first error
+    const firstError = Object.keys(errors)[0];
+    document.querySelector(`[name="${firstError}"]`)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+    });
+  }
+);
+```

@@ -1,0 +1,15 @@
+# Bun configuration for the property management monorepo
+
+[install]
+# Use exact versions for reproducibility
+exact = true
+
+[install.lockfile]
+# Print the lockfile to the console
+print = "yarn"
+
+[run]
+# Bun run configuration
+bun = true
+
+

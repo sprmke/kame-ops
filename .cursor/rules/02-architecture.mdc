@@ -1,0 +1,134 @@
+---
+description: KameOps monorepo and feature-based architecture
+globs: **/*
+alwaysApply: false
+---
+
+# Architecture & Project Structure
+
+## Monorepo Layout
+
+```
+kame-ops/
+├── apps/
+│   └── web/                    # Next.js app (dashboard)
+├── packages/
+│   ├── database/               # Shared Drizzle (when extracted)
+│   ├── ui/
+│   ├── types/
+│   ├── utils/
+│   ├── config/
+│   └── emails/
+├── docs/
+└── scripts/                    # Migration from pay-credit-cards CLI
+```
+
+## Feature-Based Architecture
+
+Organize code under `apps/web/src/features/`. Credit cards is **one module** among others.
+
+```
+src/features/
+├── dashboard/
+│   ├── auth/                   # Auth pages (wraps shared auth)
+│   ├── overview/               # Home dashboard
+│   ├── credit-cards/           # ⭐ CC sub-module (SOA, dues, cards CRUD)
+│   ├── reminders/              # Generic reminder engine UI
+│   ├── automations/            # Cron jobs, run logs
+│   ├── integrations/           # Gmail, Telegram, Slack, Calendar
+│   ├── receipts/               # Upload, OCR, AI analysis
+│   ├── analytics/              # Spending charts (CC module data)
+│   └── settings/               # Profile, notifications prefs
+└── shared/
+    └── auth/                   # LoginForm, session hooks (shared)
+```
+
+## App Directory = Routes Only
+
+`apps/web/src/app/` contains only `page.tsx`, `layout.tsx`, `loading.tsx`, `error.tsx`, API `route.ts`. Pages import from `@/features/...`.
+
+Example routes:
+
+```
+app/
+├── (auth)/login, register, ...
+├── (dashboard)/
+│   ├── page.tsx                    # Overview
+│   ├── credit-cards/               # List, detail, SOA runs
+│   ├── reminders/
+│   ├── automations/
+│   ├── integrations/
+│   ├── receipts/
+│   └── settings/
+└── api/
+    ├── trpc/[trpc]/route.ts
+    ├── webhooks/telegram/route.ts  # Telegram bot webhook
+    └── cron/[job]/route.ts         # Supabase Cron HTTP targets
+```
+
+## Unidirectional Flow
+
+```
+app/ → features/ → shared (components, lib, hooks, server)
+features/ → shared only (NO cross-feature imports)
+shared/ → cannot import features/ or app/
+```
+
+Compose modules in pages:
+
+```typescript
+// ✅ app/(dashboard)/page.tsx
+import { OverviewStats } from '@/features/dashboard/overview/components/OverviewStats';
+import { UpcomingReminders } from '@/features/dashboard/reminders/components/UpcomingReminders';
+
+// ❌ features/dashboard/credit-cards importing reminders feature
+```
+
+## Server Layout
+
+```
+src/server/
+├── trpc.ts
+├── routers/
+│   ├── _app.ts
+│   ├── credit-cards.ts
+│   ├── soa.ts
+│   ├── reminders.ts
+│   ├── automations.ts
+│   ├── integrations.ts
+│   └── receipts.ts
+├── services/
+│   ├── credit-card.service.ts
+│   ├── soa.service.ts              # Port from pay-credit-cards soa-run
+│   ├── soa-parse.service.ts        # parse-soa, parse-transactions, pdf
+│   ├── reminder.service.ts
+│   ├── notification.service.ts     # Telegram + Slack abstraction
+│   ├── gmail.service.ts
+│   ├── telegram.service.ts
+│   ├── slack.service.ts
+│   ├── google-calendar.service.ts
+│   ├── receipt-ocr.service.ts
+│   ├── automation.service.ts
+│   └── storage.service.ts
+└── jobs/                           # Cron entrypoints calling services
+```
+
+## Credit Cards Module Boundaries
+
+| Belongs in CC module | Belongs in platform |
+| -------------------- | ------------------- |
+| Card CRUD, bank issuer config | User auth, settings |
+| SOA run UI, transaction display | Generic reminders table |
+| Due entries for cards | Automation scheduler |
+| Mark paid for card cycles | Integration OAuth storage |
+| Bank-specific parsers | Notification channel routing |
+
+Platform reminders reference CC dues via `relatedEntityType: 'credit_card'` + `relatedEntityId`.
+
+## Mobile Readiness
+
+- Business logic in services + tRPC only
+- Shared DTOs in `packages/types` when stable
+- No web-only assumptions in services
+
+See `@docs/architecture/mobile-readiness.md` and rule `17-mobile-readiness.mdc`.

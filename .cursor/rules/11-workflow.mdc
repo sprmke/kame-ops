@@ -1,0 +1,476 @@
+---
+description: Development workflow, implementation phases, and build process
+globs: **/*
+alwaysApply: false
+---
+
+# Development Workflow
+
+## Implementation Phases
+
+Reference `@docs/implementation/roadmap.md` for detailed tasks. Summary:
+
+| Phase | Duration   | Focus                          |
+| ----- | ---------- | ------------------------------ |
+| 0     | Week 1-2   | Project Setup & Foundation     |
+| 1     | Week 3-4   | Organization & User Management |
+| 2     | Week 5-6   | Property Management            |
+| 3     | Week 7-9   | Forms                          |
+| 4     | Week 10-12 | Booking Management             |
+| 5     | Week 13-14 | Payment Management             |
+| 6     | Week 15-16 | Calendar System                |
+| 7     | Week 17-18 | Subscription System            |
+| 8     | Week 19-21 | AI Agent (Future)              |
+| 9     | Week 22-23 | Polish & Optimization          |
+| 10    | Week 24-26 | Testing & Launch               |
+
+## Before Starting Any Feature
+
+1. **Check Documentation**
+   - Read `@docs/product/user-flows.md` for the feature
+   - Review `@docs/reference/feature-specifications.md` for technical details
+   - Check `@docs/database/schema.md` and `@docs/reference/application-inventory.md` for data models and current state
+
+2. **Check Current Phase**
+   - Verify the feature is in the current phase
+   - Don't skip ahead without completing dependencies
+
+3. **Check Existing Code**
+   - Look for similar patterns in codebase
+   - Reuse existing components and utilities
+   - Check if shared code exists before creating feature-specific code
+
+## Feature-Based Development Flow
+
+When creating a new feature, follow this order:
+
+```
+1. Create Feature Folder Structure
+   └── src/features/{feature}/
+       ├── api/           # If needs API hooks
+       ├── components/    # If needs UI components
+       ├── hooks/         # If needs custom hooks
+       ├── stores/        # If needs local state
+       ├── types/         # If needs specific types
+       └── utils/         # If needs utilities
+
+2. Create/Update Database Schema (if needed)
+   └── packages/database/src/schema/{feature}.ts
+
+3. Create Service Layer
+   └── src/server/services/{feature}.service.ts
+
+4. Create tRPC Router
+   └── src/server/routers/{feature}.ts
+
+5. Create Feature Types
+   └── src/features/{feature}/types/index.ts
+
+6. Create API Hooks
+   └── src/features/{feature}/api/
+       ├── use-{feature}.ts         # Query hooks
+       └── use-{feature}-mutations.ts
+
+7. Create Feature Components
+   └── src/features/{feature}/components/
+       ├── {Feature}List.tsx
+       ├── {Feature}Card.tsx
+       └── {Feature}Form.tsx
+
+8. Create Feature Hooks (if needed)
+   └── src/features/{feature}/hooks/
+
+9. Create Pages/Routes
+   └── src/app/(dashboard)/{feature}/page.tsx
+
+10. Write Tests
+    └── __tests__/unit/features/{feature}/
+```
+
+## Creating a New Feature - Step by Step
+
+### Step 1: Create Feature Directory
+
+```bash
+# Create the feature folder with necessary subfolders
+mkdir -p src/features/new-feature/{api,components,hooks,types,utils}
+```
+
+### Step 2: Define Types
+
+```typescript
+// src/features/new-feature/types/index.ts
+export interface NewFeatureItem {
+  id: string;
+  name: string;
+  // ... other fields
+}
+
+export interface NewFeatureFilters {
+  search?: string;
+  status?: string;
+}
+```
+
+### Step 3: Create API Hooks
+
+```typescript
+// src/features/new-feature/api/use-new-feature.ts
+import { api } from '@/lib/api/client';
+
+export function useNewFeature(filters: NewFeatureFilters) {
+  return api.newFeature.list.useQuery(filters, {
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}
+
+export function useNewFeatureById(id: string) {
+  return api.newFeature.byId.useQuery({ id }, { enabled: !!id });
+}
+```
+
+```typescript
+// src/features/new-feature/api/use-new-feature-mutations.ts
+import { api } from '@/lib/api/client';
+import { toast } from 'sonner';
+
+export function useNewFeatureMutations() {
+  const utils = api.useUtils();
+
+  const create = api.newFeature.create.useMutation({
+    onSuccess: () => {
+      toast.success('Created successfully');
+      utils.newFeature.list.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const update = api.newFeature.update.useMutation({
+    onSuccess: () => {
+      toast.success('Updated successfully');
+      utils.newFeature.list.invalidate();
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
+  return { create, update };
+}
+```
+
+### Step 4: Create Components
+
+```typescript
+// src/features/new-feature/components/NewFeatureList.tsx
+import { useNewFeature } from '../api/use-new-feature';
+import { NewFeatureCard } from './NewFeatureCard';
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { EmptyState } from '@/components/shared/EmptyState';
+
+interface NewFeatureListProps {
+  propertyId: string;
+}
+
+export function NewFeatureList({ propertyId }: NewFeatureListProps) {
+  const { data, isLoading, error } = useNewFeature({ propertyId });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <div>Error: {error.message}</div>;
+  if (!data?.length) return <EmptyState message="No items found" />;
+
+  return (
+    <div className="grid gap-4">
+      {data.map((item) => (
+        <NewFeatureCard key={item.id} item={item} />
+      ))}
+    </div>
+  );
+}
+```
+
+### Step 5: Create Page
+
+```typescript
+// src/app/(dashboard)/[orgId]/properties/[propertyId]/new-feature/page.tsx
+import { NewFeatureList } from '@/features/new-feature/components/NewFeatureList';
+
+interface PageProps {
+  params: { propertyId: string };
+}
+
+export default function NewFeaturePage({ params }: PageProps) {
+  return (
+    <div>
+      <h1>New Feature</h1>
+      <NewFeatureList propertyId={params.propertyId} />
+    </div>
+  );
+}
+```
+
+## Import Rules
+
+### Feature Imports
+
+```typescript
+// ✅ Good - Direct imports from features
+import { BookingCard } from '@/features/bookings/components/BookingCard';
+import { useBookings } from '@/features/bookings/api/use-bookings';
+
+// ✅ Good - Shared imports
+import { Button } from '@/components/ui/button';
+import { useDebounce } from '@/hooks/use-debounce';
+
+// ❌ Bad - Cross-feature imports
+import { PaymentsList } from '@/features/payments/components/PaymentsList';
+// (Don't import from another feature inside a feature)
+
+// ❌ Bad - Barrel imports
+import { BookingCard, useBookings } from '@/features/bookings';
+```
+
+### Compose Features at App Level
+
+```typescript
+// ✅ Good - Compose in page component
+// app/(dashboard)/[orgId]/properties/[propertyId]/page.tsx
+import { PropertyHeader } from '@/features/properties/components/PropertyHeader';
+import { BookingsSummary } from '@/features/bookings/components/BookingsSummary';
+import { PaymentsSummary } from '@/features/payments/components/PaymentsSummary';
+
+export default function PropertyPage({ params }) {
+  return (
+    <div>
+      <PropertyHeader propertyId={params.propertyId} />
+      <BookingsSummary propertyId={params.propertyId} />
+      <PaymentsSummary propertyId={params.propertyId} />
+    </div>
+  );
+}
+```
+
+## Git Workflow
+
+### Branch Naming
+
+```
+feature/bookings
+feature/bookings/status-timeline
+fix/bookings/calendar-overlap
+refactor/payments/service
+docs/api-documentation
+chore/update-dependencies
+```
+
+### Commit Messages
+
+Use conventional commits:
+
+```
+feat(bookings): add status timeline component
+fix(calendar): resolve date overlap issue
+docs(api): update booking endpoint documentation
+refactor(payments): simplify calculation logic
+test(bookings): add service tests
+chore: update dependencies
+style(bookings): format components
+perf(bookings): optimize list query
+```
+
+### Pull Request Process
+
+1. Create feature branch from `main`
+2. Implement feature following patterns
+3. Write tests
+4. Run linting: `bun run lint`
+5. Run tests: `bun run test`
+6. Create PR with description
+7. Request review
+8. Address feedback
+9. Merge to `main`
+
+## Development Commands
+
+```bash
+# Start development server
+bun run dev
+
+# Build for production
+bun run build
+
+# Run linting
+bun run lint
+
+# Fix lint issues
+bun run lint --fix
+
+# Run type checking
+bun run type-check
+
+# Run tests
+bun run test
+
+# Run E2E tests
+bun run test:e2e
+
+# Database commands
+bun run db:generate    # Generate migrations
+bun run db:migrate     # Run migrations
+bun run db:push        # Push schema (dev only)
+bun run db:studio      # Open Drizzle Studio
+bun run db:seed        # Seed database
+
+# Format code
+bun run format
+```
+
+## Environment Setup
+
+### Required Environment Variables
+
+```env
+# App
+NEXT_PUBLIC_APP_URL=http://localhost:3004
+
+# Database
+DATABASE_URL="postgresql://..."
+
+# Auth
+NEXT_PUBLIC_SUPABASE_URL=
+SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# OAuth (optional for dev)
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+FACEBOOK_CLIENT_ID=
+FACEBOOK_CLIENT_SECRET=
+
+# Email (optional for dev)
+RESEND_API_KEY=
+
+# Storage (optional for dev)
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_STORAGE_BUCKET_PUBLIC=
+SUPABASE_STORAGE_BUCKET_PRIVATE=
+```
+
+## Code Review Checklist
+
+Before submitting PR, verify:
+
+- [ ] TypeScript compiles without errors
+- [ ] ESLint passes with no warnings
+- [ ] Tests are written and passing
+- [ ] Feature code is in correct feature folder
+- [ ] No cross-feature imports
+- [ ] Shared code in shared folders
+- [ ] Permissions are checked in services
+- [ ] Data is scoped to organization/property
+- [ ] Loading and error states handled
+- [ ] User-friendly error messages
+- [ ] No console.logs in production code
+- [ ] Accessibility requirements met
+- [ ] Documentation updated if needed
+- [ ] No hardcoded values (use constants)
+- [ ] Follows existing code patterns
+
+## Moving Code to Shared
+
+When code is used by 2+ features, move it to shared:
+
+```bash
+# Component used by multiple features?
+# Move from:  src/features/bookings/components/StatusBadge.tsx
+# Move to:    src/components/shared/StatusBadge.tsx
+
+# Hook used by multiple features?
+# Move from:  src/features/bookings/hooks/use-filters.ts
+# Move to:    src/hooks/use-filters.ts
+
+# Utility used by multiple features?
+# Move from:  src/features/bookings/utils/format-date.ts
+# Move to:    src/utils/format-date.ts
+```
+
+## Deployment
+
+### Environments
+
+| Environment | Branch      | URL            |
+| ----------- | ----------- | -------------- |
+| Development | -           | localhost:3004 |
+| Preview     | PR branches | \*.vercel.app  |
+| Production  | main        | app.domain.com |
+
+### Deployment Process
+
+```
+1. PR merged to main
+2. CI runs tests
+3. Build succeeds
+4. Auto-deploy to preview
+5. Manual approval
+6. Deploy to production
+7. Monitor for issues
+```
+
+### Rollback
+
+```bash
+# Vercel CLI
+vercel rollback
+
+# Or via dashboard
+# Go to Vercel > Deployments > Previous > Redeploy
+```
+
+## Debugging
+
+### Database Issues
+
+```bash
+# Open Drizzle Studio
+bun run db:studio
+
+# Check connection
+bun run db:push --verbose
+```
+
+### API Issues
+
+```typescript
+// Enable tRPC logging
+// apps/web/src/server/trpc.ts
+const t = initTRPC.context<Context>().create({
+  // ...
+  isDev: process.env.NODE_ENV === 'development',
+});
+```
+
+### Component Issues
+
+```typescript
+// Use React DevTools
+// TanStack Query DevTools
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+
+// In providers
+<QueryClientProvider client={queryClient}>
+  {children}
+  <ReactQueryDevtools initialIsOpen={false} />
+</QueryClientProvider>
+```
+
+## Documentation Updates
+
+When implementing features, update:
+
+- [ ] Update `@docs/implementation/roadmap.md` and `@docs/reference/application-inventory.md` if needed
+- [ ] Add API documentation if new endpoints
+- [ ] Update `README.md` if setup changes
+- [ ] Add inline code comments for complex logic

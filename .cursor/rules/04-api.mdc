@@ -1,0 +1,522 @@
+---
+description: tRPC API patterns, router structure, and service layer conventions
+globs:
+  - "**/routers/**/*.ts"
+  - "**/services/**/*.ts"
+  - "**/lib/api/**/*.ts"
+  - "**/server/**/*.ts"
+---
+
+# API Rules (tRPC)
+
+## Router Structure
+
+```typescript
+// server/routers/_app.ts - Root Router
+import { router } from '../trpc';
+import { authRouter } from './auth';
+import { organizationsRouter } from './organizations';
+import { propertiesRouter } from './properties';
+import { bookingsRouter } from './bookings';
+import { paymentsRouter } from './payments';
+import { formsRouter } from './forms';
+import { calendarRouter } from './calendar';
+import { subscriptionsRouter } from './subscriptions';
+
+export const appRouter = router({
+  auth: authRouter,
+  organizations: organizationsRouter,
+  properties: propertiesRouter,
+  bookings: bookingsRouter,
+  payments: paymentsRouter,
+  forms: formsRouter,
+  calendar: calendarRouter,
+  subscriptions: subscriptionsRouter,
+});
+
+export type AppRouter = typeof appRouter;
+```
+
+## tRPC Setup
+
+```typescript
+// server/trpc.ts
+import { initTRPC, TRPCError } from '@trpc/server';
+import { type Context } from './context';
+import superjson from 'superjson';
+
+const t = initTRPC.context<Context>().create({
+  transformer: superjson,
+  errorFormatter({ shape, error }) {
+    return {
+      ...shape,
+      data: {
+        ...shape.data,
+        zodError: error.cause instanceof ZodError ? error.cause.flatten() : null,
+      },
+    };
+  },
+});
+
+export const router = t.router;
+export const publicProcedure = t.procedure;
+
+// Protected procedure - requires authentication
+export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
+  if (!ctx.session || !ctx.session.user) {
+    throw new TRPCError({ code: 'UNAUTHORIZED' });
+  }
+  return next({
+    ctx: {
+      ...ctx,
+      user: ctx.session.user,
+    },
+  });
+});
+```
+
+## Router Pattern
+
+```typescript
+// server/routers/bookings.ts
+import { z } from 'zod';
+import { router, protectedProcedure } from '../trpc';
+import { bookingService } from '../services/booking.service';
+import { TRPCError } from '@trpc/server';
+
+// Input schemas
+const listInput = z.object({
+  propertyId: z.string().uuid(),
+  status: z.enum(['PENDING_REVIEW', 'CHECKED_IN', /* ... */]).optional(),
+  search: z.string().optional(),
+  page: z.number().min(1).default(1),
+  limit: z.number().min(1).max(100).default(20),
+  sortBy: z.enum(['checkInDate', 'createdAt', 'bookingNumber']).default('createdAt'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+});
+
+const createInput = z.object({
+  propertyId: z.string().uuid(),
+  guestName: z.string().min(2).max(100),
+  guestEmail: z.string().email(),
+  guestPhone: z.string().optional(),
+  checkInDate: z.date(),
+  checkOutDate: z.date(),
+  guestCount: z.number().min(1),
+  hasPets: z.boolean().default(false),
+  needsParking: z.boolean().default(false),
+  specialRequests: z.string().optional(),
+});
+
+export const bookingsRouter = router({
+  // Query - Get list of bookings
+  list: protectedProcedure
+    .input(listInput)
+    .query(async ({ ctx, input }) => {
+      return bookingService.getBookings(ctx.user.id, input);
+    }),
+
+  // Query - Get single booking
+  getById: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const booking = await bookingService.getBookingById(ctx.user.id, input.id);
+      if (!booking) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Booking not found' });
+      }
+      return booking;
+    }),
+
+  // Mutation - Create booking
+  create: protectedProcedure
+    .input(createInput)
+    .mutation(async ({ ctx, input }) => {
+      // Validate business logic
+      if (input.checkOutDate <= input.checkInDate) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Check-out date must be after check-in date',
+        });
+      }
+      return bookingService.createBooking(ctx.user.id, input);
+    }),
+
+  // Mutation - Update status
+  updateStatus: protectedProcedure
+    .input(z.object({
+      id: z.string().uuid(),
+      status: z.enum(['PENDING_GAF', 'READY_FOR_CHECKIN', 'CHECKED_IN', /* ... */]),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return bookingService.updateBookingStatus(ctx.user.id, input);
+    }),
+
+  // Mutation - Delete (soft delete)
+  delete: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      return bookingService.deleteBooking(ctx.user.id, input.id);
+    }),
+});
+```
+
+## Service Layer Pattern
+
+```typescript
+// server/services/booking.service.ts
+import { db } from '@/lib/db';
+import { bookings, bookingStatusHistory } from '@/lib/db/schema';
+import { eq, and, isNull, desc, ilike, or, sql } from 'drizzle-orm';
+import { TRPCError } from '@trpc/server';
+import { checkPermission } from '@/lib/utils/permissions';
+import { emailService } from './email.service';
+import { activityService } from './activity.service';
+
+interface BookingFilters {
+  propertyId: string;
+  status?: string;
+  search?: string;
+  page: number;
+  limit: number;
+  sortBy: string;
+  sortOrder: 'asc' | 'desc';
+}
+
+export const bookingService = {
+  /**
+   * Get paginated list of bookings for a property
+   */
+  async getBookings(userId: string, filters: BookingFilters) {
+    // 1. Check permission
+    await checkPermission(userId, 'bookings:read', filters.propertyId);
+
+    // 2. Build conditions
+    const conditions = [
+      eq(bookings.propertyId, filters.propertyId),
+      isNull(bookings.deletedAt),
+    ];
+
+    if (filters.status) {
+      conditions.push(eq(bookings.status, filters.status));
+    }
+
+    if (filters.search) {
+      conditions.push(
+        or(
+          ilike(bookings.guestName, `%${filters.search}%`),
+          ilike(bookings.guestEmail, `%${filters.search}%`),
+          ilike(bookings.bookingNumber, `%${filters.search}%`)
+        )
+      );
+    }
+
+    // 3. Execute query with relations
+    const data = await db.query.bookings.findMany({
+      where: and(...conditions),
+      with: {
+        property: { columns: { name: true } },
+        payments: true,
+      },
+      limit: filters.limit,
+      offset: (filters.page - 1) * filters.limit,
+      orderBy: filters.sortOrder === 'desc' 
+        ? [desc(bookings[filters.sortBy])]
+        : [bookings[filters.sortBy]],
+    });
+
+    // 4. Get total count
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(bookings)
+      .where(and(...conditions));
+
+    // 5. Return with pagination
+    return {
+      data,
+      pagination: {
+        page: filters.page,
+        limit: filters.limit,
+        total: count,
+        totalPages: Math.ceil(count / filters.limit),
+      },
+    };
+  },
+
+  /**
+   * Create a new booking
+   */
+  async createBooking(userId: string, data: CreateBookingInput) {
+    // 1. Check permission
+    await checkPermission(userId, 'bookings:create', data.propertyId);
+
+    // 2. Check availability
+    const isAvailable = await this.checkAvailability(
+      data.propertyId,
+      data.checkInDate,
+      data.checkOutDate
+    );
+    if (!isAvailable) {
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message: 'The selected dates are not available',
+      });
+    }
+
+    // 3. Calculate nights
+    const nights = Math.ceil(
+      (data.checkOutDate.getTime() - data.checkInDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    // 4. Create booking in transaction
+    const booking = await db.transaction(async (tx) => {
+      const [newBooking] = await tx
+        .insert(bookings)
+        .values({
+          ...data,
+          bookingNumber: await this.generateBookingNumber(),
+          nights,
+          status: 'PENDING_REVIEW',
+          createdBy: userId,
+        })
+        .returning();
+
+      // Create initial status history
+      await tx.insert(bookingStatusHistory).values({
+        bookingId: newBooking.id,
+        toStatus: 'PENDING_REVIEW',
+        changedBy: userId,
+      });
+
+      return newBooking;
+    });
+
+    // 5. Side effects (outside transaction)
+    await Promise.all([
+      emailService.sendBookingConfirmation(booking),
+      activityService.log(userId, 'BOOKING_CREATED', 'booking', booking.id),
+    ]);
+
+    return booking;
+  },
+
+  /**
+   * Check if dates are available for booking
+   */
+  async checkAvailability(propertyId: string, checkIn: Date, checkOut: Date): Promise<boolean> {
+    const conflicts = await db.query.bookings.findFirst({
+      where: and(
+        eq(bookings.propertyId, propertyId),
+        isNull(bookings.deletedAt),
+        sql`${bookings.status} NOT IN ('CANCELLED', 'COMPLETED')`,
+        or(
+          // Check if new dates overlap with existing bookings
+          and(
+            sql`${bookings.checkInDate} < ${checkOut}`,
+            sql`${bookings.checkOutDate} > ${checkIn}`
+          )
+        )
+      ),
+    });
+    return !conflicts;
+  },
+
+  /**
+   * Generate unique booking number
+   */
+  async generateBookingNumber(): Promise<string> {
+    const year = new Date().getFullYear();
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(bookings)
+      .where(ilike(bookings.bookingNumber, `BK-${year}-%`));
+    
+    const number = (count + 1).toString().padStart(4, '0');
+    return `BK-${year}-${number}`;
+  },
+};
+```
+
+## Response Patterns
+
+### Paginated Response
+
+```typescript
+interface PaginatedResponse<T> {
+  data: T[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNext: boolean;
+    hasPrev: boolean;
+  };
+}
+```
+
+### Single Item Response
+
+```typescript
+// Return item directly, null if not found
+// Throw TRPCError for not found if required
+
+const booking = await bookingService.getById(id);
+if (!booking) {
+  throw new TRPCError({ code: 'NOT_FOUND' });
+}
+return booking;
+```
+
+## Error Handling
+
+```typescript
+import { TRPCError } from '@trpc/server';
+
+// Use appropriate error codes
+throw new TRPCError({
+  code: 'NOT_FOUND',
+  message: 'Booking not found',
+});
+
+throw new TRPCError({
+  code: 'BAD_REQUEST',
+  message: 'Invalid date range',
+});
+
+throw new TRPCError({
+  code: 'FORBIDDEN',
+  message: 'You do not have permission to perform this action',
+});
+
+throw new TRPCError({
+  code: 'CONFLICT',
+  message: 'Dates are not available',
+});
+
+throw new TRPCError({
+  code: 'UNAUTHORIZED',
+  message: 'You must be logged in',
+});
+
+// Custom business error
+class BookingError extends Error {
+  constructor(message: string, public code: string) {
+    super(message);
+  }
+}
+```
+
+## Client Usage
+
+```typescript
+// lib/api/client.ts
+import { createTRPCReact } from '@trpc/react-query';
+import { type AppRouter } from '@/server/routers/_app';
+
+export const api = createTRPCReact<AppRouter>();
+```
+
+```typescript
+// In components - Query
+const { data, isLoading, error } = api.bookings.list.useQuery({
+  propertyId,
+  status: 'PENDING_REVIEW',
+  page: 1,
+  limit: 20,
+});
+
+// In components - Mutation
+const createBooking = api.bookings.create.useMutation({
+  onSuccess: () => {
+    toast.success('Booking created successfully');
+    utils.bookings.list.invalidate();
+  },
+  onError: (error) => {
+    toast.error(error.message);
+  },
+});
+
+// Usage
+await createBooking.mutateAsync({
+  propertyId,
+  guestName: 'John Doe',
+  // ...
+});
+```
+
+## Input Validation with Zod
+
+```typescript
+// lib/validations/booking.ts
+import { z } from 'zod';
+
+export const createBookingSchema = z.object({
+  propertyId: z.string().uuid('Invalid property ID'),
+  guestName: z.string()
+    .min(2, 'Name must be at least 2 characters')
+    .max(100, 'Name must be less than 100 characters'),
+  guestEmail: z.string().email('Invalid email address'),
+  guestPhone: z.string().regex(/^\+?[\d\s-]+$/, 'Invalid phone number').optional(),
+  checkInDate: z.date(),
+  checkOutDate: z.date(),
+  guestCount: z.number().min(1, 'At least 1 guest required').max(50),
+  hasPets: z.boolean().default(false),
+  petCount: z.number().min(0).max(10).optional(),
+  needsParking: z.boolean().default(false),
+  parkingSpots: z.number().min(0).max(10).optional(),
+  specialRequests: z.string().max(1000).optional(),
+}).refine(
+  (data) => data.checkOutDate > data.checkInDate,
+  { message: 'Check-out must be after check-in', path: ['checkOutDate'] }
+);
+
+export type CreateBookingInput = z.infer<typeof createBookingSchema>;
+```
+
+## Best Practices
+
+### 1. Always Validate Inputs
+
+```typescript
+// ✅ Good
+.input(z.object({
+  propertyId: z.string().uuid(),
+  page: z.number().min(1).default(1),
+}))
+
+// ❌ Bad - No validation
+.input(z.object({
+  propertyId: z.string(),
+  page: z.number(),
+}))
+```
+
+### 2. Check Permissions in Service Layer
+
+```typescript
+// ✅ Service checks permissions
+async getBookings(userId: string, input: Input) {
+  await checkPermission(userId, 'bookings:read', input.propertyId);
+  // ...
+}
+```
+
+### 3. Use Transactions for Related Operations
+
+```typescript
+// ✅ Atomic operations
+await db.transaction(async (tx) => {
+  await tx.update(bookings).set({ status: 'CANCELLED' });
+  await tx.insert(statusHistory).values({ ... });
+  await tx.insert(activityLogs).values({ ... });
+});
+```
+
+### 4. Return Consistent Response Shapes
+
+```typescript
+// Lists always return { data, pagination }
+// Single items return the item or throw NOT_FOUND
+// Mutations return the created/updated item
+```

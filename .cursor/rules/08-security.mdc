@@ -1,0 +1,443 @@
+---
+description: Security rules, multi-tenancy patterns, and authorization best practices
+globs:
+  - "**/services/**/*.ts"
+  - "**/routers/**/*.ts"
+  - "**/middleware/**/*.ts"
+  - "**/lib/auth/**/*.ts"
+---
+
+# Security & Multi-Tenancy Rules
+
+## Core Security Principles
+
+1. **NEVER trust client-provided data** - Always validate on server
+2. **ALWAYS scope queries** - Filter by organization/property
+3. **CHECK permissions** - Before every data access
+4. **AUDIT sensitive operations** - Log security events
+5. **VALIDATE inputs** - Use Zod for all inputs
+
+## Authentication (Supabase Auth)
+
+```typescript
+// lib/auth/supabase-auth.ts (example shape)
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+export async function getUserFromAccessToken(accessToken: string) {
+  const { data, error } = await supabase.auth.getUser(accessToken);
+
+  if (error || !data.user) return null;
+  return data.user;
+}
+```
+
+## Protected Procedures (tRPC)
+
+```typescript
+// server/trpc.ts
+import { initTRPC, TRPCError } from '@trpc/server';
+
+const t = initTRPC.context<Context>().create();
+
+// Public procedure - no auth required
+export const publicProcedure = t.procedure;
+
+// Protected procedure - requires authentication
+export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
+  if (!ctx.session?.user) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: 'You must be logged in to access this resource',
+    });
+  }
+
+  return next({
+    ctx: {
+      ...ctx,
+      user: ctx.session.user,
+    },
+  });
+});
+
+// Org-scoped procedure - requires org membership
+export const orgProcedure = protectedProcedure.use(async ({ ctx, input, next }) => {
+  const orgId = (input as any)?.organizationId;
+  
+  if (!orgId) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Organization ID is required',
+    });
+  }
+
+  const membership = await db.query.organizationMembers.findFirst({
+    where: and(
+      eq(organizationMembers.organizationId, orgId),
+      eq(organizationMembers.userId, ctx.user.id),
+      isNull(organizationMembers.deletedAt)
+    ),
+  });
+
+  if (!membership) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'You are not a member of this organization',
+    });
+  }
+
+  return next({
+    ctx: {
+      ...ctx,
+      orgMembership: membership,
+    },
+  });
+});
+```
+
+## Permission System
+
+### Permission Types
+
+```typescript
+// lib/utils/permissions.ts
+
+export const PERMISSIONS = {
+  // Organization
+  'org:read': ['OWNER', 'ADMIN', 'PROPERTY_MANAGER', 'SUBLEASE', 'VIEWER'],
+  'org:update': ['OWNER', 'ADMIN'],
+  'org:delete': ['OWNER'],
+  'org:members:manage': ['OWNER', 'ADMIN'],
+
+  // Properties
+  'properties:create': ['OWNER', 'ADMIN'],
+  'properties:read': ['OWNER', 'ADMIN', 'PROPERTY_MANAGER', 'SUBLEASE', 'VIEWER'],
+  'properties:update': ['OWNER', 'ADMIN', 'PROPERTY_MANAGER'],
+  'properties:delete': ['OWNER', 'ADMIN'],
+
+  // Bookings
+  'bookings:create': ['OWNER', 'ADMIN', 'PROPERTY_MANAGER', 'SUBLEASE'],
+  'bookings:read': ['OWNER', 'ADMIN', 'PROPERTY_MANAGER', 'SUBLEASE', 'VIEWER'],
+  'bookings:update': ['OWNER', 'ADMIN', 'PROPERTY_MANAGER', 'SUBLEASE'],
+  'bookings:delete': ['OWNER', 'ADMIN', 'PROPERTY_MANAGER'],
+  'bookings:approve': ['OWNER', 'ADMIN', 'PROPERTY_MANAGER'],
+
+  // Payments
+  'payments:create': ['OWNER', 'ADMIN', 'PROPERTY_MANAGER', 'SUBLEASE'],
+  'payments:read': ['OWNER', 'ADMIN', 'PROPERTY_MANAGER', 'SUBLEASE', 'VIEWER'],
+  'payments:update': ['OWNER', 'ADMIN', 'PROPERTY_MANAGER'],
+  'payments:delete': ['OWNER', 'ADMIN'],
+
+  // Guest Forms
+  'forms:create': ['OWNER', 'ADMIN', 'PROPERTY_MANAGER'],
+  'forms:read': ['OWNER', 'ADMIN', 'PROPERTY_MANAGER', 'SUBLEASE', 'VIEWER'],
+  'forms:update': ['OWNER', 'ADMIN', 'PROPERTY_MANAGER'],
+  'forms:delete': ['OWNER', 'ADMIN', 'PROPERTY_MANAGER'],
+} as const;
+
+type Permission = keyof typeof PERMISSIONS;
+type Role = 'OWNER' | 'ADMIN' | 'PROPERTY_MANAGER' | 'SUBLEASE' | 'VIEWER';
+```
+
+### Permission Check Function
+
+```typescript
+// lib/utils/permissions.ts
+
+import { db } from '@/lib/db';
+import { organizationMembers, properties, propertyManagers } from '@/lib/db/schema';
+import { TRPCError } from '@trpc/server';
+
+/**
+ * Check if user has permission for a resource
+ */
+export async function checkPermission(
+  userId: string,
+  permission: Permission,
+  resourceId: string,
+  resourceType: 'organization' | 'property' = 'property'
+): Promise<void> {
+  let role: Role | null = null;
+
+  if (resourceType === 'property') {
+    // Check property-level access first
+    const propertyAccess = await db.query.propertyManagers.findFirst({
+      where: and(
+        eq(propertyManagers.propertyId, resourceId),
+        eq(propertyManagers.userId, userId),
+        isNull(propertyManagers.deletedAt)
+      ),
+    });
+
+    if (propertyAccess) {
+      role = propertyAccess.role as Role;
+    } else {
+      // Fall back to organization-level access
+      const property = await db.query.properties.findFirst({
+        where: eq(properties.id, resourceId),
+        columns: { organizationId: true },
+      });
+
+      if (property) {
+        const orgAccess = await db.query.organizationMembers.findFirst({
+          where: and(
+            eq(organizationMembers.organizationId, property.organizationId),
+            eq(organizationMembers.userId, userId),
+            isNull(organizationMembers.deletedAt)
+          ),
+        });
+
+        if (orgAccess) {
+          role = orgAccess.role as Role;
+        }
+      }
+    }
+  } else {
+    // Organization resource
+    const orgAccess = await db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.organizationId, resourceId),
+        eq(organizationMembers.userId, userId),
+        isNull(organizationMembers.deletedAt)
+      ),
+    });
+
+    if (orgAccess) {
+      role = orgAccess.role as Role;
+    }
+  }
+
+  // Check permission
+  if (!role || !hasPermission(role, permission)) {
+    await logSecurityEvent(userId, permission, resourceId, false);
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'You do not have permission to perform this action',
+    });
+  }
+
+  await logSecurityEvent(userId, permission, resourceId, true);
+}
+
+function hasPermission(role: Role, permission: Permission): boolean {
+  const allowedRoles = PERMISSIONS[permission];
+  return allowedRoles.includes(role);
+}
+
+async function logSecurityEvent(
+  userId: string,
+  action: string,
+  resourceId: string,
+  granted: boolean
+): Promise<void> {
+  await db.insert(activityLogs).values({
+    userId,
+    type: 'PERMISSION_CHECK',
+    entity: 'security',
+    entityId: resourceId,
+    description: `Permission ${action} ${granted ? 'granted' : 'denied'}`,
+    metadata: { action, granted },
+  });
+}
+```
+
+## Multi-Tenancy Query Patterns
+
+### ALWAYS Scope to Organization
+
+```typescript
+// ✅ CORRECT - Scoped query
+export async function getProperties(userId: string, orgId: string) {
+  // First verify access
+  await checkPermission(userId, 'properties:read', orgId, 'organization');
+
+  // Then query with scope
+  return db.query.properties.findMany({
+    where: and(
+      eq(properties.organizationId, orgId), // SCOPED!
+      isNull(properties.deletedAt)
+    ),
+  });
+}
+
+// ❌ WRONG - Unscoped query (SECURITY VULNERABILITY!)
+export async function getPropertiesBAD() {
+  return db.query.properties.findMany({
+    where: isNull(properties.deletedAt),
+  });
+}
+```
+
+### Verify Ownership Before Access
+
+```typescript
+// ✅ CORRECT - Verify ownership
+export async function getBooking(userId: string, bookingId: string) {
+  // Get booking with property and org info
+  const booking = await db.query.bookings.findFirst({
+    where: and(
+      eq(bookings.id, bookingId),
+      isNull(bookings.deletedAt)
+    ),
+    with: {
+      property: {
+        columns: { organizationId: true },
+      },
+    },
+  });
+
+  if (!booking) {
+    throw new TRPCError({ code: 'NOT_FOUND' });
+  }
+
+  // Verify user has access to this organization
+  await checkPermission(userId, 'bookings:read', booking.property.organizationId, 'organization');
+
+  return booking;
+}
+```
+
+### Verify Before Updates
+
+```typescript
+// ✅ CORRECT - Check permission before mutation
+export async function updateBooking(userId: string, bookingId: string, data: UpdateBookingInput) {
+  // First get booking and verify ownership
+  const booking = await db.query.bookings.findFirst({
+    where: eq(bookings.id, bookingId),
+  });
+
+  if (!booking) {
+    throw new TRPCError({ code: 'NOT_FOUND' });
+  }
+
+  // Check permission for this specific property
+  await checkPermission(userId, 'bookings:update', booking.propertyId);
+
+  // Then perform update
+  return db.update(bookings).set(data).where(eq(bookings.id, bookingId)).returning();
+}
+```
+
+## Input Validation
+
+### Always Validate with Zod
+
+```typescript
+// In tRPC routers
+export const propertiesRouter = router({
+  create: protectedProcedure
+    .input(z.object({
+      organizationId: z.string().uuid(),
+      name: z.string().min(2).max(100),
+      type: z.enum(['APARTMENT', 'CONDO', 'HOUSE', 'VILLA']),
+      address: z.string().min(5).max(500),
+      baseRate: z.number().positive(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Input is now validated and typed
+    }),
+});
+```
+
+### Sanitize User Content
+
+```typescript
+import DOMPurify from 'isomorphic-dompurify';
+
+// Sanitize HTML content before storing
+const sanitizedHtml = DOMPurify.sanitize(userInput, {
+  ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br'],
+  ALLOWED_ATTR: ['href'],
+});
+```
+
+## Rate Limiting
+
+```typescript
+// middleware/rate-limit.ts
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
+
+const ratelimit = new Ratelimit({
+  redis: Redis.fromEnv(),
+  limiter: Ratelimit.slidingWindow(10, '10 s'), // 10 requests per 10 seconds
+  analytics: true,
+});
+
+export async function checkRateLimit(identifier: string): Promise<void> {
+  const { success, limit, remaining, reset } = await ratelimit.limit(identifier);
+
+  if (!success) {
+    throw new TRPCError({
+      code: 'TOO_MANY_REQUESTS',
+      message: `Rate limit exceeded. Try again in ${Math.ceil((reset - Date.now()) / 1000)} seconds`,
+    });
+  }
+}
+
+// Usage in public procedures
+export const formsRouter = router({
+  submitPublic: publicProcedure
+    .input(submissionSchema)
+    .mutation(async ({ ctx, input }) => {
+      // Rate limit by IP
+      await checkRateLimit(ctx.ip ?? 'anonymous');
+      // Process submission
+    }),
+});
+```
+
+## Secure File Uploads
+
+```typescript
+// lib/utils/upload.ts
+
+const ALLOWED_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+];
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+export async function validateFile(file: File): Promise<void> {
+  // Check file size
+  if (file.size > MAX_FILE_SIZE) {
+    throw new Error('File too large. Maximum size is 10MB');
+  }
+
+  // Check MIME type
+  if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+    throw new Error('File type not allowed');
+  }
+
+  // Verify file content matches extension (prevent spoofing)
+  const buffer = await file.arrayBuffer();
+  const fileType = await detectFileType(buffer);
+  
+  if (fileType?.mime !== file.type) {
+    throw new Error('File content does not match extension');
+  }
+}
+```
+
+## Security Checklist
+
+Before deploying any feature, verify:
+
+- [ ] All inputs validated with Zod
+- [ ] Permissions checked on all mutations
+- [ ] Queries scoped to organization/property
+- [ ] SQL injection prevented (using Drizzle parameterized queries)
+- [ ] XSS prevented (React escaping, DOMPurify for HTML)
+- [ ] CSRF protection (enforced by auth handler + server-side validation boundaries)
+- [ ] Rate limiting on public endpoints
+- [ ] File uploads validated
+- [ ] Sensitive data encrypted
+- [ ] Security events logged

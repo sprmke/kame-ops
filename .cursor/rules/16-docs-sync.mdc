@@ -1,0 +1,42 @@
+---
+description: Keep documentation aligned with code—update docs whenever features or implementation change
+alwaysApply: true
+---
+
+# Docs–Code Sync Rule
+
+**Whenever you add, change, or remove features or implementation details, update the relevant docs in `docs/` so documentation and code stay aligned.** Use the topic-based paths below; see `docs/README.md` for the full structure.
+
+## When to Update Docs
+
+| Type of change | Update these docs |
+|----------------|-------------------|
+| **Routes, features, components, API, DB (current state)** | `docs/reference/application-inventory.md` — **always** when adding/removing pages, features, routers, or tables |
+| **Database** – schema design, tables, relations, indexes | `docs/database/schema.md` |
+| **User flows** – screens, steps, permissions, edge cases | `docs/product/user-flows.md` |
+| **Structure** – folder layout, conventions, shared vs feature | `docs/architecture/project-structure.md` |
+| **Public UI** – public routes, property/booking flows, SEO | `docs/product/public-ui.md` |
+| **Roadmap** – phase progress, completed tasks | `docs/implementation/roadmap.md` |
+| **API / specs** – endpoints, schemas, business rules | `docs/reference/feature-specifications.md` |
+| **Tech choices** – libs, config, tooling | `docs/architecture/tech-stack.md` |
+| **New doc** or major reorg | `docs/README.md` and relevant `docs/*/README.md` (add/update links) |
+
+## Temp docs (do not put in main docs)
+
+**Temporary or feature-specific documentation** that is not part of the core, always-synced set (e.g. notes/specs generated in a chat for a specific feature, exploratory design) must go in **`docs/temp/`**. Do **not** put in `docs/temp/` anything that should stay in sync with the codebase or that Cursor rules/skills reference — that belongs in the main docs (e.g. `reference/application-inventory.md`, `reference/feature-specifications.md`). Review `docs/temp/` periodically; promote useful content to main docs or delete when no longer needed.
+
+## Process
+
+1. **Before finishing** a feature or refactor: identify which of the above areas your change touches.
+2. **Update `docs/reference/application-inventory.md`** if you added/removed routes, feature modules, components, tRPC procedures, or schema (so the inventory stays the single source of truth).
+3. **Edit the matching doc(s)** in the same session so they match the current code.
+4. **Keep wording consistent** with the rest of the doc and with `docs/README.md` (e.g. same feature names and section titles).
+
+## Examples
+
+- **New booking status** → Update `docs/database/schema.md` and any flow in `docs/product/user-flows.md`; if schema is implemented, update `docs/reference/application-inventory.md`.
+- **New tRPC procedure** → Document in `docs/reference/feature-specifications.md`; add to **API** section in `docs/reference/application-inventory.md`.
+- **New app route or feature folder** → Add to **Routes** and **Features** in `docs/reference/application-inventory.md`; reflect structure in `docs/architecture/project-structure.md` (and `docs/product/public-ui.md` if public).
+- **New dependency or config** → Note in `docs/architecture/tech-stack.md` (and in `docs/README.md` if it adds a new doc or section).
+
+**Rule of thumb:** If a future developer (or AI) would rely on the docs to understand or change this behavior, the docs must be updated.

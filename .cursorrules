@@ -1,0 +1,63 @@
+# KameOps - Cursor Rules
+
+## Project Context
+
+**KameOps** is a business automation platform (reminders, cron jobs, notifications, integrations) built with the same stack as Kame Homes: Next.js 16+, React 19+, TypeScript, Drizzle ORM, tRPC, Supabase Postgres/Auth/Storage, Bun, TanStack Query v5, TanStack Table v8, shadcn/ui.
+
+**Credit cards** (Philippine bank SOA automation) is the first **sub-module**, ported from `automated-tasks/pay-credit-cards`. The platform must stay extensible for other modules (bills, subscriptions, custom automations).
+
+Detailed rules live in **`.cursor/rules/`** (modular `.mdc` files). Skills live in **`.cursor/skills/`**.
+
+## Documentation
+
+Before implementing features, read `@docs/README.md` and:
+
+| Document | Location |
+| -------- | -------- |
+| Application inventory (keep in sync) | `@docs/reference/application-inventory.md` |
+| Tech stack | `@docs/architecture/tech-stack.md` |
+| Project structure | `@docs/architecture/project-structure.md` |
+| Schema | `@docs/database/schema.md` |
+| User flows | `@docs/product/user-flows.md` |
+| Roadmap | `@docs/implementation/roadmap.md` |
+| Legacy CLI migration | `@docs/temp/pay-credit-cards-migration.md` |
+
+## Core Principles
+
+1. **Type safety** — TypeScript strict, Zod, tRPC
+2. **User scoping** — Every query filtered by authenticated `userId`; encrypt integration secrets
+3. **Module boundaries** — No cross-feature imports; credit-cards is one feature among others
+4. **Services own logic** — Routers thin; SOA/reminder/cron logic in `server/services/`
+5. **Docs sync** — Update `application-inventory.md` when adding routes, routers, or tables
+6. **Theme** — Light/dark via CSS variables (`bg-background`, `text-foreground`)
+
+## Architecture (summary)
+
+```
+app/ → features/dashboard/{credit-cards,reminders,automations,...} → shared
+server/routers → server/services → lib/db
+```
+
+- `src/app/` = routes only (no business logic)
+- Port legacy CLI from `pay-credit-cards/src/` into services—preserve behavior unless product changes
+
+## Stack Commands
+
+Use **Bun** (not npm): `bun install`, `bun run dev`, `bun run db:generate`, etc.
+
+## When Working on Legacy CLI
+
+If editing `automated-tasks/pay-credit-cards/`, follow `.cursor/rules/20-legacy-cli-reference.mdc`—do not apply crypto-trading rules.
+
+## Skills to Invoke
+
+| Skill | When |
+| ----- | ---- |
+| `/credit-cards` | SOA parsing, dues, mark-paid, banks |
+| `/integrations` | Gmail, Telegram, Slack, Calendar |
+| `/automation-platform` | Reminders, cron jobs, notifications |
+| `/drizzle-orm` | Schema, migrations |
+| `/trpc-api` | Routers, procedures |
+| `/supabase-stack` | Auth, Storage, Postgres |
+
+See `.cursor/rules/README.md` for the full rule and skill index.

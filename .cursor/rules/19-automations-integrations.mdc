@@ -1,0 +1,85 @@
+---
+description: Automations, cron jobs, and third-party integrations
+globs:
+  - '**/automations/**'
+  - '**/integrations/**'
+  - '**/server/services/automation*.ts'
+  - '**/server/services/gmail*.ts'
+  - '**/server/services/telegram*.ts'
+  - '**/server/services/slack*.ts'
+  - '**/server/services/notification*.ts'
+  - '**/server/jobs/**'
+  - '**/app/api/cron/**'
+  - '**/app/api/webhooks/**'
+alwaysApply: false
+---
+
+# Automations & Integrations
+
+## Scheduling
+
+**Target:** Supabase Cron (pg_cron) invoking secured HTTP routes or Edge Functions—not macOS launchd.
+
+| Job type | Legacy CLI | KameOps |
+| -------- | ---------- | ------- |
+| Gmail SOA poll | `poll-new-soa` every ~10 min | `automation_jobs` + cron |
+| Daily reminders | `send-reminders` at noon | Same |
+| Telegram bot | long-polling daemon | **Webhook** at `/api/webhooks/telegram` |
+
+Cron routes must verify a secret (`CRON_SECRET` or Supabase service role header). Log every run to `automation_runs`.
+
+## Integrations Model
+
+Store per user in `integrations` table:
+
+| Provider | Capabilities |
+| -------- | ------------ |
+| `gmail` | SOA fetch, history poll |
+| `google_calendar` | Due-date events, mark paid |
+| `telegram` | Bot token, chat id, web link |
+| `slack` | Incoming webhook URL |
+
+Use service abstractions—routers and UI never call Telegram/Slack APIs directly.
+
+## Notification Service
+
+Single entry point for outbound messages:
+
+```typescript
+// notification.service.ts — conceptual
+sendReminder({ channels, telegramBody, slackBody, fingerprint });
+sendDocument({ channel: 'telegram', file, caption });
+```
+
+Idempotency: store `reminder_logs.fingerprint` before send (legacy `due-reminders-state.sent`).
+
+## Telegram Webhook
+
+- Replace long-polling `telegram-bot-listener.ts` with webhook handler
+- Handle: paid/unpaid text, receipt photos, optional startup message
+- Verify webhook secret / bot token on each request
+
+## Gmail Poller State
+
+Migrate `soa-gmail-watch-state.json` to DB:
+
+- `historyId` cursor
+- `processedMessageIds` for dedupe after crashes
+
+Support `--catch-up-days` equivalent via automation job config.
+
+## Environment vs Database
+
+| Legacy | KameOps |
+| ------ | ------- |
+| Global `.env` tokens | Per-user integration records |
+| `CARDS_JSON` | `credit_cards` table |
+| `data/*.json` state | Postgres tables |
+
+Keep `.env` only for app secrets (Supabase, cron secret, AI keys)—not user card passwords.
+
+## Failure Handling
+
+- Automation run failures: persist `errorMessage`, do not advance Gmail cursor on partial SOA failure
+- Integration disconnect: surface UI banner + disable dependent jobs
+- Rate limits: backoff and log; never silent fail reminders

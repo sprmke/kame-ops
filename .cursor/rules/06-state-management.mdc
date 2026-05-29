@@ -1,0 +1,487 @@
+---
+description: State management with Zustand for client state and TanStack Query v5 for server state
+globs:
+  - '**/store/**/*.ts'
+  - '**/hooks/**/*.ts'
+  - '**/*.tsx'
+---
+
+# State Management Rules
+
+## Overview
+
+| Type            | Tool                         | Use Case                           |
+| --------------- | ---------------------------- | ---------------------------------- |
+| Server State    | TanStack Query v5 (via tRPC) | API data, caching, mutations       |
+| Client/UI State | Zustand                      | UI state, preferences, local state |
+| Form State      | React Hook Form              | Form inputs, validation            |
+| URL State       | Next.js Router               | Page params, search params         |
+
+## TanStack Query v5 (via tRPC)
+
+### Basic Query
+
+```typescript
+import { api } from '@/lib/api/client';
+
+// In component
+function BookingsList({ propertyId }: { propertyId: string }) {
+  const {
+    data,
+    isLoading,
+    error,
+    refetch,
+    isRefetching,
+  } = api.bookings.list.useQuery({
+    propertyId,
+    status: 'PENDING_REVIEW',
+    page: 1,
+    limit: 20,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage error={error} />;
+
+  return (
+    <div>
+      {data.data.map((booking) => (
+        <BookingCard key={booking.id} booking={booking} />
+      ))}
+    </div>
+  );
+}
+```
+
+### Query Options (TanStack Query v5 Style)
+
+```typescript
+// With options
+const { data } = api.bookings.list.useQuery(
+  { propertyId },
+  {
+    // When to refetch
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    gcTime: 1000 * 60 * 30, // 30 minutes (was cacheTime in v4)
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+
+    // Conditional fetching
+    enabled: !!propertyId,
+
+    // Callbacks
+    select: (data) => data.data, // Transform data
+
+    // Retry
+    retry: 3,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+  }
+);
+```
+
+### Suspense Query (React 19)
+
+```typescript
+// With Suspense - no loading/error state needed
+function BookingsList({ propertyId }: { propertyId: string }) {
+  const { data } = api.bookings.list.useSuspenseQuery({
+    propertyId,
+  });
+
+  // data is guaranteed to exist
+  return (
+    <div>
+      {data.data.map((booking) => (
+        <BookingCard key={booking.id} booking={booking} />
+      ))}
+    </div>
+  );
+}
+
+// Wrap with Suspense boundary
+function BookingsPage() {
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <BookingsList propertyId={propertyId} />
+    </Suspense>
+  );
+}
+```
+
+### Mutations
+
+```typescript
+function CreateBookingButton({ propertyId }: { propertyId: string }) {
+  const utils = api.useUtils();
+
+  const createBooking = api.bookings.create.useMutation({
+    onSuccess: (newBooking) => {
+      // Invalidate and refetch bookings list
+      utils.bookings.list.invalidate({ propertyId });
+
+      // Or optimistically update
+      utils.bookings.list.setData(
+        { propertyId },
+        (old) => ({
+          ...old,
+          data: [newBooking, ...(old?.data ?? [])],
+        })
+      );
+
+      toast.success('Booking created successfully');
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+    // Optimistic update with rollback
+    onMutate: async (newBooking) => {
+      await utils.bookings.list.cancel({ propertyId });
+      const previousData = utils.bookings.list.getData({ propertyId });
+      // Optimistically update
+      return { previousData };
+    },
+    onError: (err, newBooking, context) => {
+      // Rollback on error
+      utils.bookings.list.setData({ propertyId }, context?.previousData);
+    },
+    onSettled: () => {
+      utils.bookings.list.invalidate({ propertyId });
+    },
+  });
+
+  const handleCreate = async () => {
+    await createBooking.mutateAsync({
+      propertyId,
+      guestName: 'John Doe',
+      // ...
+    });
+  };
+
+  return (
+    <Button
+      onClick={handleCreate}
+      disabled={createBooking.isPending}
+    >
+      {createBooking.isPending ? 'Creating...' : 'Create Booking'}
+    </Button>
+  );
+}
+```
+
+### Custom Query Hook
+
+```typescript
+// lib/hooks/use-bookings.ts
+import { api } from '@/lib/api/client';
+
+interface UseBookingsOptions {
+  propertyId: string;
+  status?: string;
+  page?: number;
+  limit?: number;
+}
+
+export function useBookings(options: UseBookingsOptions) {
+  const { data, isLoading, error, refetch } = api.bookings.list.useQuery({
+    propertyId: options.propertyId,
+    status: options.status,
+    page: options.page ?? 1,
+    limit: options.limit ?? 20,
+  });
+
+  return {
+    bookings: data?.data ?? [],
+    pagination: data?.pagination,
+    isLoading,
+    error,
+    refetch,
+  };
+}
+
+// Custom mutations hook
+export function useBookingMutations(propertyId: string) {
+  const utils = api.useUtils();
+
+  const createBooking = api.bookings.create.useMutation({
+    onSuccess: () => {
+      utils.bookings.list.invalidate({ propertyId });
+      toast.success('Booking created');
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const updateStatus = api.bookings.updateStatus.useMutation({
+    onSuccess: () => {
+      utils.bookings.list.invalidate({ propertyId });
+      toast.success('Status updated');
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const deleteBooking = api.bookings.delete.useMutation({
+    onSuccess: () => {
+      utils.bookings.list.invalidate({ propertyId });
+      toast.success('Booking deleted');
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  return {
+    createBooking,
+    updateStatus,
+    deleteBooking,
+  };
+}
+```
+
+### Prefetching
+
+```typescript
+// Prefetch on hover or before navigation
+function BookingLink({ id }: { id: string }) {
+  const utils = api.useUtils();
+
+  const handleMouseEnter = () => {
+    utils.bookings.getById.prefetch({ id });
+  };
+
+  return (
+    <Link
+      href={`/bookings/${id}`}
+      onMouseEnter={handleMouseEnter}
+    >
+      View Booking
+    </Link>
+  );
+}
+```
+
+## Zustand (Client State)
+
+### Store Definition
+
+```typescript
+// store/ui-store.ts
+import { create } from 'zustand';
+import { persist, devtools } from 'zustand/middleware';
+
+interface UIState {
+  // State
+  sidebarOpen: boolean;
+  theme: 'light' | 'dark' | 'system';
+  currentOrgId: string | null;
+
+  // Actions
+  toggleSidebar: () => void;
+  setSidebarOpen: (open: boolean) => void;
+  setTheme: (theme: 'light' | 'dark' | 'system') => void;
+  setCurrentOrgId: (orgId: string | null) => void;
+}
+
+export const useUIStore = create<UIState>()(
+  devtools(
+    persist(
+      (set) => ({
+        // Initial state
+        sidebarOpen: true,
+        theme: 'system',
+        currentOrgId: null,
+
+        // Actions
+        toggleSidebar: () =>
+          set((state) => ({
+            sidebarOpen: !state.sidebarOpen,
+          })),
+        setSidebarOpen: (open) => set({ sidebarOpen: open }),
+        setTheme: (theme) => set({ theme }),
+        setCurrentOrgId: (orgId) => set({ currentOrgId: orgId }),
+      }),
+      {
+        name: 'ui-storage', // localStorage key
+        partialize: (state) => ({
+          theme: state.theme,
+          sidebarOpen: state.sidebarOpen,
+        }),
+      }
+    ),
+    { name: 'UIStore' }
+  )
+);
+```
+
+### Using Zustand Store
+
+```typescript
+// In components
+function Sidebar() {
+  // Subscribe to specific state
+  const sidebarOpen = useUIStore((state) => state.sidebarOpen);
+  const toggleSidebar = useUIStore((state) => state.toggleSidebar);
+
+  // Or destructure (will re-render on any state change)
+  // const { sidebarOpen, toggleSidebar } = useUIStore();
+
+  return (
+    <aside className={cn('sidebar', !sidebarOpen && 'collapsed')}>
+      <button onClick={toggleSidebar}>Toggle</button>
+      {/* sidebar content */}
+    </aside>
+  );
+}
+```
+
+### Forms Store
+
+```typescript
+// store/form-builder-store.ts
+import { create } from 'zustand';
+import { type FormField } from '@/types/forms';
+
+interface FormBuilderState {
+  // State
+  fields: FormField[];
+  selectedFieldId: string | null;
+  isDirty: boolean;
+
+  // Actions
+  addField: (field: FormField) => void;
+  updateField: (id: string, updates: Partial<FormField>) => void;
+  deleteField: (id: string) => void;
+  reorderFields: (startIndex: number, endIndex: number) => void;
+  selectField: (id: string | null) => void;
+  setFields: (fields: FormField[]) => void;
+  reset: () => void;
+}
+
+const initialState = {
+  fields: [],
+  selectedFieldId: null,
+  isDirty: false,
+};
+
+export const useFormBuilderStore = create<FormBuilderState>((set) => ({
+  ...initialState,
+
+  addField: (field) =>
+    set((state) => ({
+      fields: [...state.fields, { ...field, order: state.fields.length }],
+      isDirty: true,
+    })),
+
+  updateField: (id, updates) =>
+    set((state) => ({
+      fields: state.fields.map((f) => (f.id === id ? { ...f, ...updates } : f)),
+      isDirty: true,
+    })),
+
+  deleteField: (id) =>
+    set((state) => ({
+      fields: state.fields.filter((f) => f.id !== id),
+      selectedFieldId: state.selectedFieldId === id ? null : state.selectedFieldId,
+      isDirty: true,
+    })),
+
+  reorderFields: (startIndex, endIndex) =>
+    set((state) => {
+      const fields = [...state.fields];
+      const [removed] = fields.splice(startIndex, 1);
+      fields.splice(endIndex, 0, removed);
+
+      // Update order property
+      const reordered = fields.map((f, index) => ({ ...f, order: index }));
+
+      return { fields: reordered, isDirty: true };
+    }),
+
+  selectField: (id) => set({ selectedFieldId: id }),
+
+  setFields: (fields) => set({ fields, isDirty: false }),
+
+  reset: () => set(initialState),
+}));
+```
+
+### Store Selectors
+
+```typescript
+// For performance - create selectors
+import { shallow } from 'zustand/shallow';
+
+// Multiple values with shallow compare
+function FormBuilder() {
+  const { fields, selectedFieldId } = useFormBuilderStore(
+    (state) => ({
+      fields: state.fields,
+      selectedFieldId: state.selectedFieldId,
+    }),
+    shallow
+  );
+}
+
+// Computed selectors
+const selectTotalFields = (state: FormBuilderState) => state.fields.length;
+const selectRequiredFields = (state: FormBuilderState) => state.fields.filter((f) => f.required);
+
+function FormStats() {
+  const total = useFormBuilderStore(selectTotalFields);
+  const required = useFormBuilderStore(selectRequiredFields);
+}
+```
+
+## Best Practices
+
+### 1. Server State vs Client State
+
+```typescript
+// ✅ Server state - TanStack Query
+const { data: bookings } = api.bookings.list.useQuery({ propertyId });
+
+// ✅ Client/UI state - Zustand
+const sidebarOpen = useUIStore((state) => state.sidebarOpen);
+
+// ❌ Don't duplicate server state in client store
+// Don't: const bookingsStore = create((set) => ({ bookings: [] }));
+```
+
+### 2. Keep State Close to Where It's Used
+
+```typescript
+// ✅ Local state for component-specific state
+function BookingCard() {
+  const [isExpanded, setIsExpanded] = useState(false);
+}
+
+// ✅ Global store for shared state
+const theme = useUIStore((state) => state.theme);
+```
+
+### 3. Subscribe to Specific State Slices
+
+```typescript
+// ✅ Good - Only re-renders when sidebarOpen changes
+const sidebarOpen = useUIStore((state) => state.sidebarOpen);
+
+// ❌ Bad - Re-renders on any state change
+const state = useUIStore();
+```
+
+### 4. Use Utils for Cache Manipulation
+
+```typescript
+// ✅ Good - Use utils for invalidation
+const utils = api.useUtils();
+utils.bookings.list.invalidate();
+
+// ❌ Bad - Manual cache manipulation without utils
+```
+
+### 5. Invalidate After Mutations
+
+```typescript
+// ✅ Always invalidate related queries after mutations
+const createBooking = api.bookings.create.useMutation({
+  onSuccess: () => {
+    utils.bookings.list.invalidate({ propertyId });
+    utils.calendar.getData.invalidate({ propertyId });
+  },
+});
+```

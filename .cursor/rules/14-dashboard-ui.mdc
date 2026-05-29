@@ -1,0 +1,50 @@
+---
+description: Authenticated dashboard UI patterns for KameOps
+globs:
+  - '**/features/dashboard/**'
+  - '**/app/(dashboard)/**'
+alwaysApply: false
+---
+
+# Dashboard UI
+
+KameOps is **dashboard-first** (no large public marketing surface in v1). Guest-facing or embeddable UIs may come later for specific modules.
+
+## Layout
+
+- Use `(dashboard)` route group with sidebar + header
+- Semantic tokens: `bg-background`, `text-foreground`, `border-border`
+- Support light and dark mode on every new screen
+
+## Module Pages
+
+| Module | Primary UX |
+| ------ | ---------- |
+| Overview | Cards: upcoming dues, last SOA run, automation health |
+| Credit cards | Table of cards, SOA history, run SOA action, due status |
+| Reminders | List/filter reminders, window config, sent log |
+| Automations | Job list, cron schedule editor, run history |
+| Integrations | Connect Gmail/Telegram/Slack/Calendar with status |
+| Receipts | Upload gallery, OCR result, link to mark paid |
+| Settings | Profile, timezone, notification defaults |
+
+## Data Tables
+
+Use TanStack Table v8 via shared `DataTable` patterns. Credit card and reminder lists should support sort, filter, and row actions.
+
+## Actions & Destructive Flows
+
+- Confirm before deleting cards or disconnecting integrations
+- SOA run: show progress states (searching Gmail, parsing, notifying)
+- Mark paid: optimistic UI optional; always show server error messages
+
+## Empty States
+
+- No cards: CTA to add first card (migrate from `CARDS_JSON` hint in onboarding copy)
+- No integrations: explain Telegram/Slack/Gmail setup with links to settings
+- No SOA yet: prompt to run SOA or enable Gmail poller automation
+
+## Do Not
+
+- Put SOA parsing logic in components—call tRPC mutations that invoke services
+- Hardcode bank list in UI—load from server constants or DB

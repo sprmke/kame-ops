@@ -1,0 +1,121 @@
+---
+description: Global project context and documentation references for KameOps
+globs: **/*
+alwaysApply: true
+---
+
+# KameOps - Project Context
+
+## Overview
+
+**KameOps** is a **business automation and operations platform** for reminders, scheduled jobs, notifications, and workflow tracking. It started from personal credit-card SOA automation (`pay-credit-cards` CLI) and is designed to grow into a general-purpose ops tool for finance and other domains that need cron jobs, alerts, and integrations.
+
+**Credit cards** are the first product module—not the whole product. Future modules (recurring bills, subscriptions, custom automations) should follow the same patterns without coupling to the CC module.
+
+## Core Business Domain
+
+### Platform (shared)
+
+- **Users & workspaces**: Authentication, settings, activity log
+- **Integrations**: Gmail, Google Calendar, Telegram, Slack (encrypted credentials per user)
+- **Automations**: Cron-style jobs (Supabase Cron / pg_cron), run history, manual trigger
+- **Reminders**: Generic due-date reminders with channels (Telegram, Slack, email)
+- **Notifications**: Unified notification service; idempotent fingerprints per reminder
+- **Receipts & documents**: Supabase Storage, OCR, optional AI analysis
+
+### Credit cards module (sub-module)
+
+- **Credit cards**: CRUD (replaces `CARDS_JSON` env)
+- **SOA pipeline**: Gmail fetch → PDF unlock/parse → summary PDF → state upsert
+- **Due tracking**: Minimum/total due, paid status, interest charges
+- **Mark paid**: UI, Telegram webhook, receipt OCR (ported from CLI)
+- **Banks (PH)**: Metrobank, RCBC, BPI, Unionbank parsers
+
+### Legacy reference
+
+CLI source of truth during migration: `automated-tasks/pay-credit-cards/`. Port parsing/notification logic into `apps/web/src/server/services/`—do not reimplement from scratch unless fixing bugs.
+
+## Documentation References
+
+ALWAYS reference these documents before implementing features. See `@docs/README.md` for navigation.
+
+| Document | Purpose | Location |
+| -------- | ------- | -------- |
+| **Application Inventory** | Current routes, features, API, DB | `@docs/reference/application-inventory.md` |
+| Tech Stack | Technology choices and versions | `@docs/architecture/tech-stack.md` |
+| Database Schema | Drizzle schema and relationships | `@docs/database/schema.md` |
+| User Flows | Dashboard journeys, permissions | `@docs/product/user-flows.md` |
+| Project Structure | Folder organization | `@docs/architecture/project-structure.md` |
+| Implementation Roadmap | Phased development plan | `@docs/implementation/roadmap.md` |
+| Feature Specifications | Technical specs per feature | `@docs/reference/feature-specifications.md` |
+| Legacy CLI | Pre-migration behavior | `@docs/temp/pay-credit-cards-migration.md` |
+
+## Current Implementation Phase
+
+Check `@docs/implementation/roadmap.md` before starting feature work.
+
+## Key Principles
+
+### 1. Documentation First
+
+Verify requirements in `docs/` before coding.
+
+### 2. Type Safety First
+
+TypeScript strict, Zod validation, tRPC end-to-end types.
+
+### 3. User Scoping Always
+
+Every query MUST be scoped to the authenticated user (and workspace when introduced). Never trust client IDs without server verification. Integration secrets are per-user and encrypted at rest.
+
+### 4. Module Boundaries
+
+- Platform code: `features/dashboard/automations`, `reminders`, `integrations`, `settings`
+- Credit cards: `features/dashboard/credit-cards` only
+- No cross-feature imports; compose at `app/` page level
+- Services in `server/services/` are shared; routers stay thin
+
+### 5. Production Ready
+
+User-friendly errors, loading/empty states, WCAG 2.1 AA, light/dark theme via CSS variables.
+
+## Tech Stack Summary
+
+| Layer | Technology |
+| ----- | ---------- |
+| Runtime | Bun 1.1+ |
+| Framework | Next.js 16+ (App Router, Turbopack) |
+| UI | React 19+, Tailwind CSS, shadcn/ui |
+| State | TanStack Query v5, Zustand |
+| Database | Supabase Postgres, Drizzle ORM |
+| API | tRPC |
+| Auth | Supabase Auth |
+| Forms | React Hook Form, Zod |
+| Tables | TanStack Table v8 |
+| Storage | Supabase Storage (SOA PDFs, receipts) |
+| Email | Resend, React Email |
+| Cron | Supabase Cron (pg_cron) |
+| OCR | Tesseract.js (receipts; BPI SOA when needed) |
+| AI | OpenAI / Anthropic (receipt analysis, optional) |
+
+## AI Assistant Guidelines
+
+1. **Read Before Coding**: Check docs and legacy CLI when porting SOA/reminder behavior
+2. **Follow Patterns**: Match Kame Homes monorepo conventions (this repo mirrors that stack)
+3. **Ask When Unclear**: Especially for bank parsers and migration parity
+4. **Atomic Changes**: One logical change at a time
+5. **Update Docs**: Sync `application-inventory.md` when adding routes, routers, or schema
+
+## File Naming Conventions
+
+| Type | Convention | Example |
+| ---- | ---------- | ------- |
+| Components | PascalCase.tsx | `CreditCardList.tsx` |
+| Hooks | use-kebab-case.ts | `use-credit-cards.ts` |
+| Services | kebab-case.service.ts | `soa.service.ts` |
+| Routers | kebab-case.ts | `credit-cards.ts` |
+
+## Currency & Locale
+
+- Primary currency: PHP (Philippine Peso)
+- Default timezone: Asia/Manila

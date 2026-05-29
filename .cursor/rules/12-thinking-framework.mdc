@@ -1,0 +1,328 @@
+---
+description: AI reasoning framework for analyzing tasks and generating high-quality code
+globs: **/*
+alwaysApply: true
+---
+
+# AI Thinking Framework
+
+This framework ensures systematic, high-quality code generation by requiring structured reasoning before implementation.
+
+## Before Writing Code - ALWAYS
+
+### 1. Understand the Request
+
+**Ask yourself:**
+- What is the user actually asking for?
+- What problem are they trying to solve?
+- What are the acceptance criteria?
+
+**If unclear:**
+- Ask clarifying questions
+- Don't assume - verify
+- Reference documentation
+
+### 2. Check Documentation
+
+**Before implementing ANY feature:**
+
+```
+1. Check @docs/product/user-flows.md
+   - What is the expected user journey?
+   - What are the edge cases?
+   - What permissions are required?
+
+2. Check @docs/reference/feature-specifications.md
+   - What are the technical requirements?
+   - What is the input/output schema?
+   - What validations are needed?
+
+3. Check @docs/database/schema.md and @docs/reference/application-inventory.md
+   - What models are involved?
+   - What relationships exist?
+   - Are there any constraints?
+
+4. Check @docs/architecture/project-structure.md
+   - Where should files be created?
+   - What naming conventions apply?
+   - What patterns to follow?
+```
+
+### 3. Analyze Existing Code
+
+**Before creating new code:**
+
+- Look for similar patterns in the codebase
+- Check if utilities/hooks already exist
+- Identify components that can be reused
+- Review how similar features are implemented
+
+### 4. Plan the Implementation
+
+**Break down the task:**
+
+```
+1. What database changes are needed?
+2. What types need to be defined?
+3. What service methods are required?
+4. What API endpoints are needed?
+5. What components need to be built?
+6. What tests should be written?
+```
+
+**Identify dependencies:**
+
+- What needs to be built first?
+- What existing code does this depend on?
+- Are there any blockers?
+
+## Decision Framework
+
+### When to Create vs Reuse
+
+**Create new when:**
+- No similar component exists
+- Existing component can't be extended
+- Requirements significantly differ
+
+**Reuse/extend when:**
+- Similar component exists
+- Can be parameterized with props
+- Follows DRY principle
+
+### When to Ask for Clarification
+
+**Ask if:**
+- Requirements are ambiguous
+- Multiple valid approaches exist
+- Breaking change is required
+- Security implications unclear
+
+**Don't ask if:**
+- Documentation is clear
+- Following established patterns
+- Simple bug fix
+- Obvious from context
+
+### Evaluating Trade-offs
+
+**When choosing between approaches:**
+
+1. **Simplicity vs Flexibility**
+   - Start simple, add complexity only when needed
+   - YAGNI - You Aren't Gonna Need It
+
+2. **Performance vs Maintainability**
+   - Prefer maintainable code
+   - Only optimize after profiling
+
+3. **Consistency vs "Better" Solution**
+   - Prefer consistency with existing patterns
+   - Only deviate if significantly better
+
+## Code Generation Rules
+
+### 1. Type Safety First
+
+```typescript
+// ALWAYS define types
+interface BookingInput {
+  guestName: string;
+  checkInDate: Date;
+}
+
+// NEVER use any
+const booking: any = {}; // ❌
+const booking: Booking = {}; // ✅
+```
+
+### 2. Error Handling
+
+```typescript
+// ALWAYS handle errors
+try {
+  await createBooking(data);
+  toast.success('Booking created');
+} catch (error) {
+  console.error('Failed to create booking:', error);
+  toast.error('Failed to create booking. Please try again.');
+}
+```
+
+### 3. Permission Checks
+
+```typescript
+// ALWAYS check permissions in services
+async createBooking(userId: string, input: BookingInput) {
+  await checkPermission(userId, 'bookings:create', input.propertyId);
+  // ...
+}
+```
+
+### 4. Data Scoping
+
+```typescript
+// ALWAYS scope queries
+const bookings = await db.query.bookings.findMany({
+  where: and(
+    eq(bookings.propertyId, propertyId),
+    eq(bookings.organizationId, orgId), // Scoped!
+    isNull(bookings.deletedAt)
+  ),
+});
+```
+
+### 5. Loading & Error States
+
+```typescript
+// ALWAYS handle loading/error/empty states
+if (isLoading) return <LoadingSpinner />;
+if (error) return <ErrorMessage error={error} />;
+if (!data?.length) return <EmptyState message="No bookings" />;
+
+return <BookingsList bookings={data} />;
+```
+
+## Quality Checklist
+
+Before finalizing code, verify:
+
+### Functionality
+- [ ] Implements the requested feature
+- [ ] Handles edge cases
+- [ ] Has proper error handling
+- [ ] Includes loading states
+
+### Security
+- [ ] Permissions checked
+- [ ] Data properly scoped
+- [ ] Input validated with Zod
+- [ ] No sensitive data exposed
+
+### Code Quality
+- [ ] Follows naming conventions
+- [ ] Uses path aliases
+- [ ] Proper import order
+- [ ] No unused variables
+- [ ] TypeScript strict compliance
+
+### Performance
+- [ ] No N+1 queries
+- [ ] Lists are paginated
+- [ ] Heavy components lazy loaded
+- [ ] Proper caching configured
+
+### Accessibility
+- [ ] Semantic HTML used
+- [ ] ARIA labels where needed
+- [ ] Keyboard navigation works
+- [ ] Focus management correct
+
+## Common Mistakes to Avoid
+
+### 1. Unscoped Queries (Security Issue!)
+
+```typescript
+// ❌ NEVER - Missing organization scope
+const bookings = await db.query.bookings.findMany();
+
+// ✅ ALWAYS - Scoped to organization
+const bookings = await db.query.bookings.findMany({
+  where: eq(bookings.organizationId, userOrgId),
+});
+```
+
+### 2. Missing Permission Checks
+
+```typescript
+// ❌ NEVER - Direct database access without permission check
+async updateBooking(input) {
+  return db.update(bookings).set(input);
+}
+
+// ✅ ALWAYS - Check permission first
+async updateBooking(userId, input) {
+  await checkPermission(userId, 'bookings:update', input.id);
+  return db.update(bookings).set(input);
+}
+```
+
+### 3. Ignoring Loading States
+
+```typescript
+// ❌ NEVER - No loading state
+const { data } = useQuery();
+return <List items={data} />; // Crashes if data undefined!
+
+// ✅ ALWAYS - Handle loading
+const { data, isLoading, error } = useQuery();
+if (isLoading) return <Spinner />;
+if (error) return <Error />;
+return <List items={data} />;
+```
+
+### 4. Using Index as Key
+
+```typescript
+// ❌ NEVER - Index causes bugs with reordering
+{items.map((item, i) => <Item key={i} />)}
+
+// ✅ ALWAYS - Stable unique key
+{items.map((item) => <Item key={item.id} />)}
+```
+
+### 5. Not Validating Input
+
+```typescript
+// ❌ NEVER - Trust client input
+.mutation(async ({ input }) => {
+  await db.insert(bookings).values(input);
+})
+
+// ✅ ALWAYS - Validate with Zod
+.input(bookingSchema) // Validates before handler
+.mutation(async ({ input }) => {
+  await db.insert(bookings).values(input);
+})
+```
+
+## Response Format
+
+When implementing features, structure your response:
+
+```markdown
+## Understanding
+
+Brief summary of what you understand the request to be.
+
+## Approach
+
+1. Step 1: What you'll do first
+2. Step 2: What comes next
+3. ...
+
+## Implementation
+
+[Code with explanations]
+
+## What Was Done
+
+- Created/modified files
+- Key decisions made
+- Any assumptions
+
+## Next Steps (if applicable)
+
+- What the user should do next
+- Any manual steps required
+- Suggestions for improvements
+```
+
+## Remember
+
+1. **Documentation is truth** - Always reference docs
+2. **Patterns over creativity** - Follow existing patterns
+3. **Security is non-negotiable** - Always check permissions
+4. **Users matter** - Friendly error messages, good UX
+5. **Simple is better** - Don't over-engineer
+6. **Test your work** - Verify before completing

@@ -1,0 +1,957 @@
+---
+description: Professional UI/UX design guidelines for creating beautiful, responsive, and performant user interfaces
+globs:
+  - "**/*.tsx"
+  - "**/components/**/*"
+  - "**/app/**/*"
+alwaysApply: false
+---
+
+# UI/UX Design Guidelines for KameOps
+
+## Design Philosophy
+
+Create interfaces that are **professional**, **intuitive**, and **delightful** to use. Every design decision should serve the user's goals while maintaining visual consistency and performance.
+
+### Core Principles
+
+1. **Clarity First**: Users should immediately understand what they can do
+2. **Consistency**: Use consistent patterns, colors, and interactions
+3. **Feedback**: Always communicate system state to users
+4. **Efficiency**: Minimize steps to complete tasks
+5. **Forgiveness**: Allow users to undo and recover from mistakes
+6. **Accessibility**: Design for all users, including those with disabilities
+7. **Theme Support**: ALL UI MUST work in both light and dark modes
+
+## 🌓 Theme Support (REQUIRED)
+
+### CRITICAL: All Components Must Support Both Themes
+
+Every page, component, screen, section, and UI element created for KameOps **MUST** support both light and dark themes. This is non-negotiable.
+
+### Theme Implementation Rules
+
+```typescript
+// ✅ REQUIRED - Use CSS variables that automatically adapt
+<div className="bg-background text-foreground">
+<div className="border-border bg-card text-card-foreground">
+<p className="text-muted-foreground">
+<button className="bg-primary text-primary-foreground">
+
+// ✅ GOOD - Use dark: prefix for specific overrides when needed
+<div className="bg-slate-50 dark:bg-slate-900">
+<p className="text-slate-900 dark:text-slate-100">
+<div className="shadow-md dark:shadow-slate-800/50">
+
+// ❌ FORBIDDEN - Hardcoded colors without theme variants
+<div className="bg-white text-black">
+<div className="bg-gray-100">
+<div style={{ backgroundColor: '#ffffff', color: '#000000' }}>
+```
+
+### Semantic Color Classes (Always Use These)
+
+| Purpose | Light-Safe Class | Notes |
+|---------|-----------------|-------|
+| Page background | `bg-background` | Adapts to light/dark |
+| Card background | `bg-card` | Slightly elevated surface |
+| Primary text | `text-foreground` | Main content |
+| Secondary text | `text-muted-foreground` | Less emphasis |
+| Borders | `border-border` | Subtle borders |
+| Primary actions | `bg-primary text-primary-foreground` | Brand color |
+| Destructive | `bg-destructive text-destructive-foreground` | Danger/delete |
+| Muted surfaces | `bg-muted text-muted-foreground` | Subtle backgrounds |
+| Accent | `bg-accent text-accent-foreground` | Highlights |
+
+### Theme Testing Checklist (Before Every Component PR)
+
+- [ ] Component renders correctly in **light mode**
+- [ ] Component renders correctly in **dark mode**
+- [ ] Text is readable in both themes (contrast ratio ≥ 4.5:1)
+- [ ] Borders are visible in both themes
+- [ ] Icons and SVGs adapt to theme (use `currentColor`)
+- [ ] Form inputs have proper backgrounds and borders
+- [ ] Focus rings are visible in both themes
+- [ ] Shadows look appropriate in both themes
+- [ ] No hardcoded hex colors without `dark:` variants
+
+### Common Theme Patterns
+
+```typescript
+// Card with proper theme support
+<Card className="bg-card border-border">
+  <CardHeader>
+    <CardTitle className="text-card-foreground">Title</CardTitle>
+    <CardDescription className="text-muted-foreground">Description</CardDescription>
+  </CardHeader>
+  <CardContent>
+    <p className="text-foreground">Content here</p>
+  </CardContent>
+</Card>
+
+// Badge with theme support
+<Badge variant="secondary" className="bg-secondary text-secondary-foreground">
+  Status
+</Badge>
+
+// Input with theme support
+<Input className="bg-background border-input text-foreground placeholder:text-muted-foreground" />
+
+// Icon that adapts to theme
+<ChevronRight className="h-4 w-4 text-muted-foreground" />
+<Settings className="h-5 w-5" /> {/* Inherits color from parent */}
+```
+
+### Dark Mode Specific Considerations
+
+```typescript
+// Shadows need adjustment in dark mode
+<div className="shadow-lg dark:shadow-2xl dark:shadow-black/25">
+
+// Invert images if needed (rare)
+<img className="dark:invert" src="/logo.svg" />
+
+// Adjust opacity for overlays
+<div className="bg-black/50 dark:bg-black/70">
+
+// Ring colors
+<button className="focus:ring-2 focus:ring-ring focus:ring-offset-background">
+```
+
+## Visual Design System
+
+### Color Palette
+
+Use CSS variables for consistent theming:
+
+```css
+/* globals.css */
+:root {
+  /* Primary Brand */
+  --primary: 222.2 47.4% 11.2%;
+  --primary-foreground: 210 40% 98%;
+  
+  /* Neutral Gray Scale */
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  
+  /* Semantic Colors */
+  --success: 142.1 76.2% 36.3%;
+  --success-foreground: 355.7 100% 97.3%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 48 96% 89%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+  
+  /* Borders & Rings */
+  --border: 214.3 31.8% 91.4%;
+  --ring: 222.2 84% 4.9%;
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+}
+
+.dark {
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  /* ... dark mode overrides */
+}
+```
+
+### Typography Scale
+
+```typescript
+// Consistent typography system
+const typography = {
+  // Headings
+  h1: 'text-4xl font-bold tracking-tight lg:text-5xl',
+  h2: 'text-3xl font-semibold tracking-tight',
+  h3: 'text-2xl font-semibold tracking-tight',
+  h4: 'text-xl font-semibold tracking-tight',
+  
+  // Body
+  large: 'text-lg font-medium',
+  body: 'text-base leading-7',
+  small: 'text-sm text-muted-foreground',
+  muted: 'text-sm text-muted-foreground',
+  
+  // Labels
+  label: 'text-sm font-medium leading-none',
+};
+
+// Usage
+<h1 className="text-4xl font-bold tracking-tight lg:text-5xl">
+  Dashboard
+</h1>
+<p className="text-muted-foreground">
+  Manage your properties and bookings
+</p>
+```
+
+### Spacing System
+
+Use consistent spacing with Tailwind's scale:
+
+```typescript
+// Spacing Guidelines
+const spacing = {
+  // Component Internal Padding
+  card: 'p-6',           // 24px
+  cardCompact: 'p-4',    // 16px
+  section: 'p-8',        // 32px
+  
+  // Gaps Between Elements
+  tight: 'gap-2',        // 8px - Related items
+  normal: 'gap-4',       // 16px - Standard gap
+  relaxed: 'gap-6',      // 24px - Section gaps
+  loose: 'gap-8',        // 32px - Major sections
+  
+  // Stack Spacing (vertical)
+  stackTight: 'space-y-2',
+  stackNormal: 'space-y-4',
+  stackRelaxed: 'space-y-6',
+  
+  // Page Margins
+  pageX: 'px-4 sm:px-6 lg:px-8',
+  pageY: 'py-6 sm:py-8 lg:py-10',
+};
+```
+
+## Responsive Design
+
+### Mobile-First Approach
+
+Always design for mobile first, then enhance for larger screens:
+
+```typescript
+// ✅ Good - Mobile-first
+<div className="
+  grid 
+  grid-cols-1         /* Mobile: 1 column */
+  sm:grid-cols-2      /* Tablet: 2 columns */
+  lg:grid-cols-3      /* Desktop: 3 columns */
+  xl:grid-cols-4      /* Large: 4 columns */
+  gap-4
+">
+  {properties.map(property => (
+    <PropertyCard key={property.id} property={property} />
+  ))}
+</div>
+
+// ❌ Bad - Desktop-first (harder to maintain)
+<div className="grid grid-cols-4 lg:grid-cols-3 md:grid-cols-2 sm:grid-cols-1">
+```
+
+### Breakpoint System
+
+```typescript
+// Tailwind breakpoints
+const breakpoints = {
+  sm: '640px',   // Small devices (landscape phones)
+  md: '768px',   // Medium devices (tablets)
+  lg: '1024px',  // Large devices (desktops)
+  xl: '1280px',  // Extra large devices
+  '2xl': '1536px', // 2X large devices
+};
+
+// Container with responsive padding
+<div className="
+  container 
+  mx-auto 
+  px-4 sm:px-6 lg:px-8
+  max-w-7xl
+">
+  {children}
+</div>
+```
+
+### Responsive Components
+
+```typescript
+// Responsive Card Layout
+export function PropertyGrid({ properties }: Props) {
+  return (
+    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      {properties.map(property => (
+        <PropertyCard key={property.id} property={property} />
+      ))}
+    </div>
+  );
+}
+
+// Responsive Table → Cards on Mobile
+export function BookingsResponsive({ bookings }: Props) {
+  return (
+    <>
+      {/* Mobile: Cards */}
+      <div className="space-y-4 lg:hidden">
+        {bookings.map(booking => (
+          <BookingCard key={booking.id} booking={booking} />
+        ))}
+      </div>
+      
+      {/* Desktop: Table */}
+      <div className="hidden lg:block">
+        <BookingsTable bookings={bookings} />
+      </div>
+    </>
+  );
+}
+
+// Responsive Navigation
+export function Header() {
+  return (
+    <header className="sticky top-0 z-50 bg-background/95 backdrop-blur">
+      <nav className="container flex h-16 items-center justify-between">
+        <Logo />
+        
+        {/* Desktop Navigation */}
+        <div className="hidden md:flex items-center gap-6">
+          <NavLinks />
+          <UserMenu />
+        </div>
+        
+        {/* Mobile Menu Button */}
+        <MobileMenuButton className="md:hidden" />
+      </nav>
+    </header>
+  );
+}
+```
+
+### Touch-Friendly Design
+
+```typescript
+// Minimum touch target size: 44x44px
+<button className="
+  min-h-[44px] min-w-[44px]
+  p-3
+  touch-manipulation
+">
+  <Icon className="h-5 w-5" />
+</button>
+
+// Swipeable actions on mobile
+<div className="
+  touch-pan-y
+  overflow-x-auto
+  scrollbar-hide
+  -mx-4 px-4
+  snap-x snap-mandatory
+">
+  {items.map(item => (
+    <div key={item.id} className="snap-start">
+      <ItemCard item={item} />
+    </div>
+  ))}
+</div>
+```
+
+## Performance-Optimized UI
+
+### Skeleton Loading States
+
+```typescript
+// Generic skeleton component
+export function Skeleton({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        'animate-pulse rounded-md bg-muted',
+        className
+      )}
+    />
+  );
+}
+
+// Card skeleton
+export function CardSkeleton() {
+  return (
+    <div className="rounded-lg border p-6 space-y-4">
+      <Skeleton className="h-6 w-1/2" />
+      <Skeleton className="h-4 w-full" />
+      <Skeleton className="h-4 w-3/4" />
+      <div className="flex gap-2">
+        <Skeleton className="h-8 w-20" />
+        <Skeleton className="h-8 w-20" />
+      </div>
+    </div>
+  );
+}
+
+// Table skeleton
+export function TableSkeleton({ rows = 5 }: { rows?: number }) {
+  return (
+    <div className="space-y-3">
+      <Skeleton className="h-10 w-full" /> {/* Header */}
+      {Array.from({ length: rows }).map((_, i) => (
+        <Skeleton key={i} className="h-12 w-full" />
+      ))}
+    </div>
+  );
+}
+
+// Usage with Suspense
+<Suspense fallback={<CardSkeleton />}>
+  <BookingCard bookingId={id} />
+</Suspense>
+```
+
+### Optimized Animations
+
+```typescript
+// Use CSS transforms for smooth 60fps animations
+const smoothTransition = 'transition-transform duration-200 ease-out';
+
+// Hover effects
+<div className="
+  transition-all duration-200 ease-in-out
+  hover:shadow-lg hover:scale-[1.02]
+  active:scale-[0.98]
+">
+
+// Use will-change sparingly for complex animations
+<div className="will-change-transform animate-slide-in">
+
+// Reduced motion support
+<style jsx global>{`
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+`}</style>
+
+// Framer Motion with reduced motion
+import { motion, useReducedMotion } from 'framer-motion';
+
+export function AnimatedCard({ children }) {
+  const shouldReduceMotion = useReducedMotion();
+  
+  return (
+    <motion.div
+      initial={shouldReduceMotion ? false : { opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+```
+
+### Virtualized Lists
+
+```typescript
+import { useVirtualizer } from '@tanstack/react-virtual';
+
+export function VirtualizedList({ items }: { items: Item[] }) {
+  const parentRef = useRef<HTMLDivElement>(null);
+  
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 80, // Estimated row height
+    overscan: 5, // Render 5 extra items for smooth scrolling
+  });
+
+  return (
+    <div
+      ref={parentRef}
+      className="h-[600px] overflow-auto"
+    >
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        {virtualizer.getVirtualItems().map((virtualItem) => (
+          <div
+            key={virtualItem.key}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: `${virtualItem.size}px`,
+              transform: `translateY(${virtualItem.start}px)`,
+            }}
+          >
+            <ItemCard item={items[virtualItem.index]} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+## Micro-interactions
+
+### Button Interactions
+
+```typescript
+// Interactive button with feedback
+export function InteractiveButton({ children, ...props }: ButtonProps) {
+  return (
+    <button
+      className="
+        relative overflow-hidden
+        transition-all duration-200
+        active:scale-95
+        hover:shadow-md
+        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+        disabled:opacity-50 disabled:cursor-not-allowed
+      "
+      {...props}
+    >
+      {/* Ripple effect on click */}
+      <span className="absolute inset-0 overflow-hidden rounded-md">
+        <span className="ripple" />
+      </span>
+      {children}
+    </button>
+  );
+}
+
+// Loading button state
+<Button disabled={isLoading}>
+  {isLoading ? (
+    <>
+      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+      Saving...
+    </>
+  ) : (
+    'Save Changes'
+  )}
+</Button>
+```
+
+### Toast Notifications
+
+```typescript
+import { toast } from 'sonner';
+
+// Success with action
+toast.success('Booking created successfully', {
+  description: `Booking #${bookingNumber} has been created`,
+  action: {
+    label: 'View',
+    onClick: () => router.push(`/bookings/${id}`),
+  },
+});
+
+// Error with retry
+toast.error('Failed to save changes', {
+  description: 'Please check your connection and try again',
+  action: {
+    label: 'Retry',
+    onClick: () => mutation.mutate(data),
+  },
+});
+
+// Loading state
+const loadingToast = toast.loading('Creating booking...');
+try {
+  await createBooking(data);
+  toast.success('Booking created!', { id: loadingToast });
+} catch (error) {
+  toast.error('Failed to create booking', { id: loadingToast });
+}
+```
+
+### Form Feedback
+
+```typescript
+// Input with validation feedback
+export function FormInput({ error, success, ...props }: Props) {
+  return (
+    <div className="space-y-1">
+      <Input
+        className={cn(
+          error && 'border-destructive focus-visible:ring-destructive',
+          success && 'border-success focus-visible:ring-success'
+        )}
+        {...props}
+      />
+      {error && (
+        <p className="text-sm text-destructive flex items-center gap-1">
+          <AlertCircle className="h-3 w-3" />
+          {error}
+        </p>
+      )}
+      {success && (
+        <p className="text-sm text-success flex items-center gap-1">
+          <CheckCircle className="h-3 w-3" />
+          {success}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Character counter
+<div className="relative">
+  <Textarea
+    value={value}
+    onChange={(e) => setValue(e.target.value)}
+    maxLength={500}
+  />
+  <span className="absolute bottom-2 right-2 text-xs text-muted-foreground">
+    {value.length}/500
+  </span>
+</div>
+```
+
+## Professional UI Patterns
+
+### Dashboard Layout
+
+```typescript
+export function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-muted/30">
+      {/* Fixed Header */}
+      <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container flex h-16 items-center justify-between">
+          <div className="flex items-center gap-4">
+            <SidebarTrigger />
+            <Breadcrumbs />
+          </div>
+          <div className="flex items-center gap-4">
+            <SearchCommand />
+            <NotificationBell />
+            <UserMenu />
+          </div>
+        </div>
+      </header>
+      
+      <div className="flex">
+        {/* Collapsible Sidebar */}
+        <aside className="hidden lg:flex w-64 flex-col border-r bg-background">
+          <Navigation />
+        </aside>
+        
+        {/* Main Content */}
+        <main className="flex-1 p-6 lg:p-8">
+          <div className="mx-auto max-w-6xl">
+            {children}
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
+```
+
+### Card Designs
+
+```typescript
+// Stats Card
+export function StatsCard({ title, value, change, icon: Icon }: Props) {
+  const isPositive = change > 0;
+  
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">
+          {title}
+        </CardTitle>
+        <Icon className="h-4 w-4 text-muted-foreground" />
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold">{value}</div>
+        <p className={cn(
+          'text-xs flex items-center gap-1',
+          isPositive ? 'text-success' : 'text-destructive'
+        )}>
+          {isPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+          {Math.abs(change)}% from last month
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Interactive List Card
+export function BookingCard({ booking, onSelect }: Props) {
+  return (
+    <Card 
+      className="
+        cursor-pointer
+        transition-all duration-200
+        hover:shadow-md hover:border-primary/50
+        focus-within:ring-2 focus-within:ring-ring
+      "
+      onClick={() => onSelect(booking.id)}
+    >
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between">
+          <div className="space-y-1">
+            <p className="font-medium">{booking.guestName}</p>
+            <p className="text-sm text-muted-foreground">
+              {format(booking.checkInDate, 'MMM d')} - {format(booking.checkOutDate, 'MMM d')}
+            </p>
+          </div>
+          <Badge variant={getStatusVariant(booking.status)}>
+            {booking.status}
+          </Badge>
+        </div>
+        <div className="mt-4 flex items-center gap-4 text-sm text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <Users className="h-4 w-4" />
+            {booking.guestCount} guests
+          </span>
+          <span className="flex items-center gap-1">
+            <Banknote className="h-4 w-4" />
+            {formatCurrency(booking.totalAmount)}
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+```
+
+### Empty States
+
+```typescript
+export function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  action,
+}: EmptyStateProps) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="rounded-full bg-muted p-4 mb-4">
+        <Icon className="h-8 w-8 text-muted-foreground" />
+      </div>
+      <h3 className="text-lg font-semibold">{title}</h3>
+      <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+        {description}
+      </p>
+      {action && (
+        <Button className="mt-4" onClick={action.onClick}>
+          {action.label}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// Usage
+<EmptyState
+  icon={Calendar}
+  title="No bookings yet"
+  description="Create your first booking to start managing your property."
+  action={{
+    label: 'Create Booking',
+    onClick: () => setShowCreateDialog(true),
+  }}
+/>
+```
+
+### Error States
+
+```typescript
+export function ErrorState({ 
+  error, 
+  onRetry 
+}: { 
+  error: Error; 
+  onRetry?: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="rounded-full bg-destructive/10 p-4 mb-4">
+        <AlertTriangle className="h-8 w-8 text-destructive" />
+      </div>
+      <h3 className="text-lg font-semibold">Something went wrong</h3>
+      <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+        {error.message || 'An unexpected error occurred. Please try again.'}
+      </p>
+      {onRetry && (
+        <Button variant="outline" className="mt-4" onClick={onRetry}>
+          <RefreshCw className="mr-2 h-4 w-4" />
+          Try Again
+        </Button>
+      )}
+    </div>
+  );
+}
+```
+
+## Page Transitions
+
+```typescript
+// Smooth page transitions with Framer Motion
+import { motion, AnimatePresence } from 'framer-motion';
+
+const pageVariants = {
+  initial: { opacity: 0, y: 20 },
+  enter: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -20 },
+};
+
+export function PageTransition({ children }: { children: React.ReactNode }) {
+  return (
+    <motion.div
+      initial="initial"
+      animate="enter"
+      exit="exit"
+      variants={pageVariants}
+      transition={{ duration: 0.3, ease: 'easeInOut' }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+// Staggered list animation
+export function StaggeredList({ items }: { items: Item[] }) {
+  return (
+    <motion.ul
+      initial="hidden"
+      animate="visible"
+      variants={{
+        visible: {
+          transition: {
+            staggerChildren: 0.1,
+          },
+        },
+      }}
+    >
+      {items.map((item) => (
+        <motion.li
+          key={item.id}
+          variants={{
+            hidden: { opacity: 0, x: -20 },
+            visible: { opacity: 1, x: 0 },
+          }}
+        >
+          <ItemCard item={item} />
+        </motion.li>
+      ))}
+    </motion.ul>
+  );
+}
+```
+
+## Accessibility Checklist
+
+### Color Contrast
+
+```typescript
+// Ensure sufficient contrast ratios (WCAG 2.1 AA)
+// Normal text: 4.5:1 minimum
+// Large text: 3:1 minimum
+
+// Good - High contrast
+<p className="text-foreground">Main content</p>
+<p className="text-muted-foreground">Secondary content</p>
+
+// Avoid low contrast text
+// ❌ <p className="text-gray-300">Hard to read</p>
+```
+
+### Focus Management
+
+```typescript
+// Visible focus indicators
+<button className="
+  focus-visible:outline-none 
+  focus-visible:ring-2 
+  focus-visible:ring-ring 
+  focus-visible:ring-offset-2
+">
+
+// Skip to main content
+<a
+  href="#main-content"
+  className="
+    sr-only focus:not-sr-only
+    focus:absolute focus:top-4 focus:left-4
+    focus:z-50 focus:p-4 focus:bg-background
+  "
+>
+  Skip to main content
+</a>
+
+// Focus trap in modals
+import { FocusTrap } from '@headlessui/react';
+
+<Dialog>
+  <FocusTrap>
+    <DialogContent>...</DialogContent>
+  </FocusTrap>
+</Dialog>
+```
+
+### Screen Reader Support
+
+```typescript
+// Announce dynamic content
+import { useEffect } from 'react';
+
+export function useAnnounce() {
+  const announce = (message: string) => {
+    const el = document.createElement('div');
+    el.setAttribute('aria-live', 'polite');
+    el.setAttribute('aria-atomic', 'true');
+    el.className = 'sr-only';
+    el.textContent = message;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1000);
+  };
+  
+  return announce;
+}
+
+// Usage
+const announce = useAnnounce();
+const handleSave = async () => {
+  await save();
+  announce('Changes saved successfully');
+};
+```
+
+## Design Checklist
+
+Before shipping UI, verify:
+
+### Theme Support (CRITICAL - Check First!)
+- [ ] **Light mode**: Renders correctly with proper colors
+- [ ] **Dark mode**: Renders correctly with proper colors
+- [ ] **No hardcoded colors**: Uses CSS variables or dark: variants
+- [ ] **Contrast ratios**: Text readable in BOTH themes (4.5:1)
+
+### Responsive Design
+- [ ] **Responsive**: Works on mobile (320px) to desktop (1920px+)
+- [ ] **Touch-friendly**: Touch targets ≥ 44x44px
+
+### States & Feedback
+- [ ] **Loading states**: Skeleton loaders for async content
+- [ ] **Error states**: Clear, actionable error messages
+- [ ] **Empty states**: Helpful guidance when no data
+- [ ] **Feedback**: User actions have immediate feedback
+
+### Accessibility
+- [ ] **Keyboard navigation**: All interactive elements focusable
+- [ ] **Focus indicators**: Visible focus states in both themes
+- [ ] **Reduced motion**: Respects `prefers-reduced-motion`
+- [ ] **Semantic HTML**: Proper heading hierarchy and landmarks
+
+### Visual Quality
+- [ ] **Performance**: No layout shifts (CLS), fast interactions
+- [ ] **Consistent spacing**: Uses design system spacing scale
+- [ ] **Visual hierarchy**: Clear content structure
+- [ ] **Shadows work**: Shadows visible and appropriate in both themes

@@ -1,0 +1,318 @@
+---
+description: Technology stack rules for Next.js 16+, React 19+, TypeScript, and Bun
+globs:
+  - '**/*.ts'
+  - '**/*.tsx'
+  - '**/*.js'
+  - '**/*.jsx'
+alwaysApply: true
+---
+
+# Tech Stack Rules
+
+## Runtime & Package Manager: Bun
+
+- Use `bun` for all package management commands
+- Use `bun run` for scripts
+- Configure via `bunfig.toml`
+
+```bash
+# Package management
+bun install
+bun add <package>
+bun remove <package>
+
+# Scripts
+bun run dev
+bun run build
+bun run test
+```
+
+## Framework: Next.js 16+ (App Router)
+
+### App Router Patterns
+
+```typescript
+// Route structure
+app/
+├── (auth)/           // Route group - no auth layout
+├── (dashboard)/      // Route group - dashboard layout
+├── api/              // API routes
+└── page.tsx          // Root page
+
+// Page component (Server Component by default)
+export default function Page() {
+  return <div>Content</div>;
+}
+
+// Async page with data fetching
+export default async function Page() {
+  const data = await fetchData();
+  return <div>{data}</div>;
+}
+```
+
+### Route Handlers
+
+```typescript
+// app/api/route.ts
+import { NextResponse } from 'next/server';
+
+export async function GET(request: Request) {
+  return NextResponse.json({ data: 'value' });
+}
+
+export async function POST(request: Request) {
+  const body = await request.json();
+  return NextResponse.json({ success: true });
+}
+```
+
+### Metadata
+
+```typescript
+// Static metadata
+export const metadata = {
+  title: 'Page Title',
+  description: 'Page description',
+};
+
+// Dynamic metadata
+export async function generateMetadata({ params }) {
+  return {
+    title: `Property ${params.id}`,
+  };
+}
+```
+
+### Loading & Error States
+
+```typescript
+// loading.tsx - Shows during page load
+export default function Loading() {
+  return <LoadingSpinner />;
+}
+
+// error.tsx - Error boundary
+'use client';
+export default function Error({ error, reset }) {
+  return (
+    <div>
+      <h2>Something went wrong!</h2>
+      <button onClick={() => reset()}>Try again</button>
+    </div>
+  );
+}
+
+// not-found.tsx - 404 page
+export default function NotFound() {
+  return <div>Page not found</div>;
+}
+```
+
+## React 19+ Features
+
+### Server Components (Default)
+
+```typescript
+// Server Component - async, no 'use client'
+export default async function PropertyList() {
+  const properties = await db.query.properties.findMany();
+  return <ul>{properties.map(p => <li key={p.id}>{p.name}</li>)}</ul>;
+}
+```
+
+### Client Components
+
+```typescript
+'use client';
+
+import { useState } from 'react';
+
+export function Counter() {
+  const [count, setCount] = useState(0);
+  return <button onClick={() => setCount(c => c + 1)}>{count}</button>;
+}
+```
+
+### React 19 `use` Hook
+
+```typescript
+'use client';
+
+import { use } from 'react';
+
+export function UserProfile({ userPromise }) {
+  const user = use(userPromise);
+  return <div>{user.name}</div>;
+}
+```
+
+### React 19 `ref` as Prop
+
+```typescript
+// No more forwardRef needed in React 19
+interface InputProps {
+  ref?: React.Ref<HTMLInputElement>;
+  value: string;
+  onChange: (value: string) => void;
+}
+
+export function Input({ ref, value, onChange }: InputProps) {
+  return <input ref={ref} value={value} onChange={e => onChange(e.target.value)} />;
+}
+```
+
+### Suspense Boundaries
+
+```typescript
+import { Suspense } from 'react';
+
+export default function Page() {
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <AsyncComponent />
+    </Suspense>
+  );
+}
+```
+
+## TypeScript Best Practices
+
+### Strict Types
+
+```typescript
+// tsconfig.json - Strict mode enabled
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true
+  }
+}
+```
+
+### Type Definitions
+
+```typescript
+// Use interface for object shapes
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+// Use type for unions/intersections
+type Status = 'pending' | 'active' | 'completed';
+type UserWithStatus = User & { status: Status };
+
+// Avoid enums, use const objects
+const BOOKING_STATUS = {
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  CANCELLED: 'CANCELLED',
+} as const;
+
+type BookingStatus = (typeof BOOKING_STATUS)[keyof typeof BOOKING_STATUS];
+```
+
+### Generic Types
+
+```typescript
+// API response wrapper
+interface ApiResponse<T> {
+  data: T;
+  pagination?: {
+    page: number;
+    limit: number;
+    total: number;
+  };
+}
+
+// Usage
+type BookingsResponse = ApiResponse<Booking[]>;
+```
+
+### Utility Types
+
+```typescript
+// Use built-in utility types
+type PartialBooking = Partial<Booking>;
+type RequiredBooking = Required<Booking>;
+type BookingKeys = keyof Booking;
+type BookingNameOnly = Pick<Booking, 'guestName' | 'bookingNumber'>;
+type BookingWithoutId = Omit<Booking, 'id'>;
+```
+
+## Import Organization
+
+Always organize imports in this order:
+
+```typescript
+// 1. React and Next.js
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useParams } from 'next/navigation';
+import Image from 'next/image';
+import Link from 'next/link';
+
+// 2. Third-party libraries
+import { toast } from 'sonner';
+import { format } from 'date-fns';
+
+// 3. UI components (shadcn/ui)
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Dialog } from '@/components/ui/dialog';
+
+// 4. Feature components
+import { BookingCard } from '@/components/bookings/BookingCard';
+import { PropertyList } from '@/components/properties/PropertyList';
+
+// 5. Hooks and utilities
+import { api } from '@/lib/api/client';
+import { useBookings } from '@/lib/hooks/use-bookings';
+import { formatCurrency } from '@/lib/utils/format';
+
+// 6. Types (always with 'type' keyword)
+import { type Booking, type Property } from '@/types/models';
+```
+
+## Path Aliases
+
+Always use path aliases - never relative imports with `../`:
+
+```typescript
+// ✅ Good
+import { Button } from '@/components/ui/button';
+import { api } from '@/lib/api/client';
+import { type Booking } from '@/types/models';
+
+// ❌ Bad
+import { Button } from '../../../components/ui/button';
+import { api } from '../../lib/api/client';
+```
+
+## Environment Variables
+
+```typescript
+// lib/env.ts - Validated environment variables
+import { z } from 'zod';
+
+const envSchema = z.object({
+  DATABASE_URL: z.string().url(),
+  NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  SUPABASE_ANON_KEY: z.string().min(1),
+  RESEND_API_KEY: z.string(),
+  SUPABASE_STORAGE_BUCKET_PUBLIC: z.string(),
+  // Add more as needed
+});
+
+export const env = envSchema.parse(process.env);
+```
+
+## React Compiler (Next.js 16+)
+
+- React Compiler is built into Next.js 16+
+- Automatic memoization - avoid manual `useMemo`, `useCallback`, `React.memo`
+- Only use manual optimization if profiling shows issues

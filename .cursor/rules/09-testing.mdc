@@ -1,0 +1,560 @@
+---
+description: Testing patterns with Vitest for unit tests and Playwright for E2E tests
+globs:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.spec.ts"
+  - "**/*.spec.tsx"
+  - "**/tests/**/*"
+  - "**/__tests__/**/*"
+---
+
+# Testing Rules
+
+## Testing Stack
+
+| Type | Tool | Purpose |
+|------|------|---------|
+| Unit Tests | Vitest | Functions, hooks, utils |
+| Component Tests | Vitest + Testing Library | React components |
+| Integration Tests | Vitest | API routes, services |
+| E2E Tests | Playwright | Full user flows |
+
+## Test File Organization
+
+```
+apps/web/
+├── __tests__/
+│   ├── unit/
+│   │   ├── utils/
+│   │   │   └── format-currency.test.ts
+│   │   ├── hooks/
+│   │   │   └── use-bookings.test.ts
+│   │   └── services/
+│   │       └── booking.service.test.ts
+│   ├── integration/
+│   │   └── api/
+│   │       └── bookings.test.ts
+│   └── e2e/
+│       ├── auth.spec.ts
+│       ├── booking-flow.spec.ts
+│       └── form-builder.spec.ts
+├── vitest.config.ts
+└── playwright.config.ts
+```
+
+## Vitest Configuration
+
+```typescript
+// vitest.config.ts
+import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react';
+import path from 'path';
+
+export default defineConfig({
+  plugins: [react()],
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./vitest.setup.ts'],
+    include: ['**/*.test.{ts,tsx}'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html'],
+      exclude: ['node_modules/', '**/*.d.ts', '**/*.config.*'],
+    },
+  },
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+});
+```
+
+```typescript
+// vitest.setup.ts
+import '@testing-library/jest-dom';
+import { vi } from 'vitest';
+
+// Mock next/navigation
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    back: vi.fn(),
+  }),
+  useParams: () => ({}),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => '/',
+}));
+
+// Mock tRPC
+vi.mock('@/lib/api/client', () => ({
+  api: {
+    bookings: {
+      list: { useQuery: vi.fn() },
+      create: { useMutation: vi.fn() },
+    },
+    useUtils: vi.fn(() => ({
+      bookings: {
+        list: {
+          invalidate: vi.fn(),
+          setData: vi.fn(),
+        },
+      },
+    })),
+  },
+}));
+```
+
+## Unit Tests
+
+### Testing Utility Functions
+
+```typescript
+// __tests__/unit/utils/format-currency.test.ts
+import { describe, it, expect } from 'vitest';
+import { formatCurrency } from '@/lib/utils/format';
+
+describe('formatCurrency', () => {
+  it('formats PHP currency correctly', () => {
+    expect(formatCurrency(1000, 'PHP')).toBe('₱1,000.00');
+  });
+
+  it('formats with decimals', () => {
+    expect(formatCurrency(1234.56, 'PHP')).toBe('₱1,234.56');
+  });
+
+  it('handles zero values', () => {
+    expect(formatCurrency(0, 'PHP')).toBe('₱0.00');
+  });
+
+  it('handles negative values', () => {
+    expect(formatCurrency(-500, 'PHP')).toBe('-₱500.00');
+  });
+
+  it('handles large numbers', () => {
+    expect(formatCurrency(1000000, 'PHP')).toBe('₱1,000,000.00');
+  });
+});
+```
+
+### Testing Date Utilities
+
+```typescript
+// __tests__/unit/utils/date.test.ts
+import { describe, it, expect } from 'vitest';
+import { calculateNights, isDateAvailable } from '@/lib/utils/date';
+
+describe('calculateNights', () => {
+  it('calculates correct number of nights', () => {
+    const checkIn = new Date('2025-01-15');
+    const checkOut = new Date('2025-01-20');
+    expect(calculateNights(checkIn, checkOut)).toBe(5);
+  });
+
+  it('returns 0 for same day', () => {
+    const date = new Date('2025-01-15');
+    expect(calculateNights(date, date)).toBe(0);
+  });
+
+  it('handles month boundaries', () => {
+    const checkIn = new Date('2025-01-30');
+    const checkOut = new Date('2025-02-02');
+    expect(calculateNights(checkIn, checkOut)).toBe(3);
+  });
+});
+```
+
+### Testing Custom Hooks
+
+```typescript
+// __tests__/unit/hooks/use-bookings.test.ts
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { renderHook, waitFor } from '@testing-library/react';
+import { useBookings } from '@/lib/hooks/use-bookings';
+import { api } from '@/lib/api/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+// Wrapper with providers
+const createWrapper = () => {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+    },
+  });
+  return ({ children }) => (
+    <QueryClientProvider client={queryClient}>
+      {children}
+    </QueryClientProvider>
+  );
+};
+
+describe('useBookings', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns loading state initially', () => {
+    vi.mocked(api.bookings.list.useQuery).mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+    } as any);
+
+    const { result } = renderHook(() => useBookings({ propertyId: 'prop-123' }), {
+      wrapper: createWrapper(),
+    });
+
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.bookings).toEqual([]);
+  });
+
+  it('returns bookings when loaded', () => {
+    const mockBookings = [
+      { id: '1', guestName: 'John' },
+      { id: '2', guestName: 'Jane' },
+    ];
+
+    vi.mocked(api.bookings.list.useQuery).mockReturnValue({
+      data: { data: mockBookings, pagination: { total: 2 } },
+      isLoading: false,
+      error: null,
+    } as any);
+
+    const { result } = renderHook(() => useBookings({ propertyId: 'prop-123' }), {
+      wrapper: createWrapper(),
+    });
+
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.bookings).toEqual(mockBookings);
+  });
+});
+```
+
+## Component Tests
+
+```typescript
+// __tests__/unit/components/BookingCard.test.tsx
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { BookingCard } from '@/components/bookings/BookingCard';
+
+const mockBooking = {
+  id: '1',
+  bookingNumber: 'BK-2025-0001',
+  guestName: 'John Doe',
+  guestEmail: 'john@example.com',
+  status: 'PENDING_REVIEW',
+  checkInDate: new Date('2025-01-15'),
+  checkOutDate: new Date('2025-01-20'),
+  nights: 5,
+  payments: [{ amount: 15000 }],
+};
+
+describe('BookingCard', () => {
+  it('renders booking information', () => {
+    render(<BookingCard booking={mockBooking} />);
+
+    expect(screen.getByText('BK-2025-0001')).toBeInTheDocument();
+    expect(screen.getByText('John Doe')).toBeInTheDocument();
+    expect(screen.getByText('PENDING_REVIEW')).toBeInTheDocument();
+  });
+
+  it('calls onView when view button is clicked', () => {
+    const onView = vi.fn();
+    render(<BookingCard booking={mockBooking} onView={onView} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /view/i }));
+
+    expect(onView).toHaveBeenCalledWith('1');
+  });
+
+  it('displays correct status badge color', () => {
+    render(<BookingCard booking={mockBooking} />);
+
+    const badge = screen.getByText('PENDING_REVIEW');
+    expect(badge).toHaveClass('bg-yellow'); // Or appropriate class
+  });
+
+  it('calculates and displays total amount', () => {
+    render(<BookingCard booking={mockBooking} />);
+
+    expect(screen.getByText('₱15,000.00')).toBeInTheDocument();
+  });
+});
+```
+
+## Service Tests
+
+```typescript
+// __tests__/integration/services/booking.service.test.ts
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { bookingService } from '@/server/services/booking.service';
+import { db } from '@/lib/db';
+import { bookings } from '@/lib/db/schema';
+
+// Mock database
+vi.mock('@/lib/db', () => ({
+  db: {
+    query: {
+      bookings: {
+        findMany: vi.fn(),
+        findFirst: vi.fn(),
+      },
+    },
+    insert: vi.fn(() => ({
+      values: vi.fn(() => ({
+        returning: vi.fn(),
+      })),
+    })),
+    transaction: vi.fn((callback) => callback(db)),
+  },
+}));
+
+describe('bookingService', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('getBookings', () => {
+    it('returns paginated bookings', async () => {
+      const mockBookings = [
+        { id: '1', guestName: 'John' },
+        { id: '2', guestName: 'Jane' },
+      ];
+
+      vi.mocked(db.query.bookings.findMany).mockResolvedValue(mockBookings);
+
+      const result = await bookingService.getBookings('user-1', {
+        propertyId: 'prop-1',
+        page: 1,
+        limit: 20,
+        sortBy: 'createdAt',
+        sortOrder: 'desc',
+      });
+
+      expect(result.data).toEqual(mockBookings);
+      expect(db.query.bookings.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          limit: 20,
+          offset: 0,
+        })
+      );
+    });
+  });
+
+  describe('checkAvailability', () => {
+    it('returns true when no conflicts', async () => {
+      vi.mocked(db.query.bookings.findFirst).mockResolvedValue(null);
+
+      const result = await bookingService.checkAvailability(
+        'prop-1',
+        new Date('2025-01-15'),
+        new Date('2025-01-20')
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it('returns false when dates conflict', async () => {
+      vi.mocked(db.query.bookings.findFirst).mockResolvedValue({
+        id: '1',
+        checkInDate: new Date('2025-01-14'),
+        checkOutDate: new Date('2025-01-18'),
+      });
+
+      const result = await bookingService.checkAvailability(
+        'prop-1',
+        new Date('2025-01-15'),
+        new Date('2025-01-20')
+      );
+
+      expect(result).toBe(false);
+    });
+  });
+});
+```
+
+## E2E Tests (Playwright)
+
+```typescript
+// playwright.config.ts
+import { defineConfig, devices } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './__tests__/e2e',
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: 'html',
+  use: {
+    baseURL: 'http://localhost:3004',
+    trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+  },
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+    { name: 'Mobile Chrome', use: { ...devices['Pixel 5'] } },
+  ],
+  webServer: {
+    command: 'bun run dev',
+    url: 'http://localhost:3004',
+    reuseExistingServer: !process.env.CI,
+  },
+});
+```
+
+```typescript
+// __tests__/e2e/auth.spec.ts
+import { test, expect } from '@playwright/test';
+
+test.describe('Authentication', () => {
+  test('user can log in with email', async ({ page }) => {
+    await page.goto('/login');
+
+    await page.fill('[name="email"]', 'test@example.com');
+    await page.fill('[name="password"]', 'password123');
+    await page.click('button[type="submit"]');
+
+    await expect(page).toHaveURL('/dashboard');
+    await expect(page.locator('text=Welcome')).toBeVisible();
+  });
+
+  test('shows error for invalid credentials', async ({ page }) => {
+    await page.goto('/login');
+
+    await page.fill('[name="email"]', 'invalid@example.com');
+    await page.fill('[name="password"]', 'wrongpassword');
+    await page.click('button[type="submit"]');
+
+    await expect(page.locator('text=Invalid credentials')).toBeVisible();
+    await expect(page).toHaveURL('/login');
+  });
+
+  test('user can log out', async ({ page }) => {
+    // First log in
+    await page.goto('/login');
+    await page.fill('[name="email"]', 'test@example.com');
+    await page.fill('[name="password"]', 'password123');
+    await page.click('button[type="submit"]');
+    await expect(page).toHaveURL('/dashboard');
+
+    // Then log out
+    await page.click('[data-testid="user-menu"]');
+    await page.click('text=Log out');
+
+    await expect(page).toHaveURL('/login');
+  });
+});
+```
+
+```typescript
+// __tests__/e2e/booking-flow.spec.ts
+import { test, expect } from '@playwright/test';
+
+test.describe('Booking Flow', () => {
+  test.beforeEach(async ({ page }) => {
+    // Login before each test
+    await page.goto('/login');
+    await page.fill('[name="email"]', 'test@example.com');
+    await page.fill('[name="password"]', 'password123');
+    await page.click('button[type="submit"]');
+    await expect(page).toHaveURL('/dashboard');
+  });
+
+  test('create new booking', async ({ page }) => {
+    await page.goto('/properties/prop-1/bookings');
+    await page.click('text=New Booking');
+
+    // Fill form
+    await page.fill('[name="guestName"]', 'John Doe');
+    await page.fill('[name="guestEmail"]', 'john@example.com');
+    await page.fill('[name="guestPhone"]', '+63 912 345 6789');
+    
+    // Select dates
+    await page.click('[data-testid="check-in-date"]');
+    await page.click('text=15'); // Select 15th
+    await page.click('[data-testid="check-out-date"]');
+    await page.click('text=20'); // Select 20th
+
+    await page.fill('[name="guestCount"]', '2');
+    await page.click('button[type="submit"]');
+
+    // Verify success
+    await expect(page.locator('text=Booking created')).toBeVisible();
+    await expect(page).toHaveURL(/\/bookings\/BK-/);
+  });
+
+  test('update booking status', async ({ page }) => {
+    await page.goto('/properties/prop-1/bookings/booking-1');
+
+    await page.click('text=Review Booking');
+    
+    // Fill payment details
+    await page.fill('[name="baseRate"]', '3000');
+    await page.fill('[name="cleaningFee"]', '500');
+    
+    await page.click('text=Submit Review');
+
+    await expect(page.locator('text=PENDING_GAF')).toBeVisible();
+  });
+});
+```
+
+## Testing Best Practices
+
+### 1. Test Coverage Goals
+
+- Utility functions: 100%
+- Business logic (services): 80%+
+- API routes: 80%+
+- Components: Key interactions
+- E2E: Critical user flows
+
+### 2. Test Naming
+
+```typescript
+// Use descriptive names
+it('returns empty array when no bookings exist', () => {});
+it('throws error when user lacks permission', () => {});
+it('calculates total including all payment types', () => {});
+```
+
+### 3. Arrange-Act-Assert
+
+```typescript
+it('creates booking with correct status', async () => {
+  // Arrange
+  const input = { guestName: 'John', ... };
+  
+  // Act
+  const result = await bookingService.createBooking('user-1', input);
+  
+  // Assert
+  expect(result.status).toBe('PENDING_REVIEW');
+});
+```
+
+### 4. Test Commands
+
+```bash
+# Run all tests
+bun run test
+
+# Run with coverage
+bun run test:coverage
+
+# Run specific file
+bun run test booking.service.test.ts
+
+# Run E2E tests
+bun run test:e2e
+
+# Run E2E with UI
+bun run test:e2e --ui
+```

@@ -1,0 +1,49 @@
+---
+description: Keep architecture and implementation mobile-ready without locking into a specific mobile framework
+globs: **/*
+alwaysApply: false
+---
+
+# Mobile Readiness Rule
+
+Use this rule when adding features, APIs, schema, services, or platform integrations that may later be consumed by a mobile app.
+
+## Objective
+
+Keep KameOps ready for future mobile clients (React Native, Flutter, or native) while continuing web-first delivery.
+
+## Required Principles
+
+1. **Server-owned business logic**
+   - Keep workflow and permission logic in services + protected procedures.
+   - Do not place critical domain rules only in UI code.
+
+2. **Client-agnostic contracts**
+   - Validate all procedure inputs with Zod.
+   - Return stable, explicit response shapes and actionable error codes.
+
+3. **Strict multi-tenancy**
+   - Every read/write path must be scoped by organization/property.
+   - Never trust client-provided tenancy identifiers without server verification.
+
+4. **Abstraction boundaries**
+   - Keep storage, email, payment, and background jobs behind service abstractions.
+   - Avoid binding feature logic directly to vendor SDK calls in UI components.
+
+5. **Shared domain typing**
+   - Put reusable domain contracts in `packages/types` where appropriate.
+   - Avoid web-UI-specific imports in shared packages.
+
+## Framework Decision Guidance
+
+Do not force React Native (or alternatives) early. Decide once:
+
+- core mobile journeys are prioritized,
+- offline/push/native requirements are documented,
+- and backend contracts are stable.
+
+## References
+
+- `docs/architecture/mobile-readiness.md`
+- `docs/architecture/backend-platform-evaluation.md`
+- `docs/implementation/roadmap.md`

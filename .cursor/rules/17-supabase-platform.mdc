@@ -1,0 +1,47 @@
+---
+description: Supabase platform standards for Postgres, Auth, Storage, and MCP usage
+globs:
+  - '**/env*.ts'
+  - '**/server/**/*.ts'
+  - '**/routers/**/*.ts'
+  - '**/services/**/*.ts'
+alwaysApply: false
+---
+
+# Supabase Platform Standards
+
+Use this project baseline for backend platform work:
+
+- Database: Supabase Postgres + Drizzle
+- API layer: tRPC on Next.js
+- Auth: Supabase Auth (JWT verified in server context)
+- Storage: Supabase Storage via `upload.service`
+
+## Non-Negotiables
+
+1. Keep domain authorization in TypeScript service layer.
+2. Verify Supabase Auth user/session server-side before protected operations.
+3. Scope every data query by tenant (`organizationId` / `propertyId`).
+4. Do not call Supabase Storage directly from UI code.
+5. Keep provider-specific logic centralized in server services.
+
+## Environment Variables
+
+Required baseline variables:
+
+- `DATABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_STORAGE_BUCKET_PUBLIC`
+- `SUPABASE_STORAGE_BUCKET_PRIVATE`
+
+## MCP Guidance
+
+Use these MCP servers when applicable:
+
+- **Supabase MCP**: schema checks, migrations, SQL validation, project diagnostics
+- **Context7 MCP**: latest library/framework docs (Supabase, Next.js, tRPC, Drizzle)
+- **Browser MCP**: UI flow and auth/session regression testing
+
+For schema changes: use migrations, then run security advisors for RLS/policy gaps.

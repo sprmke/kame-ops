@@ -1,0 +1,23 @@
+---
+description: Reference when editing the legacy pay-credit-cards CLI (pre-migration)
+globs:
+  - '**/automated-tasks/pay-credit-cards/**'
+  - '**/pay-credit-cards/**'
+alwaysApply: false
+---
+
+# Legacy pay-credit-cards CLI
+
+When working in `automated-tasks/pay-credit-cards/`:
+
+- This is the **source** for KameOps credit-card behavior until fully ported
+- Follow `docs/SETUP.md` and existing TypeScript patterns in that folder
+- State is JSON under `data/`—not Postgres
+- Do **not** apply KameOps web patterns (tRPC, features/) here unless explicitly migrating a file
+- Do **not** apply crypto-trading companion rules
+
+When porting logic **into** `kame-ops/`:
+
+- Target `apps/web/src/server/services/`
+- Replace file-based state with Drizzle tables
+- Use `/credit-cards` skill and rule `18-credit-cards-module.mdc`

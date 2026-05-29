@@ -1,0 +1,183 @@
+import * as React from 'react';
+import { cva, type VariantProps } from 'class-variance-authority';
+
+import { cn } from '@/lib/utils/cn';
+
+const cardVariants = cva(
+  'rounded-xl border bg-card text-card-foreground transition-all duration-200',
+  {
+    variants: {
+      variant: {
+        default: 'shadow-card',
+        elevated: 'shadow-soft-md hover:shadow-soft-lg',
+        outline: 'shadow-none border-2',
+        ghost: 'border-transparent shadow-none bg-transparent',
+        interactive:
+          'shadow-card hover:shadow-card-hover hover:border-primary/20 cursor-pointer active:scale-[0.99]',
+        gradient:
+          'shadow-card bg-gradient-to-br from-card to-muted/30 border-transparent',
+      },
+      padding: {
+        default: '',
+        none: '',
+        sm: 'p-4',
+        md: 'p-6',
+        lg: 'p-8',
+      },
+    },
+    defaultVariants: {
+      variant: 'default',
+      padding: 'default',
+    },
+  }
+);
+
+export interface CardProps
+  extends React.HTMLAttributes<HTMLDivElement>,
+    VariantProps<typeof cardVariants> {}
+
+const Card = React.forwardRef<HTMLDivElement, CardProps>(
+  ({ className, variant, padding, ...props }, ref) => (
+    <div
+      ref={ref}
+      className={cn(cardVariants({ variant, padding, className }))}
+      {...props}
+    />
+  )
+);
+Card.displayName = 'Card';
+
+const CardHeader = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn('flex flex-col space-y-1.5 p-6', className)}
+    {...props}
+  />
+));
+CardHeader.displayName = 'CardHeader';
+
+const CardTitle = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn(
+      'text-xl font-semibold leading-none tracking-tight',
+      className
+    )}
+    {...props}
+  />
+));
+CardTitle.displayName = 'CardTitle';
+
+const CardDescription = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn('text-sm text-muted-foreground leading-relaxed', className)}
+    {...props}
+  />
+));
+CardDescription.displayName = 'CardDescription';
+
+const CardContent = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div ref={ref} className={cn('p-6 pt-0', className)} {...props} />
+));
+CardContent.displayName = 'CardContent';
+
+const CardFooter = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn('flex items-center p-6 pt-0', className)}
+    {...props}
+  />
+));
+CardFooter.displayName = 'CardFooter';
+
+// New: Stats Card component for dashboard metrics
+interface StatsCardProps extends React.HTMLAttributes<HTMLDivElement> {
+  title: string;
+  value: string | number;
+  description?: string;
+  icon?: React.ReactNode;
+  trend?: {
+    value: number;
+    isPositive: boolean;
+  };
+}
+
+const StatsCard = React.forwardRef<HTMLDivElement, StatsCardProps>(
+  ({ className, title, value, description, icon, trend, ...props }, ref) => (
+    <Card ref={ref} className={cn('', className)} {...props}>
+      <CardContent className="p-6">
+        <div className="flex items-start justify-between">
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            <p className="text-3xl font-bold tracking-tight">{value}</p>
+            {(description || trend) && (
+              <div className="flex items-center gap-2">
+                {trend && (
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-1 text-xs font-medium',
+                      trend.isPositive ? 'text-success' : 'text-destructive'
+                    )}
+                  >
+                    <svg
+                      className={cn('h-3 w-3', !trend.isPositive && 'rotate-180')}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M7 17l5-5 5 5"
+                      />
+                    </svg>
+                    {Math.abs(trend.value)}%
+                  </span>
+                )}
+                {description && (
+                  <span className="text-xs text-muted-foreground">
+                    {description}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          {icon && (
+            <div className="rounded-xl bg-primary/10 p-3 text-primary">
+              {icon}
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+);
+StatsCard.displayName = 'StatsCard';
+
+export {
+  Card,
+  CardHeader,
+  CardFooter,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  StatsCard,
+  cardVariants,
+};

@@ -1,0 +1,77 @@
+---
+description: Credit card SOA module — parsing, dues, mark-paid parity with legacy CLI
+globs:
+  - '**/credit-cards/**'
+  - '**/soa/**'
+  - '**/server/services/soa*.ts'
+  - '**/server/services/credit-card*.ts'
+  - '**/server/services/receipt-ocr*.ts'
+  - '**/server/routers/credit-cards.ts'
+  - '**/server/routers/soa.ts'
+alwaysApply: false
+---
+
+# Credit Cards Module
+
+## Scope
+
+Philippine bank credit card SOA automation. This module must preserve behavior from `automated-tasks/pay-credit-cards` unless explicitly changing product requirements.
+
+## Supported Banks
+
+| Issuer ID | Label | Notes |
+| --------- | ----- | ----- |
+| `metrobank` | Metrobank | MSOA / SOA Gmail queries |
+| `rcbc` | RCBC | FLEX VISA; geometry-ordered PDF lines |
+| `bpi` | BPI | Often needs OCR (`BPI_OCR`) |
+| `unionbank` | Unionbank | REWARDS VISA patterns |
+
+## SOA Pipeline (service layer)
+
+Order of operations (match legacy `soa-run.ts`):
+
+1. Build month context (`gmailMonthOffset` per card)
+2. Gmail search per bank → download PDFs
+3. Unlock PDF with card password(s)
+4. Parse SOA fields + transactions
+5. Write summary PDF to storage (optional download in UI)
+6. Upsert `due_entries` from parsed rows
+7. Notify via `notification.service` (Telegram PDF + Slack text)
+8. Optional: create calendar events via `google-calendar.service`
+
+## Due Entries
+
+- Key: `issuerId` + normalized `cardLast4` + `dueDateYmd`
+- Keep latest due date when range runs overlap
+- `paidAt` suppresses reminder fingerprints
+- `overviewIsPaidLabel` logic for summary PDF "Is paid" column
+
+## Mark Paid
+
+| Input | Behavior |
+| ----- | -------- |
+| `xxxx - month year - paid` | Text command (Telegram or API) |
+| Receipt image | OCR → amount ≥ minimum due → mark paid |
+| `xxxx - month year - unpaid` | Reverse paid state |
+
+Side effects: update due entry, suppress/restore reminder fingerprints, patch calendar events.
+
+## Receipt OCR
+
+- Tesseract PSM default 6 for app screenshots
+- Parse card last-4 (labeled lines, 16-digit PAN, masked, known last-4 fallback)
+- Parse amount from labeled lines (`Bill Amount`, `Total`, etc.)
+- Store image in Supabase Storage under `receipts/{userId}/YYYY-MM/`
+
+## Security
+
+- Card PDF passwords: encrypt at rest; never return in API responses
+- Gmail/Calendar tokens: per-user integration record, not global `.env` files in production
+
+## Testing Parity
+
+When porting parsers, compare output against legacy CLI on sample PDFs in `pay-credit-cards/data/downloads/`.
+
+## Skills
+
+Use `/credit-cards` and `/integrations` skills when implementing this module.

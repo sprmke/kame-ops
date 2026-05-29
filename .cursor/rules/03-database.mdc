@@ -1,0 +1,458 @@
+---
+description: Drizzle ORM patterns, PostgreSQL best practices, and database schema rules
+globs:
+  - "**/schema/**/*.ts"
+  - "**/db/**/*.ts"
+  - "**/database/**/*.ts"
+  - "**/services/**/*.ts"
+  - "**/routers/**/*.ts"
+---
+
+# Database Rules (Drizzle ORM + PostgreSQL)
+
+## Drizzle Configuration
+
+```typescript
+// drizzle.config.ts
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  schema: './src/lib/db/schema/*',
+  out: './drizzle/migrations',
+  dialect: 'postgresql',
+  dbCredentials: {
+    url: process.env.DATABASE_URL!,
+  },
+});
+```
+
+## Schema Definition Patterns
+
+### Table Definition
+
+```typescript
+import { pgTable, uuid, varchar, text, timestamp, json, index, uniqueIndex, pgEnum } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
+
+// Define enums
+export const bookingStatusEnum = pgEnum('booking_status', [
+  'PENDING_REVIEW',
+  'PENDING_GAF',
+  'PENDING_PARKING',
+  'READY_FOR_CHECKIN',
+  'CHECKED_IN',
+  'COMPLETED',
+  'CANCELLED',
+]);
+
+// Define table
+export const bookings = pgTable('bookings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  propertyId: uuid('property_id').notNull().references(() => properties.id, { onDelete: 'cascade' }),
+  
+  bookingNumber: varchar('booking_number', { length: 50 }).notNull().unique(),
+  status: bookingStatusEnum('status').notNull().default('PENDING_REVIEW'),
+  
+  guestName: varchar('guest_name', { length: 255 }).notNull(),
+  guestEmail: varchar('guest_email', { length: 255 }).notNull(),
+  guestPhone: varchar('guest_phone', { length: 50 }),
+  
+  checkInDate: timestamp('check_in_date').notNull(),
+  checkOutDate: timestamp('check_out_date').notNull(),
+  nights: integer('nights').notNull(),
+  
+  internalNotes: text('internal_notes'),
+  
+  // Timestamps
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow().$onUpdate(() => new Date()),
+  deletedAt: timestamp('deleted_at'), // Soft delete
+  
+  createdBy: uuid('created_by').notNull().references(() => users.id),
+}, (table) => ({
+  // Indexes
+  propertyIdx: index('bookings_property_idx').on(table.propertyId),
+  statusIdx: index('bookings_status_idx').on(table.status),
+  checkInIdx: index('bookings_check_in_idx').on(table.checkInDate),
+  bookingNumberIdx: uniqueIndex('bookings_number_idx').on(table.bookingNumber),
+}));
+
+// Define relations
+export const bookingsRelations = relations(bookings, ({ one, many }) => ({
+  property: one(properties, {
+    fields: [bookings.propertyId],
+    references: [properties.id],
+  }),
+  createdByUser: one(users, {
+    fields: [bookings.createdBy],
+    references: [users.id],
+  }),
+  payments: many(bookingPayments),
+  statusHistory: many(bookingStatusHistory),
+}));
+```
+
+### Common Patterns
+
+```typescript
+// UUID primary key
+id: uuid('id').primaryKey().defaultRandom(),
+
+// Foreign key with cascade
+propertyId: uuid('property_id').notNull().references(() => properties.id, { onDelete: 'cascade' }),
+
+// Auto-updating timestamp
+updatedAt: timestamp('updated_at').notNull().defaultNow().$onUpdate(() => new Date()),
+
+// Soft delete
+deletedAt: timestamp('deleted_at'),
+
+// JSON field with type
+settings: json('settings').$type<PropertySettings>().default({}),
+
+// Array as JSON
+images: json('images').$type<string[]>().default([]),
+
+// Enum field
+status: bookingStatusEnum('status').notNull().default('PENDING_REVIEW'),
+```
+
+## Query Patterns
+
+### Basic Queries
+
+```typescript
+import { db } from '@/lib/db';
+import { bookings, properties, payments } from '@/lib/db/schema';
+import { eq, and, isNull, gte, lte, or, ilike, desc, asc, sql } from 'drizzle-orm';
+
+// Simple select
+const allBookings = await db.select().from(bookings);
+
+// With where clause
+const activeBookings = await db
+  .select()
+  .from(bookings)
+  .where(and(
+    eq(bookings.propertyId, propertyId),
+    isNull(bookings.deletedAt)
+  ));
+
+// Select specific columns
+const bookingNames = await db
+  .select({
+    id: bookings.id,
+    guestName: bookings.guestName,
+    status: bookings.status,
+  })
+  .from(bookings);
+```
+
+### Relational Queries (Recommended)
+
+```typescript
+// Single query with relations
+const booking = await db.query.bookings.findFirst({
+  where: and(
+    eq(bookings.id, bookingId),
+    isNull(bookings.deletedAt)
+  ),
+  with: {
+    property: {
+      columns: { name: true, address: true },
+    },
+    payments: {
+      where: isNull(payments.deletedAt),
+      orderBy: [desc(payments.createdAt)],
+    },
+    createdByUser: {
+      columns: { name: true, email: true },
+    },
+  },
+});
+
+// List with pagination
+const results = await db.query.bookings.findMany({
+  where: and(
+    eq(bookings.propertyId, propertyId),
+    isNull(bookings.deletedAt)
+  ),
+  with: {
+    property: true,
+    payments: true,
+  },
+  limit: 20,
+  offset: (page - 1) * 20,
+  orderBy: [desc(bookings.createdAt)],
+});
+```
+
+### Join Queries
+
+```typescript
+// Left join
+const results = await db
+  .select({
+    booking: bookings,
+    propertyName: properties.name,
+  })
+  .from(bookings)
+  .leftJoin(properties, eq(bookings.propertyId, properties.id))
+  .where(eq(bookings.status, 'PENDING_REVIEW'));
+
+// Inner join with multiple tables
+const results = await db
+  .select()
+  .from(bookings)
+  .innerJoin(properties, eq(bookings.propertyId, properties.id))
+  .innerJoin(organizations, eq(properties.organizationId, organizations.id))
+  .where(eq(organizations.id, orgId));
+```
+
+### Filtering Patterns
+
+```typescript
+// Search with ILIKE
+const searchResults = await db
+  .select()
+  .from(bookings)
+  .where(or(
+    ilike(bookings.guestName, `%${search}%`),
+    ilike(bookings.guestEmail, `%${search}%`),
+    ilike(bookings.bookingNumber, `%${search}%`)
+  ));
+
+// Date range
+const dateRangeBookings = await db
+  .select()
+  .from(bookings)
+  .where(and(
+    gte(bookings.checkInDate, startDate),
+    lte(bookings.checkInDate, endDate)
+  ));
+
+// Multiple status filter
+const statusBookings = await db
+  .select()
+  .from(bookings)
+  .where(sql`${bookings.status} IN ('PENDING_REVIEW', 'PENDING_GAF')`);
+```
+
+### Aggregations
+
+```typescript
+// Count
+const [{ count }] = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(bookings)
+  .where(eq(bookings.propertyId, propertyId));
+
+// Sum
+const [{ total }] = await db
+  .select({ total: sql<number>`sum(${payments.amount})` })
+  .from(payments)
+  .where(eq(payments.bookingId, bookingId));
+
+// Group by
+const statusCounts = await db
+  .select({
+    status: bookings.status,
+    count: sql<number>`count(*)`,
+  })
+  .from(bookings)
+  .groupBy(bookings.status);
+```
+
+## Mutations
+
+### Insert
+
+```typescript
+// Single insert
+const [newBooking] = await db
+  .insert(bookings)
+  .values({
+    propertyId,
+    guestName: 'John Doe',
+    guestEmail: 'john@example.com',
+    checkInDate: new Date('2025-01-15'),
+    checkOutDate: new Date('2025-01-20'),
+    nights: 5,
+    createdBy: userId,
+  })
+  .returning();
+
+// Multiple insert
+const newPayments = await db
+  .insert(payments)
+  .values([
+    { bookingId, type: 'PROFIT', category: 'BASE_RATE', amount: 15000 },
+    { bookingId, type: 'PROFIT', category: 'CLEANING_FEE', amount: 1500 },
+  ])
+  .returning();
+```
+
+### Update
+
+```typescript
+// Update with returning
+const [updated] = await db
+  .update(bookings)
+  .set({ 
+    status: 'CHECKED_IN',
+    updatedAt: new Date(),
+  })
+  .where(eq(bookings.id, bookingId))
+  .returning();
+
+// Soft delete
+await db
+  .update(bookings)
+  .set({ deletedAt: new Date() })
+  .where(eq(bookings.id, bookingId));
+```
+
+### Delete
+
+```typescript
+// Hard delete (rarely used)
+await db.delete(bookings).where(eq(bookings.id, bookingId));
+
+// Always prefer soft delete
+await db
+  .update(bookings)
+  .set({ deletedAt: new Date() })
+  .where(eq(bookings.id, bookingId));
+```
+
+## Transactions
+
+```typescript
+// Transaction for related operations
+await db.transaction(async (tx) => {
+  // Update booking status
+  const [booking] = await tx
+    .update(bookings)
+    .set({ status: 'CHECKED_IN' })
+    .where(eq(bookings.id, bookingId))
+    .returning();
+
+  // Create status history
+  await tx.insert(bookingStatusHistory).values({
+    bookingId: booking.id,
+    fromStatus: 'READY_FOR_CHECKIN',
+    toStatus: 'CHECKED_IN',
+    changedBy: userId,
+  });
+
+  // Log activity
+  await tx.insert(activityLogs).values({
+    userId,
+    type: 'BOOKING_UPDATED',
+    entity: 'booking',
+    entityId: booking.id,
+    description: 'Guest checked in',
+  });
+
+  return booking;
+});
+```
+
+## Best Practices
+
+### 1. ALWAYS Include Soft Delete Check
+
+```typescript
+// ✅ Good - Include deletedAt check
+const booking = await db.query.bookings.findFirst({
+  where: and(
+    eq(bookings.id, bookingId),
+    isNull(bookings.deletedAt)  // Critical!
+  ),
+});
+
+// ❌ Bad - Missing deletedAt check
+const booking = await db.query.bookings.findFirst({
+  where: eq(bookings.id, bookingId),
+});
+```
+
+### 2. ALWAYS Scope to Organization/Property
+
+```typescript
+// ✅ Good - Scoped query
+const properties = await db.query.properties.findMany({
+  where: and(
+    eq(properties.organizationId, userOrgId),  // Scoped!
+    isNull(properties.deletedAt)
+  ),
+});
+
+// ❌ Bad - Unscoped (security issue!)
+const properties = await db.query.properties.findMany({
+  where: isNull(properties.deletedAt),
+});
+```
+
+### 3. Use Relations to Avoid N+1 Queries
+
+```typescript
+// ✅ Good - Single query with relations
+const bookings = await db.query.bookings.findMany({
+  with: {
+    property: true,
+    payments: true,
+  },
+});
+
+// ❌ Bad - N+1 queries
+const bookings = await db.select().from(bookings);
+for (const booking of bookings) {
+  const property = await db.query.properties.findFirst({
+    where: eq(properties.id, booking.propertyId)
+  });
+}
+```
+
+### 4. Always Paginate List Queries
+
+```typescript
+// ✅ Good - With pagination
+const results = await db.query.bookings.findMany({
+  limit: 20,
+  offset: (page - 1) * 20,
+  orderBy: [desc(bookings.createdAt)],
+});
+
+// ❌ Bad - No pagination
+const results = await db.query.bookings.findMany();
+```
+
+### 5. Use Indexes on Frequently Queried Columns
+
+```typescript
+// Add indexes for:
+// - Foreign keys (propertyId, organizationId, userId)
+// - Status columns
+// - Date columns used in filters
+// - Columns used in WHERE clauses
+```
+
+## Database Commands
+
+```bash
+# Generate migration
+bun run db:generate
+
+# Run migrations
+bun run db:migrate
+
+# Push schema changes (dev only)
+bun run db:push
+
+# Open Drizzle Studio
+bun run db:studio
+
+# Seed database
+bun run db:seed
+```

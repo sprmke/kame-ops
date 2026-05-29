@@ -1,0 +1,42 @@
+---
+description: Accessibility (WCAG 2.1 AA) – semantic HTML, ARIA, keyboard, focus, contrast
+globs: "**/*.tsx" "**/components/**/*" "**/app/**/*.tsx"
+alwaysApply: false
+---
+
+# Accessibility (WCAG 2.1 AA)
+
+All UI in KameOps must meet WCAG 2.1 AA. Apply these rules for every component and page.
+
+## Semantic HTML
+
+- Use `<button>` for actions, `<a>` for navigation, `<nav>`, `<main>`, `<header>`, `<section>` where appropriate.
+- Use heading order (h1 → h2 → h3) without skipping levels.
+- Use `<Label htmlFor="id">` and associate every form control with an `id`.
+
+## ARIA and labels
+
+- Icon-only buttons: `aria-label="Descriptive action"` and `aria-hidden="true"` on the icon.
+- Errors: `aria-describedby` pointing to error message `id`; error element can use `role="alert"`.
+- Dialogs: use `aria-modal="true"` and focus trap (shadcn Dialog handles this).
+
+## Keyboard and focus
+
+- All interactive elements must be focusable and operable with keyboard (Tab, Enter, Space, arrows for lists/custom controls).
+- Use visible focus styles in both themes: `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`.
+- Provide a “Skip to main content” link for keyboard users where appropriate.
+
+## Contrast and theme
+
+- Text contrast: at least 4.5:1 (normal text), 3:1 (large text). Use `text-foreground`, `text-muted-foreground`; avoid arbitrary low-contrast colors.
+- Focus rings and borders must be visible in both light and dark mode.
+
+## Checklist (before merging UI)
+
+- [ ] Form fields have visible or programmatic labels
+- [ ] Icon buttons have `aria-label`
+- [ ] Focus order and focus visibility work in both themes
+- [ ] No interactive element is keyboard-inaccessible
+- [ ] Color is not the only way to convey information
+
+For more patterns and testing, use the **accessibility** skill (`.cursor/skills/accessibility/`) and see `.cursor/rules/05-components.mdc` and `13-ui-ux-design.mdc`.

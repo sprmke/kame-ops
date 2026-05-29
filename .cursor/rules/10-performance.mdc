@@ -1,0 +1,432 @@
+---
+description: Performance optimization patterns and best practices
+globs:
+  - "**/*.tsx"
+  - "**/*.ts"
+---
+
+# Performance Optimization Rules
+
+## Performance Budgets
+
+| Metric | Target |
+|--------|--------|
+| First Contentful Paint (FCP) | < 1.5s |
+| Largest Contentful Paint (LCP) | < 2.5s |
+| Time to Interactive (TTI) | < 5s |
+| Cumulative Layout Shift (CLS) | < 0.1 |
+| Initial Page Load | < 3s |
+| Lighthouse Score | > 90 |
+| Bundle Size (JS) | < 300KB |
+
+## React Compiler (Next.js 16+)
+
+React Compiler is built into Next.js 16+ and provides automatic memoization. This means:
+
+```typescript
+// ✅ Don't need manual memoization anymore
+function BookingsList({ bookings }) {
+  // React Compiler automatically optimizes this
+  const sortedBookings = bookings.sort((a, b) => 
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+  
+  return (
+    <ul>
+      {sortedBookings.map(booking => (
+        <BookingCard key={booking.id} booking={booking} />
+      ))}
+    </ul>
+  );
+}
+
+// ❌ Avoid unnecessary manual optimization
+// Only use useMemo/useCallback if profiling shows issues
+function BookingsList({ bookings }) {
+  const sortedBookings = useMemo(() => 
+    bookings.sort((a, b) => ...),
+    [bookings]
+  ); // Usually not needed with React Compiler
+}
+```
+
+## Code Splitting & Lazy Loading
+
+### Component Lazy Loading
+
+```typescript
+import { lazy, Suspense } from 'react';
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+
+// Lazy load heavy components
+const CalendarEditor = lazy(() => import('@/components/calendar/CalendarEditor'));
+const RevenueChart = lazy(() => import('@/components/charts/RevenueChart'));
+const FormBuilder = lazy(() => import('@/components/forms/FormBuilder'));
+
+export function PropertyPage({ propertyId }) {
+  return (
+    <div>
+      <PropertyHeader propertyId={propertyId} />
+      
+      <Suspense fallback={<LoadingSpinner />}>
+        <CalendarEditor propertyId={propertyId} />
+      </Suspense>
+      
+      <Suspense fallback={<ChartSkeleton />}>
+        <RevenueChart propertyId={propertyId} />
+      </Suspense>
+    </div>
+  );
+}
+```
+
+### Route-Based Code Splitting
+
+```typescript
+// Next.js App Router handles this automatically
+// Each page.tsx is a separate chunk
+
+// For dynamic imports in pages
+const HeavyFeature = dynamic(
+  () => import('@/components/features/HeavyFeature'),
+  { 
+    loading: () => <Skeleton />,
+    ssr: false // Disable SSR for client-only components
+  }
+);
+```
+
+## Image Optimization
+
+### Next.js Image Component
+
+```typescript
+import Image from 'next/image';
+
+// ✅ Optimized image
+<Image
+  src={property.thumbnail}
+  alt={property.name}
+  width={400}
+  height={300}
+  className="rounded-lg object-cover"
+  placeholder="blur"
+  blurDataURL={property.thumbnailBlur}
+  priority={isAboveFold}
+  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+/>
+
+// ❌ Unoptimized
+<img src={property.thumbnail} alt={property.name} />
+```
+
+### Image Loading Patterns
+
+```typescript
+// Hero images - load immediately
+<Image priority src={heroImage} />
+
+// Below fold - lazy load (default)
+<Image src={galleryImage} loading="lazy" />
+
+// With blur placeholder
+<Image 
+  placeholder="blur"
+  blurDataURL="data:image/jpeg;base64,..." 
+/>
+```
+
+## Database Query Optimization
+
+### Avoid N+1 Queries
+
+```typescript
+// ✅ Good - Single query with relations
+const bookings = await db.query.bookings.findMany({
+  where: eq(bookings.propertyId, propertyId),
+  with: {
+    property: true,
+    payments: true,
+    createdBy: { columns: { name: true } },
+  },
+});
+
+// ❌ Bad - N+1 queries
+const bookings = await db.select().from(bookings);
+for (const booking of bookings) {
+  const property = await db.query.properties.findFirst({
+    where: eq(properties.id, booking.propertyId)
+  });
+  booking.property = property; // N extra queries!
+}
+```
+
+### Select Only Needed Columns
+
+```typescript
+// ✅ Good - Select specific columns
+const bookings = await db.query.bookings.findMany({
+  columns: {
+    id: true,
+    bookingNumber: true,
+    guestName: true,
+    status: true,
+  },
+  with: {
+    property: {
+      columns: { name: true },
+    },
+  },
+});
+
+// ❌ Bad - Select everything
+const bookings = await db.query.bookings.findMany({
+  with: {
+    property: true, // Gets all columns
+    payments: true, // Gets all columns
+  },
+});
+```
+
+### Always Paginate
+
+```typescript
+// ✅ Always paginate list queries
+const results = await db.query.bookings.findMany({
+  limit: 20,
+  offset: (page - 1) * 20,
+  orderBy: [desc(bookings.createdAt)],
+});
+
+// Return total for pagination UI
+const [{ count }] = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(bookings)
+  .where(conditions);
+```
+
+### Use Indexes
+
+```typescript
+// In schema, add indexes for frequently queried columns
+export const bookings = pgTable('bookings', {
+  // ...columns
+}, (table) => ({
+  propertyIdx: index('bookings_property_idx').on(table.propertyId),
+  statusIdx: index('bookings_status_idx').on(table.status),
+  checkInIdx: index('bookings_check_in_idx').on(table.checkInDate),
+  // Composite index for common queries
+  propertyStatusIdx: index('bookings_property_status_idx').on(table.propertyId, table.status),
+}));
+```
+
+## TanStack Query Caching
+
+### Stale Time Configuration
+
+```typescript
+// Configure stale time based on data volatility
+const { data } = api.bookings.list.useQuery(
+  { propertyId },
+  {
+    staleTime: 1000 * 60 * 5, // 5 minutes for lists
+    gcTime: 1000 * 60 * 30,   // Keep in cache for 30 min
+  }
+);
+
+// Static data - longer stale time
+const { data: property } = api.properties.getById.useQuery(
+  { id: propertyId },
+  {
+    staleTime: 1000 * 60 * 60, // 1 hour
+  }
+);
+```
+
+### Prefetching
+
+```typescript
+// Prefetch on hover
+function BookingLink({ bookingId }) {
+  const utils = api.useUtils();
+
+  return (
+    <Link
+      href={`/bookings/${bookingId}`}
+      onMouseEnter={() => {
+        utils.bookings.getById.prefetch({ id: bookingId });
+      }}
+    >
+      View Booking
+    </Link>
+  );
+}
+
+// Prefetch in page (Server Component)
+export default async function PropertyPage({ params }) {
+  // Prefetch data for client
+  await Promise.all([
+    utils.bookings.list.prefetch({ propertyId: params.id }),
+    utils.calendar.getData.prefetch({ propertyId: params.id }),
+  ]);
+
+  return <PropertyContent propertyId={params.id} />;
+}
+```
+
+### Optimistic Updates
+
+```typescript
+const updateStatus = api.bookings.updateStatus.useMutation({
+  onMutate: async (newData) => {
+    // Cancel outgoing refetches
+    await utils.bookings.getById.cancel({ id: newData.id });
+
+    // Snapshot previous value
+    const previousBooking = utils.bookings.getById.getData({ id: newData.id });
+
+    // Optimistically update
+    utils.bookings.getById.setData(
+      { id: newData.id },
+      (old) => old ? { ...old, status: newData.status } : old
+    );
+
+    return { previousBooking };
+  },
+  onError: (err, newData, context) => {
+    // Rollback on error
+    utils.bookings.getById.setData(
+      { id: newData.id },
+      context?.previousBooking
+    );
+  },
+  onSettled: (data, error, variables) => {
+    // Always refetch after error or success
+    utils.bookings.getById.invalidate({ id: variables.id });
+  },
+});
+```
+
+## Bundle Optimization
+
+### Import Only What You Need
+
+```typescript
+// ✅ Good - Named imports
+import { format, parseISO } from 'date-fns';
+
+// ❌ Bad - Import entire library
+import * as dateFns from 'date-fns';
+```
+
+### Dynamic Imports for Heavy Libraries
+
+```typescript
+// ✅ Dynamic import for PDF generation
+async function generateReport() {
+  const { jsPDF } = await import('jspdf');
+  const doc = new jsPDF();
+  // ...
+}
+
+// ✅ Dynamic import for charts
+const RevenueChart = dynamic(
+  () => import('recharts').then(mod => mod.LineChart),
+  { ssr: false }
+);
+```
+
+### Analyze Bundle
+
+```bash
+# Analyze bundle size
+ANALYZE=true bun run build
+```
+
+## List Rendering
+
+### Use Proper Keys
+
+```typescript
+// ✅ Good - Stable unique keys
+{bookings.map((booking) => (
+  <BookingCard key={booking.id} booking={booking} />
+))}
+
+// ❌ Bad - Index as key
+{bookings.map((booking, index) => (
+  <BookingCard key={index} booking={booking} />
+))}
+```
+
+### Virtualize Long Lists
+
+```typescript
+import { useVirtualizer } from '@tanstack/react-virtual';
+
+function VirtualizedList({ items }) {
+  const parentRef = useRef(null);
+
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 80, // Estimated row height
+  });
+
+  return (
+    <div ref={parentRef} className="h-[600px] overflow-auto">
+      <div
+        style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}
+      >
+        {virtualizer.getVirtualItems().map((virtualItem) => (
+          <div
+            key={virtualItem.key}
+            style={{
+              position: 'absolute',
+              top: 0,
+              transform: `translateY(${virtualItem.start}px)`,
+            }}
+          >
+            <BookingCard booking={items[virtualItem.index]} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+## Web Vitals Monitoring
+
+```typescript
+// app/layout.tsx
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/next';
+
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        {children}
+        <Analytics />
+        <SpeedInsights />
+      </body>
+    </html>
+  );
+}
+```
+
+## Performance Checklist
+
+Before deploying, verify:
+
+- [ ] No N+1 database queries
+- [ ] All lists paginated
+- [ ] Heavy components lazy loaded
+- [ ] Images use Next.js Image component
+- [ ] Bundle size < 300KB
+- [ ] Lighthouse score > 90
+- [ ] TanStack Query caching configured
+- [ ] Database queries use indexes
+- [ ] Long lists virtualized
+- [ ] Web Vitals monitoring enabled

@@ -1,0 +1,462 @@
+---
+description: React component patterns, shadcn/ui usage, and UI best practices
+globs:
+  - "**/*.tsx"
+  - "**/components/**/*"
+---
+
+# Component Rules
+
+## Component Structure
+
+```typescript
+// components/bookings/BookingCard.tsx
+
+// 1. Imports (organized by type)
+import { useState } from 'react';
+import { format } from 'date-fns';
+
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+
+import { formatCurrency } from '@/lib/utils/format';
+
+import { type Booking } from '@/types/models';
+
+// 2. Props interface (co-located with component)
+interface BookingCardProps {
+  booking: Booking;
+  onView?: (id: string) => void;
+  onEdit?: (id: string) => void;
+  className?: string;
+}
+
+// 3. Component (named export)
+export function BookingCard({ 
+  booking, 
+  onView, 
+  onEdit, 
+  className 
+}: BookingCardProps) {
+  // 4. Hooks
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // 5. Derived state / computations
+  const totalAmount = booking.payments?.reduce((sum, p) => sum + p.amount, 0) ?? 0;
+
+  // 6. Event handlers
+  const handleViewClick = () => {
+    onView?.(booking.id);
+  };
+
+  // 7. Render
+  return (
+    <Card className={className}>
+      <CardHeader>
+        <CardTitle>{booking.bookingNumber}</CardTitle>
+        <Badge variant={getStatusVariant(booking.status)}>
+          {booking.status}
+        </Badge>
+      </CardHeader>
+      <CardContent>
+        <p>{booking.guestName}</p>
+        <p>{format(booking.checkInDate, 'MMM d, yyyy')}</p>
+        <p>{formatCurrency(totalAmount)}</p>
+        <Button onClick={handleViewClick}>View Details</Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// 8. Helper functions (below component or in separate file)
+function getStatusVariant(status: string) {
+  switch (status) {
+    case 'PENDING_REVIEW': return 'warning';
+    case 'CHECKED_IN': return 'success';
+    case 'CANCELLED': return 'destructive';
+    default: return 'default';
+  }
+}
+```
+
+## Component Patterns
+
+### Loading States
+
+```typescript
+// Always handle loading, error, and empty states
+export function BookingsList({ propertyId }: { propertyId: string }) {
+  const { data, isLoading, error } = api.bookings.list.useQuery({ propertyId });
+
+  // Early returns for states
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage error={error} />;
+  if (!data?.data.length) return <EmptyState message="No bookings found" />;
+
+  // Main render
+  return (
+    <ul>
+      {data.data.map((booking) => (
+        <BookingCard key={booking.id} booking={booking} />
+      ))}
+    </ul>
+  );
+}
+```
+
+### Compound Components
+
+```typescript
+// For complex components with multiple parts
+interface BookingDetailProps {
+  booking: Booking;
+  children: React.ReactNode;
+}
+
+export function BookingDetail({ booking, children }: BookingDetailProps) {
+  return (
+    <BookingContext.Provider value={booking}>
+      <div className="booking-detail">{children}</div>
+    </BookingContext.Provider>
+  );
+}
+
+BookingDetail.Header = function Header() {
+  const booking = useBookingContext();
+  return <header>{booking.bookingNumber}</header>;
+};
+
+BookingDetail.Content = function Content() {
+  const booking = useBookingContext();
+  return <main>{booking.guestName}</main>;
+};
+
+BookingDetail.Actions = function Actions() {
+  return <div className="actions">...</div>;
+};
+
+// Usage
+<BookingDetail booking={booking}>
+  <BookingDetail.Header />
+  <BookingDetail.Content />
+  <BookingDetail.Actions />
+</BookingDetail>
+```
+
+### Controlled vs Uncontrolled
+
+```typescript
+// Controlled - parent manages state
+interface ControlledInputProps {
+  value: string;
+  onChange: (value: string) => void;
+}
+
+export function ControlledInput({ value, onChange }: ControlledInputProps) {
+  return (
+    <input 
+      value={value} 
+      onChange={(e) => onChange(e.target.value)} 
+    />
+  );
+}
+
+// Uncontrolled with default
+interface UncontrolledInputProps {
+  defaultValue?: string;
+  onValueChange?: (value: string) => void;
+}
+
+export function UncontrolledInput({ defaultValue, onValueChange }: UncontrolledInputProps) {
+  const [value, setValue] = useState(defaultValue ?? '');
+  
+  const handleChange = (newValue: string) => {
+    setValue(newValue);
+    onValueChange?.(newValue);
+  };
+
+  return (
+    <input 
+      value={value} 
+      onChange={(e) => handleChange(e.target.value)} 
+    />
+  );
+}
+```
+
+## shadcn/ui Usage
+
+### Button
+
+```typescript
+import { Button } from '@/components/ui/button';
+
+// Variants
+<Button variant="default">Primary</Button>
+<Button variant="secondary">Secondary</Button>
+<Button variant="outline">Outline</Button>
+<Button variant="ghost">Ghost</Button>
+<Button variant="destructive">Delete</Button>
+
+// Sizes
+<Button size="sm">Small</Button>
+<Button size="default">Default</Button>
+<Button size="lg">Large</Button>
+<Button size="icon"><IconComponent /></Button>
+
+// Loading state
+<Button disabled={isLoading}>
+  {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+  Save
+</Button>
+```
+
+### Dialog/Modal
+
+```typescript
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+
+export function CreateBookingDialog() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button>Create Booking</Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create New Booking</DialogTitle>
+          <DialogDescription>
+            Fill in the details to create a new booking.
+          </DialogDescription>
+        </DialogHeader>
+        
+        <BookingForm onSuccess={() => setOpen(false)} />
+        
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+```
+
+### Form Components
+
+```typescript
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+
+// Form field pattern
+<div className="space-y-2">
+  <Label htmlFor="guestName">Guest Name</Label>
+  <Input 
+    id="guestName"
+    placeholder="Enter guest name"
+    {...register('guestName')}
+  />
+  {errors.guestName && (
+    <p className="text-sm text-destructive">{errors.guestName.message}</p>
+  )}
+</div>
+```
+
+### Data Table
+
+```typescript
+import { createColumnHelper } from '@tanstack/react-table';
+import { DataTable } from '@/components/shared/DataTable';
+
+const columnHelper = createColumnHelper<Booking>();
+
+const columns = [
+  columnHelper.accessor('bookingNumber', {
+    header: 'Booking #',
+    cell: (info) => (
+      <Link href={`/bookings/${info.row.original.id}`}>
+        {info.getValue()}
+      </Link>
+    ),
+  }),
+  columnHelper.accessor('guestName', {
+    header: 'Guest',
+  }),
+  columnHelper.accessor('status', {
+    header: 'Status',
+    cell: (info) => <StatusBadge status={info.getValue()} />,
+  }),
+  columnHelper.accessor('checkInDate', {
+    header: 'Check-in',
+    cell: (info) => format(info.getValue(), 'MMM d, yyyy'),
+  }),
+  columnHelper.display({
+    id: 'actions',
+    cell: ({ row }) => <BookingActions booking={row.original} />,
+  }),
+];
+
+export function BookingsTable({ bookings }) {
+  return <DataTable columns={columns} data={bookings} />;
+}
+```
+
+## Styling with Tailwind
+
+### cn() Utility
+
+```typescript
+import { cn } from '@/lib/utils/cn';
+
+// Conditional classes
+<div className={cn(
+  'rounded-lg border p-4',
+  isActive && 'border-primary bg-primary/10',
+  isDisabled && 'opacity-50 cursor-not-allowed',
+  className
+)}>
+```
+
+### CVA for Variants
+
+```typescript
+import { cva, type VariantProps } from 'class-variance-authority';
+
+const badgeVariants = cva(
+  'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold',
+  {
+    variants: {
+      variant: {
+        default: 'bg-primary text-primary-foreground',
+        success: 'bg-green-100 text-green-800',
+        warning: 'bg-yellow-100 text-yellow-800',
+        destructive: 'bg-red-100 text-red-800',
+      },
+    },
+    defaultVariants: {
+      variant: 'default',
+    },
+  }
+);
+
+interface BadgeProps extends VariantProps<typeof badgeVariants> {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export function Badge({ variant, className, children }: BadgeProps) {
+  return (
+    <span className={cn(badgeVariants({ variant }), className)}>
+      {children}
+    </span>
+  );
+}
+```
+
+## Accessibility
+
+### Always Include
+
+```typescript
+// Semantic HTML
+<button>Click me</button>  // Not <div onClick>
+
+// ARIA labels for icons
+<button aria-label="Delete booking">
+  <TrashIcon aria-hidden="true" />
+</button>
+
+// Form labels
+<Label htmlFor="email">Email</Label>
+<Input id="email" type="email" />
+
+// Focus management
+const dialogRef = useRef<HTMLDivElement>(null);
+useEffect(() => {
+  dialogRef.current?.focus();
+}, []);
+
+// Keyboard navigation
+<div 
+  role="listbox"
+  onKeyDown={(e) => {
+    if (e.key === 'ArrowDown') selectNext();
+    if (e.key === 'ArrowUp') selectPrevious();
+    if (e.key === 'Enter') confirmSelection();
+  }}
+>
+```
+
+## Performance Guidelines
+
+### Lazy Loading
+
+```typescript
+import { lazy, Suspense } from 'react';
+
+const HeavyChart = lazy(() => import('@/components/charts/RevenueChart'));
+
+export function Dashboard() {
+  return (
+    <div>
+      <h1>Dashboard</h1>
+      <Suspense fallback={<ChartSkeleton />}>
+        <HeavyChart />
+      </Suspense>
+    </div>
+  );
+}
+```
+
+### Image Optimization
+
+```typescript
+import Image from 'next/image';
+
+<Image
+  src={property.thumbnail}
+  alt={property.name}
+  width={400}
+  height={300}
+  className="rounded-lg object-cover"
+  placeholder="blur"
+  blurDataURL={property.thumbnailBlur}
+  priority={isAboveFold}
+/>
+```
+
+### List Keys
+
+```typescript
+// ✅ Good - Stable unique key
+{bookings.map((booking) => (
+  <BookingCard key={booking.id} booking={booking} />
+))}
+
+// ❌ Bad - Index as key (causes issues with reordering)
+{bookings.map((booking, index) => (
+  <BookingCard key={index} booking={booking} />
+))}
+```
+
+## File Size Guidelines
+
+- Components: < 300 lines
+- If larger, split into subcomponents
+- Extract hooks for complex logic
+- Extract utilities for pure functions
