@@ -20,7 +20,7 @@
 | `/dashboard/reminders`    | `dashboard/reminders`    | Implemented |
 | `/dashboard/automations`  | `dashboard/automations`  | Implemented |
 | `/dashboard/integrations` | `dashboard/integrations` | Implemented |
-| `/dashboard/receipts`     | `dashboard/receipts`     | Stub        |
+| `/dashboard/receipts`     | `dashboard/receipts`     | Implemented |
 | `/dashboard/analytics`    | `dashboard/analytics`    | Basic chart |
 | `/dashboard/settings`     | `dashboard/settings`     | Implemented |
 
@@ -36,12 +36,13 @@
 
 ## REST / webhooks
 
-| Route                         | Purpose                           | Status      |
-| ----------------------------- | --------------------------------- | ----------- |
-| `POST /api/auth/register`     | Email/password signup             | Implemented |
-| `GET /api/cron/reminders`     | Cron: send due reminders (Bearer) | Implemented |
-| `GET /api/cron/soa-poll`      | Cron: SOA poll per user (Bearer)  | Implemented |
-| `POST /api/webhooks/telegram` | Telegram updates                  | Stub        |
+| Route                         | Purpose                                  | Status      |
+| ----------------------------- | ---------------------------------------- | ----------- |
+| `POST /api/auth/register`     | Email/password signup                    | Implemented |
+| `GET /api/cron/reminders`     | Cron: send due reminders (Bearer)        | Implemented |
+| `GET /api/cron/soa-poll`      | Cron: SOA poll per user (Bearer)         | Implemented |
+| `POST /api/webhooks/telegram` | Telegram updates (text + receipt photos) | Implemented |
+| `POST /api/receipts/upload`   | Receipt file upload (Supabase or local)  | Implemented |
 
 ## Database (Drizzle)
 
@@ -58,7 +59,13 @@
 | `gmail_poll_state`                   | Gmail history cursor                      |
 | `activity_logs`                      | Audit trail                               |
 
-## Legacy CLI
+## Services (server)
+
+| Service                     | Purpose                                   |
+| --------------------------- | ----------------------------------------- |
+| `storage.service.ts`        | Supabase Storage uploads + local fallback |
+| `integration.service.ts`    | Encrypted per-user integrations           |
+| `legacy-runtime.service.ts` | Bridge to pay-credit-cards CLI            |
 
 Source copied to `apps/web/src/server/legacy/pay-credit-cards/` — used at runtime via dynamic import for SOA, reminders, and notifications. Original repo: `automated-tasks/pay-credit-cards`.
 

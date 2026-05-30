@@ -27,7 +27,12 @@ export const receiptsRouter = router({
       const { ocrReceipt, parseReceiptText } =
         await import("@/server/legacy/pay-credit-cards/receipt-ocr");
 
-      const ocr = await ocrReceipt(input.storagePath);
+      const { storageService } =
+        await import("@/server/services/storage.service");
+      const localPath = await storageService.resolveLocalPath(
+        input.storagePath,
+      );
+      const ocr = await ocrReceipt(localPath);
       const parsed = parseReceiptText(ocr.text);
 
       const [row] = await db

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/reminders",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/soa-poll",
+      "schedule": "*/10 * * * *"
+    }
+  ],
+  "functions": {
+    "src/app/api/receipts/upload/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/webhooks/telegram/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/cron/soa-poll/route.ts": {
+      "maxDuration": 300
+    }
+  }
+}

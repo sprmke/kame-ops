@@ -75,4 +75,33 @@ export const integrationService = {
     if (!row) return null;
     return JSON.parse(decryptSecret(row.configEncrypted)) as T;
   },
+
+  /** Resolve user from Telegram chat ID stored in integration config. */
+  async findUserIdByTelegramChatId(chatId: string): Promise<string | null> {
+    const rows = await db.query.integrations.findMany({
+      where: and(
+        eq(integrations.provider, "telegram"),
+        eq(integrations.isActive, true),
+      ),
+    });
+
+    for (const row of rows) {
+      const config = JSON.parse(decryptSecret(row.configEncrypted)) as {
+        chatId?: string;
+      };
+      if (config.chatId && String(config.chatId) === String(chatId)) {
+        return row.userId;
+      }
+    }
+    return null;
+  },
+
+  /** Bot token for a user (DB integration first, then env fallback). */
+  async getTelegramBotToken(userId: string): Promise<string | null> {
+    const config = await this.getConfig<{ botToken?: string }>(
+      userId,
+      "telegram",
+    );
+    return config?.botToken ?? process.env.TELEGRAM_BOT_TOKEN ?? null;
+  },
 };

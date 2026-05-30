@@ -1,9 +1,16 @@
-import { mkdir, writeFile } from "fs/promises";
-import { join } from "path";
-import { tmpdir } from "os";
 import { NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth/auth-config";
+import { storageService } from "@/server/services/storage.service";
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const ALLOWED_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "application/pdf",
+]);
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -17,13 +24,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
   }
 
-  const dir = join(tmpdir(), "kame-ops-receipts", session.user.id);
-  await mkdir(dir, { recursive: true });
+  if (file.size > MAX_FILE_SIZE) {
+    return NextResponse.json(
+      { error: "File too large (max 10MB)" },
+      { status: 400 },
+    );
+  }
 
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const storagePath = join(dir, `${Date.now()}-${safeName}`);
+  if (file.type && !ALLOWED_TYPES.has(file.type)) {
+    return NextResponse.json(
+      { error: "File type not allowed" },
+      { status: 400 },
+    );
+  }
+
   const buffer = Buffer.from(await file.arrayBuffer());
-  await writeFile(storagePath, buffer);
+  const storagePath = await storageService.uploadPrivate(
+    session.user.id,
+    file.name,
+    buffer,
+    file.type || undefined,
+  );
 
-  return NextResponse.json({ storagePath, originalFileName: file.name });
+  return NextResponse.json({
+    storagePath,
+    originalFileName: file.name,
+    storageBackend: storageService.isCloudStorage() ? "supabase" : "local",
+  });
 }

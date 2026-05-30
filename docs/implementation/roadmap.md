@@ -31,17 +31,26 @@
 ## Phase 5 — Receipts ✅ (basic)
 
 - [x] Upload API + OCR tRPC + list UI
-- [ ] Supabase Storage (local tmp upload for now)
+- [x] Supabase Storage service (local `/tmp` fallback when unset)
 
 ## Phase 6 — Analytics ✅
 
 - [x] Bar chart, pie chart, stat cards
 
-## Phase 7 — Telegram & calendar ✅ (basic)
+## Phase 7 — Telegram & calendar ✅ (mostly)
 
 - [x] Webhook mark-paid / mark-unpaid text commands
-- [ ] Photo receipt handling in webhook
+- [x] Photo receipt handling in webhook
 - [ ] In-app calendar view
+
+## Production readiness (in progress)
+
+- [x] CI workflow (lint, type-check, test, build)
+- [x] `vercel.json` cron + function timeouts
+- [x] Production env validation
+- [x] Vitest unit tests (starting)
+- [ ] Gmail OAuth UI (legacy `configs/` still used)
+- [ ] Supabase Cron dashboard (Vercel Cron configured in repo)
 
 ## Phase 8 — Migration ✅
 

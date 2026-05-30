@@ -1,10 +1,27 @@
 import { NextResponse } from "next/server";
 
+import { integrationService } from "@/server/services/integration.service";
 import { prepareLegacyRuntime } from "@/server/services/legacy-runtime.service";
 
+type TgPhotoSize = { file_id: string; width: number; height: number };
+type TgDocument = { file_id: string; mime_type?: string };
+type TgMessage = {
+  message_id: number;
+  text?: string;
+  caption?: string;
+  chat: { id: number };
+  photo?: TgPhotoSize[];
+  document?: TgDocument;
+};
+
+type TgUpdate = {
+  update_id: number;
+  message?: TgMessage;
+};
+
 /**
- * Telegram webhook — handles mark-paid / mark-unpaid text commands.
- * Set webhook URL to /api/webhooks/telegram and optional TELEGRAM_WEBHOOK_SECRET.
+ * Telegram webhook — mark-paid/unpaid text commands and receipt photo OCR.
+ * Set webhook URL to /api/webhooks/telegram and TELEGRAM_WEBHOOK_SECRET.
  */
 export async function POST(request: Request) {
   const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -15,28 +32,55 @@ export async function POST(request: Request) {
     }
   }
 
-  const update = (await request.json()) as {
-    update_id?: number;
-    message?: {
-      text?: string;
-      chat: { id: number };
-    };
-  };
-
-  const text = update.message?.text?.trim();
-  if (!text) {
-    return NextResponse.json({ ok: true, skipped: "no_text" });
+  const update = (await request.json()) as TgUpdate;
+  const msg = update.message;
+  if (!msg) {
+    return NextResponse.json({ ok: true, skipped: "no_message" });
   }
 
-  const adminUserId = process.env.TELEGRAM_DEFAULT_USER_ID;
-  if (!adminUserId) {
-    console.warn(
-      "[telegram] TELEGRAM_DEFAULT_USER_ID not set — cannot route mark-paid",
-    );
+  const userId = await resolveUserId(msg.chat.id);
+  if (!userId) {
+    console.warn("[telegram] No user mapped for chat", msg.chat.id);
     return NextResponse.json({ ok: true, skipped: "no_user" });
   }
 
-  await prepareLegacyRuntime(adminUserId);
+  const botToken = await integrationService.getTelegramBotToken(userId);
+  if (!botToken) {
+    console.warn("[telegram] No bot token for user", userId);
+    return NextResponse.json({ ok: true, skipped: "no_bot_token" });
+  }
+
+  await prepareLegacyRuntime(userId);
+
+  if (msg.photo?.length) {
+    const largest = pickLargestPhoto(msg.photo);
+    if (largest) {
+      await handleReceiptPhoto(
+        botToken,
+        userId,
+        msg,
+        largest.file_id,
+        update.update_id,
+      );
+      return NextResponse.json({ ok: true, action: "receipt_photo" });
+    }
+  }
+
+  if (msg.document?.mime_type?.startsWith("image/")) {
+    await handleReceiptPhoto(
+      botToken,
+      userId,
+      msg,
+      msg.document.file_id,
+      update.update_id,
+    );
+    return NextResponse.json({ ok: true, action: "receipt_document" });
+  }
+
+  const text = msg.text?.trim();
+  if (!text) {
+    return NextResponse.json({ ok: true, skipped: "no_text" });
+  }
 
   const {
     parsePaidMessage,
@@ -53,38 +97,99 @@ export async function POST(request: Request) {
   const paid = parsePaidMessage(text);
   if (paid) {
     const result = await markCardPaid(paid.cardLast4, paid.monthYM);
-    await dueSyncService.syncFromLegacyFile(adminUserId, workDir);
+    await dueSyncService.syncFromLegacyFile(userId, workDir);
     const reply =
       result.ok === true
         ? buildPaidConfirmationMessage(result)
         : result.reason === "not_found"
           ? `No due entry for •••• ${paid.cardLast4} in ${paid.monthYM}`
           : "Multiple cards match — specify issuer in CLI";
-    await sendTelegramReply(reply);
+    await sendTelegramReply(botToken, msg.chat.id, reply);
     return NextResponse.json({ ok: true, action: "mark_paid" });
   }
 
   const unpaid = parseUnpaidMessage(text);
   if (unpaid) {
     const result = await markCardUnpaid(unpaid.cardLast4, unpaid.monthYM);
-    await dueSyncService.syncFromLegacyFile(adminUserId, workDir);
+    await dueSyncService.syncFromLegacyFile(userId, workDir);
     const reply =
       result.ok === true
         ? buildUnpaidConfirmationMessage(result)
         : `Could not mark unpaid for •••• ${unpaid.cardLast4}`;
-    await sendTelegramReply(reply);
+    await sendTelegramReply(botToken, msg.chat.id, reply);
     return NextResponse.json({ ok: true, action: "mark_unpaid" });
   }
 
   return NextResponse.json({ ok: true, skipped: "unrecognized" });
 }
 
-async function sendTelegramReply(text: string) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) return;
+async function resolveUserId(chatId: number): Promise<string | null> {
+  const fromIntegration = await integrationService.findUserIdByTelegramChatId(
+    String(chatId),
+  );
+  if (fromIntegration) return fromIntegration;
 
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  const fallback = process.env.TELEGRAM_DEFAULT_USER_ID;
+  return fallback?.trim() || null;
+}
+
+function pickLargestPhoto(sizes: TgPhotoSize[]): TgPhotoSize | undefined {
+  if (sizes.length === 0) return undefined;
+  return sizes.reduce((best, cur) =>
+    cur.width * cur.height > best.width * best.height ? cur : best,
+  );
+}
+
+async function handleReceiptPhoto(
+  botToken: string,
+  userId: string,
+  msg: TgMessage,
+  fileId: string,
+  updateId: number,
+): Promise<void> {
+  await sendTelegramReply(
+    botToken,
+    msg.chat.id,
+    "⏳ Receipt received! Reading and verifying your payment… _(this may take up to 30 seconds)_",
+  );
+
+  const { downloadTelegramPhoto, ocrReceipt, parseReceiptText } =
+    await import("@/server/legacy/pay-credit-cards/receipt-ocr");
+  const { markCardPaidFromReceipt, buildReceiptConfirmationMessage } =
+    await import("@/server/legacy/pay-credit-cards/mark-paid");
+  const { dueSyncService } = await import("@/server/services/due-sync.service");
+
+  let reply: string;
+  try {
+    const downloaded = await downloadTelegramPhoto(botToken, fileId, {
+      suggestedName: `${updateId}-${msg.message_id}`,
+    });
+
+    const ocr = await ocrReceipt(downloaded.filePath);
+    const parsed = parseReceiptText(ocr.text);
+    const result = await markCardPaidFromReceipt(parsed, {
+      caption: msg.caption,
+    });
+    reply = buildReceiptConfirmationMessage(result);
+
+    if (result.ok) {
+      const workDir = process.env.DATA_DIR!;
+      await dueSyncService.syncFromLegacyFile(userId, workDir);
+    }
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    reply = `❌ Error processing receipt image: ${errMsg}`;
+  }
+
+  await sendTelegramReply(botToken, msg.chat.id, reply);
+}
+
+async function sendTelegramReply(
+  botToken: string,
+  chatId: number,
+  text: string,
+): Promise<void> {
+  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown" }),

@@ -1,6 +1,9 @@
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 
+const isProd =
+  process.env.NODE_ENV === "production" && !process.env.SKIP_ENV_VALIDATION;
+
 export const env = createEnv({
   server: {
     DATABASE_URL: z.string().url(),
@@ -9,14 +12,20 @@ export const env = createEnv({
     AUTH_URL: z.string().url().optional(),
     GOOGLE_CLIENT_ID: z.string().optional(),
     GOOGLE_CLIENT_SECRET: z.string().optional(),
-    SUPABASE_URL: z.string().url().optional(),
+    SUPABASE_URL: isProd ? z.string().url() : z.string().url().optional(),
     SUPABASE_ANON_KEY: z.string().optional(),
-    SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+    SUPABASE_SERVICE_ROLE_KEY: isProd
+      ? z.string().min(1)
+      : z.string().optional(),
     SUPABASE_STORAGE_BUCKET_PUBLIC: z.string().optional(),
-    SUPABASE_STORAGE_BUCKET_PRIVATE: z.string().optional(),
-    CRON_SECRET: z.string().optional(),
-    TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
-    ENCRYPTION_KEY: z.string().min(32).optional(),
+    SUPABASE_STORAGE_BUCKET_PRIVATE: isProd
+      ? z.string().min(1)
+      : z.string().optional(),
+    CRON_SECRET: isProd ? z.string().min(16) : z.string().optional(),
+    TELEGRAM_WEBHOOK_SECRET: isProd
+      ? z.string().min(16)
+      : z.string().optional(),
+    ENCRYPTION_KEY: isProd ? z.string().min(32) : z.string().min(32).optional(),
     ADMIN_EMAIL: z.string().email().optional(),
     ADMIN_PASSWORD: z.string().optional(),
     OPENAI_API_KEY: z.string().optional(),
