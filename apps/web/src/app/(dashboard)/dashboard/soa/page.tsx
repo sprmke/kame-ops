@@ -1,5 +1,5 @@
-import { SoaPage } from "@/features/dashboard/soa/components/SoaPage";
+import { SoaListPage } from "@/features/dashboard/soa/components/SoaListPage";
 
 export default function Page() {
-  return <SoaPage />;
+  return <SoaListPage />;
 }

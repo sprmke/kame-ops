@@ -1,5 +1,6 @@
 "use client";
 
+import { TransactionCategoryRulesSettings } from "@/features/dashboard/settings/components/TransactionCategoryRulesSettings";
 import { DashboardPageHeader } from "@/components/shared/DashboardPageHeader";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import {
@@ -21,6 +22,8 @@ export default function SettingsPage() {
         title="Settings"
         description="Environment configuration and integration status."
       />
+
+      <TransactionCategoryRulesSettings />
 
       <Card>
         <CardHeader>
