@@ -17,9 +17,11 @@ After the first run, start the app with:
 bun run dev
 ```
 
-Default sign-in (from seed): `admin@localhost` / `admin123` (see `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `apps/web/.env.local`).
+App URL: **http://localhost:3005** (`bun run dev`).
 
-Requires **Bun** and **Docker Desktop** when using local Postgres (`DATABASE_URL` pointing at `localhost`). For Supabase, set `DATABASE_URL` in `.env.local` — setup skips Docker automatically.
+Sign in at **/login** with Google (grants Gmail + Calendar access for SOA automation). Configure `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `apps/web/.env.local` — see `.env.example` for redirect URI setup.
+
+Requires **Bun**, **Node.js 20+**, and **Docker Desktop** when using local Postgres (`DATABASE_URL` pointing at `localhost`). For **Supabase** (Postgres + Storage), see `docs/temp/supabase-setup.md` and run `bun run setup:supabase` after filling in `.env.local`.
 
 ## Status
 

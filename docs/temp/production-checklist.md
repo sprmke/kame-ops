@@ -6,12 +6,13 @@ Use this before deploying KameOps to Vercel + Supabase.
 
 ### Supabase
 
-- [ ] Create Supabase project
-- [ ] Copy `DATABASE_URL` (pooler) and `DIRECT_URL` (optional, migrations)
-- [ ] Run schema: `cd apps/web && bun run db:push`
-- [ ] Seed admin: `bun run db:seed` (set `ADMIN_EMAIL` / `ADMIN_PASSWORD`)
-- [ ] Create Storage buckets: `kame-ops-private` (and `kame-ops-public` if needed)
-- [ ] Set bucket policies (private bucket: service role only)
+See **`docs/temp/supabase-setup.md`** for the full walkthrough.
+
+- [ ] Create Supabase project (`kame-ops`, region `ap-southeast-1`)
+- [ ] Set `DATABASE_URL` (pooler, port 6543) and `DIRECT_URL` (session, port 5432) in `.env.local`
+- [ ] Set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+- [ ] Run `bun run setup:supabase` (storage buckets + `db:push`)
+- [ ] Sign in with Google — creates user in Supabase Postgres (no email/password seed)
 
 ### Vercel
 
@@ -33,10 +34,20 @@ Use this before deploying KameOps to Vercel + Supabase.
   ```
 - [ ] Set `TELEGRAM_DEFAULT_USER_ID` to your user UUID until multi-user chat mapping is fully tested
 
+### Google OAuth (required)
+
+- [ ] Create Google Cloud project + OAuth **Web application** client
+- [ ] Authorized redirect URI: `{NEXT_PUBLIC_APP_URL}/api/auth/callback/google`
+- [ ] Enable Gmail API and Google Calendar API
+- [ ] Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in Vercel
+- [ ] Sign in at `/login` — grants `gmail.readonly` + `calendar.events`
+- [ ] After first sign-in, copy your user UUID from the DB for `TELEGRAM_DEFAULT_USER_ID` if using Telegram webhook
+
 ### Gmail (SOA)
 
-- [ ] Legacy OAuth still uses `configs/credentials.json` + `configs/token.json` on the server filesystem
-- [ ] For Vercel: migrate to in-app Gmail OAuth (roadmap item) or run SOA poll from a machine with configs
+- [x] OAuth tokens stored in `accounts` table on Google sign-in
+- [x] Legacy SOA pipeline reads tokens via `gmail.service` env bridge
+- [ ] No separate `configs/credentials.json` needed in production
 
 ## Phase B — Production hardening
 

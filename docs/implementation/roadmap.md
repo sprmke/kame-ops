@@ -8,7 +8,7 @@
 
 - [x] Integrations UI + encrypted storage + runtime env bridge
 - [x] Settings page with env docs and connection status
-- [ ] Gmail OAuth UI (legacy `configs/` still used)
+- [x] Gmail OAuth via Google sign-in (Gmail + Calendar scopes)
 
 ## Phase 2 — Credit cards module ✅
 
@@ -33,9 +33,10 @@
 - [x] Upload API + OCR tRPC + list UI
 - [x] Supabase Storage service (local `/tmp` fallback when unset)
 
-## Phase 6 — Analytics ✅
+## Phase 6 — SOA analytics ✅
 
-- [x] Bar chart, pie chart, stat cards
+- [x] Category spend charts on SOA period detail (Overview + Analytics tabs)
+- [x] Removed standalone `/dashboard/analytics` route (analytics live under each SOA period)
 
 ## Phase 7 — Telegram & calendar ✅ (mostly)
 
@@ -49,7 +50,7 @@
 - [x] `vercel.json` cron + function timeouts
 - [x] Production env validation
 - [x] Vitest unit tests (starting)
-- [ ] Gmail OAuth UI (legacy `configs/` still used)
+- [x] Google-only auth (email/password removed)
 - [ ] Supabase Cron dashboard (Vercel Cron configured in repo)
 
 ## Phase 8 — Migration ✅

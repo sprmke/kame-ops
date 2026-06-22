@@ -60,7 +60,8 @@ Load via `apps/web/src/lib/fonts.ts` and `next/font/google`.
 1. **Theme**: All UI must support light and dark (`bg-background`, `text-foreground`, etc.).
 2. **No hardcoded emerald/teal** — use `--success` for positive states.
 3. **No Kame Homes copy** — product is KameOps only.
-4. **Charts**: Use `chart-1` … `chart-5` Tailwind colors for Recharts.
+4. **Minimal UI copy** — no unsolicited descriptions or helper paragraphs; add text only when requested (see `.cursor/rules/21-minimal-ui-copy.mdc`).
+5. **Charts**: Use `chart-1` … `chart-5` Tailwind colors for Recharts.
 
 ## References
 

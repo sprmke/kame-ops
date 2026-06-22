@@ -19,6 +19,7 @@ const ROOT = join(import.meta.dir, "..");
 const WEB = join(ROOT, "apps/web");
 const ENV_LOCAL = join(WEB, ".env.local");
 const ENV_EXAMPLE = join(WEB, ".env.example");
+const LOCAL_DEV_APP_URL = "http://localhost:3005";
 
 const args = new Set(process.argv.slice(2));
 const shouldStart = args.has("--start");
@@ -154,14 +155,14 @@ function startPostgres(): void {
 }
 
 function printSuccess(env: Record<string, string>): void {
-  const appUrl =
-    env.NEXT_PUBLIC_APP_URL ?? env.AUTH_URL ?? "http://localhost:3005";
-  const adminEmail = env.ADMIN_EMAIL ?? "admin@localhost";
-  const adminPassword = env.ADMIN_PASSWORD ?? "admin123";
+  const appUrl = env.NEXT_PUBLIC_APP_URL ?? env.AUTH_URL ?? LOCAL_DEV_APP_URL;
 
   console.log("\n✓ Local setup complete\n");
   console.log(`  App:      ${appUrl}`);
-  console.log(`  Sign in:  ${adminEmail} / ${adminPassword}`);
+  console.log(`  Sign in:  ${appUrl}/login (Google OAuth)`);
+  console.log(
+    "  Google:   Set GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET in apps/web/.env.local",
+  );
   console.log("\n  Next time:");
   console.log(
     "    bun run dev          # dev server only (DB already running)",
@@ -196,7 +197,7 @@ async function main(): Promise<void> {
     log("database", "Applying schema (db:push)");
     run("bun", ["run", "db:push"], WEB);
 
-    log("database", "Seeding admin user (db:seed)");
+    log("database", "Running db:seed (Google sign-in instructions)");
     run("bun", ["run", "db:seed"], WEB);
   }
 
