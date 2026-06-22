@@ -6,6 +6,7 @@ import { createTRPCReact } from "@trpc/react-query";
 import { useState, type ReactNode } from "react";
 import superjson from "superjson";
 
+import { LOCAL_DEV_APP_URL } from "@/lib/constants/dev-url";
 import type { AppRouter } from "@/server/routers/_app";
 
 export const api = createTRPCReact<AppRouter>();
@@ -13,7 +14,7 @@ export const api = createTRPCReact<AppRouter>();
 function getBaseUrl() {
   if (typeof window !== "undefined") return "";
   if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
-  return `http://localhost:3005`;
+  return LOCAL_DEV_APP_URL;
 }
 
 export function TRPCProvider({

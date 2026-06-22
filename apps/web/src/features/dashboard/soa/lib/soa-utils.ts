@@ -1,0 +1,182 @@
+import type { BankIssuer } from "@/lib/db/schema/credit-cards";
+import {
+  computeStatementMonthTotals,
+  dueEntryKey,
+} from "@/lib/soa/outstanding";
+import { formatPhpAmount, parsePhpAmount } from "@/lib/utils/format-money";
+
+export { dueEntryKey };
+
+export type SoaStatement = {
+  id: string;
+  statementMonth: number;
+  statementYear: number;
+  bankLabel: string;
+  issuerId: string;
+  cardLast4: string;
+  minimumDue: string | null;
+  totalDue: string | null;
+  statementDate: string | null;
+  dueDate: string | null;
+  dueDateYmd: string | null;
+  pdfFileName: string | null;
+  parseNotes: string | null;
+  soaUnavailable: boolean | null;
+  transactions?: {
+    id: string;
+    date: string | null;
+    description: string;
+    amount: string;
+    categorySlug?: string | null;
+    categoryLabel?: string | null;
+    categorySource?: string | null;
+  }[];
+};
+
+export type SoaPeriodKey = `${number}-${number}`;
+
+export type SoaPeriodGroup = {
+  key: SoaPeriodKey;
+  month: number;
+  year: number;
+  label: string;
+  statements: SoaStatement[];
+  totalDue: number;
+  totalMinimum: number;
+  cardCount: number;
+  nextDueYmd: string | null;
+};
+
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;
+
+export const STATEMENT_MONTHS = MONTH_NAMES.map((label, index) => ({
+  value: index + 1,
+  label,
+}));
+
+export function formatStatementMonth(month: number): string {
+  return MONTH_NAMES[month - 1] ?? String(month);
+}
+
+export const ISSUER_ACCENTS: Record<
+  BankIssuer,
+  { dot: string; badge: string; border: string }
+> = {
+  metrobank: {
+    dot: "bg-[hsl(var(--chart-1))]",
+    badge:
+      "bg-[hsl(var(--chart-1)/0.12)] text-[hsl(var(--chart-1))] border-[hsl(var(--chart-1)/0.25)]",
+    border: "border-l-[hsl(var(--chart-1))]",
+  },
+  rcbc: {
+    dot: "bg-[hsl(var(--chart-4))]",
+    badge:
+      "bg-[hsl(var(--chart-4)/0.12)] text-[hsl(var(--chart-4))] border-[hsl(var(--chart-4)/0.25)]",
+    border: "border-l-[hsl(var(--chart-4))]",
+  },
+  bpi: {
+    dot: "bg-primary",
+    badge: "bg-primary/10 text-primary border-primary/25",
+    border: "border-l-primary",
+  },
+  unionbank: {
+    dot: "bg-[hsl(var(--destructive))]",
+    badge:
+      "bg-[hsl(var(--destructive)/0.12)] text-[hsl(var(--destructive))] border-[hsl(var(--destructive)/0.25)]",
+    border: "border-l-[hsl(var(--destructive))]",
+  },
+};
+
+export function periodLabel(month: number, year: number): string {
+  const name = MONTH_NAMES[month - 1];
+  return name ? `${name} ${year}` : `${month}/${year}`;
+}
+
+export function periodKey(month: number, year: number): SoaPeriodKey {
+  return `${year}-${month}`;
+}
+
+export function daysUntilDue(dueDateYmd: string | null): number | null {
+  if (!dueDateYmd) return null;
+  const due = new Date(`${dueDateYmd}T00:00:00`);
+  if (Number.isNaN(due.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((due.getTime() - today.getTime()) / 86_400_000);
+}
+
+export function dueCountdownLabel(days: number | null): string | null {
+  if (days === null) return null;
+  if (days < 0) return `${Math.abs(days)}d overdue`;
+  if (days === 0) return "Due today";
+  if (days === 1) return "Due tomorrow";
+  return `${days}d left`;
+}
+
+export function groupStatementsByPeriod(
+  statements: SoaStatement[],
+): SoaPeriodGroup[] {
+  const map = new Map<SoaPeriodKey, SoaStatement[]>();
+
+  for (const stmt of statements) {
+    const key = periodKey(stmt.statementMonth, stmt.statementYear);
+    const list = map.get(key) ?? [];
+    list.push(stmt);
+    map.set(key, list);
+  }
+
+  return [...map.entries()]
+    .map(([key, stmts]) => {
+      const [yearStr, monthStr] = key.split("-");
+      const year = Number(yearStr);
+      const month = Number(monthStr);
+      const sorted = [...stmts].sort((a, b) => {
+        const da = a.dueDateYmd ?? "";
+        const db = b.dueDateYmd ?? "";
+        return da.localeCompare(db);
+      });
+
+      const dues = sorted
+        .map((s) => s.dueDateYmd)
+        .filter((d): d is string => !!d)
+        .sort();
+
+      return {
+        key,
+        month,
+        year,
+        label: periodLabel(month, year),
+        statements: sorted,
+        ...computeStatementMonthTotals(sorted),
+        nextDueYmd: dues[0] ?? null,
+      };
+    })
+    .sort((a, b) => b.year - a.year || b.month - a.month);
+}
+
+export function issuerAccent(issuerId: string) {
+  if (issuerId in ISSUER_ACCENTS) {
+    return ISSUER_ACCENTS[issuerId as BankIssuer];
+  }
+  return ISSUER_ACCENTS.bpi;
+}
+
+export function formatDisplayAmount(raw: string | null | undefined): string {
+  if (!raw || raw === "—") return "—";
+  const parsed = parsePhpAmount(raw);
+  if (parsed > 0) return formatPhpAmount(parsed);
+  return raw;
+}

@@ -8,6 +8,7 @@ import {
   integer,
   boolean,
   index,
+  uniqueIndex,
   jsonb,
 } from "drizzle-orm/pg-core";
 
@@ -15,6 +16,40 @@ import { users } from "./users";
 
 export const BANK_ISSUERS = ["metrobank", "rcbc", "bpi", "unionbank"] as const;
 export type BankIssuer = (typeof BANK_ISSUERS)[number];
+
+/** Minutes between reminder pings while inside the due window. */
+export const REMINDER_INTERVALS = [
+  { value: 60, label: "Hourly" },
+  { value: 120, label: "Every 2 hours" },
+  { value: 240, label: "Every 4 hours" },
+  { value: 720, label: "Every 12 hours" },
+  { value: 1440, label: "Once per day" },
+] as const;
+
+export type ReminderIntervalMinutes =
+  (typeof REMINDER_INTERVALS)[number]["value"];
+
+export const BANK_ISSUER_LABELS: Record<BankIssuer, string> = {
+  metrobank: "Metrobank",
+  rcbc: "RCBC",
+  bpi: "BPI",
+  unionbank: "Unionbank",
+};
+
+export function formatBankIssuer(issuer: string): string {
+  if (issuer in BANK_ISSUER_LABELS) {
+    return BANK_ISSUER_LABELS[issuer as BankIssuer];
+  }
+  return issuer;
+}
+
+export function normalizeBankIssuer(issuer: string): BankIssuer {
+  const normalized = issuer.trim().toLowerCase();
+  if ((BANK_ISSUERS as readonly string[]).includes(normalized)) {
+    return normalized as BankIssuer;
+  }
+  return "bpi";
+}
 
 export const creditCards = pgTable(
   "credit_cards",
@@ -30,6 +65,13 @@ export const creditCards = pgTable(
     contactLine: text("contact_line"),
     pdfPasswordEncrypted: text("pdf_password_encrypted").notNull(),
     gmailMonthOffset: integer("gmail_month_offset").default(0),
+    /** Days before due date to start reminders (null = use global default). */
+    reminderWindowDays: integer("reminder_window_days"),
+    /** Minutes between pings while in window (default once per day). */
+    reminderIntervalMinutes: integer("reminder_interval_minutes")
+      .notNull()
+      .default(1440),
+    notes: text("notes"),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
@@ -82,6 +124,41 @@ export const soaStatements = pgTable(
   ],
 );
 
+export const soaPeriods = pgTable(
+  "soa_periods",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    mode: varchar("mode", { length: 16 }).notNull().default("single"),
+    fromMonth: integer("from_month").notNull(),
+    fromYear: integer("from_year").notNull(),
+    toMonth: integer("to_month").notNull(),
+    toYear: integer("to_year").notNull(),
+    notifyTelegram: boolean("notify_telegram").notNull().default(true),
+    notifySlack: boolean("notify_slack").notNull().default(true),
+    createCalendar: boolean("create_calendar").notNull().default(false),
+    summaryPdfStoragePath: text("summary_pdf_storage_path"),
+    lastRunAt: timestamp("last_run_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("soa_periods_user_idx").on(table.userId),
+    uniqueIndex("soa_periods_range_uidx").on(
+      table.userId,
+      table.fromMonth,
+      table.fromYear,
+      table.toMonth,
+      table.toYear,
+    ),
+  ],
+);
+
 export const soaTransactions = pgTable(
   "soa_transactions",
   {
@@ -92,6 +169,8 @@ export const soaTransactions = pgTable(
     date: varchar("date", { length: 32 }),
     description: text("description").notNull(),
     amount: varchar("amount", { length: 32 }).notNull(),
+    categorySlug: varchar("category_slug", { length: 32 }),
+    categorySource: varchar("category_source", { length: 16 }),
   },
   (table) => [index("soa_transactions_statement_idx").on(table.soaStatementId)],
 );
@@ -134,6 +213,10 @@ export const creditCardsRelations = relations(creditCards, ({ one, many }) => ({
   user: one(users, { fields: [creditCards.userId], references: [users.id] }),
   statements: many(soaStatements),
   dueEntries: many(dueEntries),
+}));
+
+export const soaPeriodsRelations = relations(soaPeriods, ({ one }) => ({
+  user: one(users, { fields: [soaPeriods.userId], references: [users.id] }),
 }));
 
 export const soaStatementsRelations = relations(

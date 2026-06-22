@@ -46,3 +46,8 @@ test-results/
 # Local dev uploads (if ever written under project root)
 tmp/
 uploads/
+
+# Legacy SOA pipeline runtime data (downloaded PDFs, summaries, local state)
+src/server/legacy/data/downloads/
+src/server/legacy/data/output/
+src/server/legacy/data/*.json
