@@ -8,12 +8,12 @@
  *   3. Heuristically extract the card last-4 digits and the amount paid so the
  *      caller can resolve a DueEntry and decide whether to mark it as paid.
  *
- * Used by: src/telegram-bot-listener.ts (photo / image-document messages).
+ * Used by: receipts router and Telegram webhook (photo / image-document messages).
  */
-import fs from 'node:fs';
-import path from 'node:path';
-import { createWorker, PSM } from 'tesseract.js';
-import { projectPaths } from './config';
+import fs from "node:fs";
+import path from "node:path";
+import { createWorker, PSM } from "tesseract.js";
+import { projectPaths } from "./config";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -84,16 +84,16 @@ export async function downloadTelegramPhoto(
   const buf = Buffer.from(await fileRes.arrayBuffer());
 
   const now = new Date();
-  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const baseDir =
     opts.receiptsDir && opts.receiptsDir.trim().length > 0
       ? opts.receiptsDir
-      : path.join(projectPaths.dataDir, 'receipts');
+      : path.join(projectPaths.dataDir, "receipts");
   const dir = path.join(baseDir, ym);
   fs.mkdirSync(dir, { recursive: true });
 
-  const tgExt = path.extname(telegramFilePath).toLowerCase() || '.bin';
-  const stem = opts.suggestedName?.replace(/[^A-Za-z0-9._-]+/g, '_') ?? fileId;
+  const tgExt = path.extname(telegramFilePath).toLowerCase() || ".bin";
+  const stem = opts.suggestedName?.replace(/[^A-Za-z0-9._-]+/g, "_") ?? fileId;
   const filePath = path.join(dir, `${stem}${tgExt}`);
   fs.writeFileSync(filePath, buf);
 
@@ -109,7 +109,7 @@ export async function downloadTelegramPhoto(
 const PSM_VALUES = new Set<string>(Object.values(PSM));
 
 function resolvePsm(raw: string | undefined): PSM {
-  const t = raw?.trim() ?? '';
+  const t = raw?.trim() ?? "";
   if (t && PSM_VALUES.has(t)) return t as PSM;
   return PSM.SINGLE_BLOCK;
 }
@@ -122,17 +122,17 @@ export async function ocrReceipt(
   imagePath: string,
   psmRaw?: string,
 ): Promise<ReceiptOcrResult> {
-  const worker = await createWorker('eng');
+  const worker = await createWorker("eng");
   try {
     await worker.setParameters({
       tessedit_pageseg_mode: resolvePsm(psmRaw),
-      preserve_interword_spaces: '1',
+      preserve_interword_spaces: "1",
     });
     const { data } = await worker.recognize(imagePath);
     return {
-      text: (data.text ?? '').trim(),
+      text: (data.text ?? "").trim(),
       confidence:
-        typeof data.confidence === 'number' ? data.confidence : undefined,
+        typeof data.confidence === "number" ? data.confidence : undefined,
     };
   } finally {
     await worker.terminate();
@@ -148,8 +148,8 @@ export async function ocrReceipt(
 export function parseMoneyToNumber(raw: string): number {
   if (!raw) return NaN;
   const cleaned = raw
-    .replace(/[^\d.,-]/g, '')
-    .replace(/,/g, '')
+    .replace(/[^\d.,-]/g, "")
+    .replace(/,/g, "")
     .trim();
   if (!cleaned) return NaN;
   const n = Number(cleaned);
@@ -188,7 +188,7 @@ const AMOUNT_LINE = new RegExp(
     `|total(?:\\s+(?:paid|amount))?` + // "Total", "Total Paid", "Total Amount"
     `|payment\\s+(?:amount|worth)` + // "Payment Amount", "payment worth" (NOT bare "Payment")
     `)\\b[^\\d₱]*((?:PHP|Php|php|₱|P)?\\s*${MONEY_TOKEN.source})`,
-  'i',
+  "i",
 );
 
 /**
@@ -196,7 +196,7 @@ const AMOUNT_LINE = new RegExp(
  * Returns undefined if the result has fewer than N digits.
  */
 function lastNDigits(raw: string, n = 4): string | undefined {
-  const d = raw.replace(/\D/g, '');
+  const d = raw.replace(/\D/g, "");
   return d.length >= n ? d.slice(-n) : undefined;
 }
 
@@ -230,7 +230,7 @@ function tryPickCardLast4InExcerpt(
   //       and split OCR like "415764004909 2600".
   const SPAN_RE = /\b\d[\d\s-]{13,20}\d\b/g;
   for (const m of excerpt.matchAll(SPAN_RE)) {
-    const digits = m[0].replace(/\D/g, '');
+    const digits = m[0].replace(/\D/g, "");
     if (digits.length === 16) return digits.slice(-4);
   }
 
@@ -263,7 +263,7 @@ function pickCardLast4(
   knownLast4s: readonly string[] = [],
 ): string | undefined {
   // Replace bullet/dot obscuring characters with *.
-  const cleaned = text.replace(/[\u2022\u2043\u25CF\u00B7\u2024\u22C5]/g, '*');
+  const cleaned = text.replace(/[\u2022\u2043\u25CF\u00B7\u2024\u22C5]/g, "*");
 
   // Many receipts (e.g. GCash → bank) put the *credit card* above a "From"
   // block and the *source wallet* inside "From". Searching only before "From"
@@ -324,16 +324,16 @@ export function parseReceiptText(
   text: string,
   knownLast4s: readonly string[] = [],
 ): ParsedReceipt {
-  const normalized = text.replace(/\r/g, '');
+  const normalized = text.replace(/\r/g, "");
   const cardLast4 = pickCardLast4(normalized, knownLast4s);
   const picked = pickAmount(normalized);
 
   const excerpt = normalized
-    .split('\n')
+    .split("\n")
     .map((l) => l.trim())
     .filter((l) => l.length > 0)
     .slice(0, 12)
-    .join('\n');
+    .join("\n");
 
   return {
     cardLast4,

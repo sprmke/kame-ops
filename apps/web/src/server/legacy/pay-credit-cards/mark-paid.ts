@@ -3,9 +3,8 @@
  * Core logic for marking a credit card payment as paid or un-paid.
  *
  * Called by:
- *   - src/mark-paid-cli.ts    (terminal: interactive mark-paid)
- *   - src/mark-unpaid-cli.ts  (terminal: interactive mark-unpaid)
- *   - src/telegram-bot-listener.ts  (Telegram: text or receipt photo)
+ *   - due-entry.service (web UI mark paid/unpaid)
+ *   - app/api/webhooks/telegram (Telegram text or receipt photo)
  *
  * Effects (paid):
  *   1. Marks all pending due-date reminders as "sent" so the daily
@@ -19,20 +18,20 @@
  *   2. Deletes suppressed reminder fingerprints so they re-fire.
  *   3. Restores Google Calendar events to original title/color/popup.
  */
-import { calendarConfig, receiptConfig, remindersConfig } from './config';
+import { calendarConfig, receiptConfig, remindersConfig } from "./config";
 import {
   findDueEntryByCardAndMonth,
   findNearestUnpaidByLast4,
   markDueEntryAsPaid,
   markDueEntryAsUnpaid,
   type DueEntry,
-} from './due-reminders-state';
+} from "./due-reminders-state";
 import {
   markCalendarEventsPaid,
   markCalendarEventsUnpaid,
-} from './google-calendar';
-import { log } from './logger';
-import { parseMoneyToNumber, type ParsedReceipt } from './receipt-ocr';
+} from "./google-calendar";
+import { log } from "./logger";
+import { parseMoneyToNumber, type ParsedReceipt } from "./receipt-ocr";
 
 // ─── Month parsing ────────────────────────────────────────────────────────────
 
@@ -75,14 +74,14 @@ export function parseMonthYear(raw: string): string | null {
   if (mWord) {
     const mon = MONTH_MAP[mWord[1]!];
     if (!mon) return null;
-    return `${mWord[2]}-${String(mon).padStart(2, '0')}`;
+    return `${mWord[2]}-${String(mon).padStart(2, "0")}`;
   }
 
   const mIso = s.match(/^(\d{4})-(\d{2})$/);
   if (mIso) return `${mIso[1]}-${mIso[2]}`;
 
   const mSlash = s.match(/^(\d{1,2})[\/\-](\d{4})$/);
-  if (mSlash) return `${mSlash[2]}-${mSlash[1]!.padStart(2, '0')}`;
+  if (mSlash) return `${mSlash[2]}-${mSlash[1]!.padStart(2, "0")}`;
 
   return null;
 }
@@ -102,7 +101,7 @@ export function extractMonthYearLoose(raw: string): string | null {
   const mWord = s.match(/\b([a-z]{3,9})\s+(\d{4})\b/);
   if (mWord) {
     const mon = MONTH_MAP[mWord[1]!];
-    if (mon) return `${mWord[2]}-${String(mon).padStart(2, '0')}`;
+    if (mon) return `${mWord[2]}-${String(mon).padStart(2, "0")}`;
   }
 
   const mIso = s.match(/\b(\d{4})-(\d{2})\b/);
@@ -112,7 +111,7 @@ export function extractMonthYearLoose(raw: string): string | null {
   if (mSlash) {
     const mo = Number(mSlash[1]);
     if (mo >= 1 && mo <= 12) {
-      return `${mSlash[2]}-${String(mo).padStart(2, '0')}`;
+      return `${mSlash[2]}-${String(mo).padStart(2, "0")}`;
     }
   }
 
@@ -149,10 +148,10 @@ export type MarkPaidResult =
       calendarUpdated: number;
       calendarError?: string;
     }
-  | { ok: false; reason: 'not_found'; cardLast4: string; monthYM: string }
+  | { ok: false; reason: "not_found"; cardLast4: string; monthYM: string }
   | {
       ok: false;
-      reason: 'ambiguous';
+      reason: "ambiguous";
       matches: DueEntry[];
       cardLast4: string;
       monthYM: string;
@@ -175,12 +174,12 @@ export async function markCardPaid(
   const found = findDueEntryByCardAndMonth(cardLast4, monthYM);
 
   if (found === null) {
-    return { ok: false, reason: 'not_found', cardLast4, monthYM };
+    return { ok: false, reason: "not_found", cardLast4, monthYM };
   }
   if (Array.isArray(found)) {
     return {
       ok: false,
-      reason: 'ambiguous',
+      reason: "ambiguous",
       matches: found,
       cardLast4,
       monthYM,
@@ -223,7 +222,7 @@ export async function markCardPaid(
 /** Build a Telegram-friendly confirmation message for a text paid command. */
 export function buildPaidConfirmationMessage(result: MarkPaidResult): string {
   if (!result.ok) {
-    if (result.reason === 'not_found') {
+    if (result.reason === "not_found") {
       return (
         `❌ *No entry found*\n\n` +
         `Card \`****${result.cardLast4}\` has no due record for *${result.monthYM}*.\n` +
@@ -231,10 +230,10 @@ export function buildPaidConfirmationMessage(result: MarkPaidResult): string {
       );
     }
     const bullets = (
-      result as Extract<typeof result, { reason: 'ambiguous' }>
+      result as Extract<typeof result, { reason: "ambiguous" }>
     ).matches
       .map((m) => `• ${cardLabel(m)} — due ${m.dueDate}`)
-      .join('\n');
+      .join("\n");
     return (
       `⚠️ *Multiple cards matched* \`****${result.cardLast4}\` in *${result.monthYM}*:\n\n` +
       `${bullets}\n\n` +
@@ -256,7 +255,7 @@ export function buildPaidConfirmationMessage(result: MarkPaidResult): string {
   }
 
   return (
-    `✅ *Payment Marked*\n\n` + `*${cardLabel(entry)}*\n` + bullets.join('\n')
+    `✅ *Payment Marked*\n\n` + `*${cardLabel(entry)}*\n` + bullets.join("\n")
   );
 }
 
@@ -277,31 +276,31 @@ export type ReceiptPayResult =
       /** Set when the caller supplied a caption month/year override. */
       monthYM?: string;
     }
-  | { ok: false; reason: 'no_card_detected'; parsed: ParsedReceipt }
-  | { ok: false; reason: 'no_amount_detected'; parsed: ParsedReceipt }
+  | { ok: false; reason: "no_card_detected"; parsed: ParsedReceipt }
+  | { ok: false; reason: "no_amount_detected"; parsed: ParsedReceipt }
   | {
       ok: false;
-      reason: 'no_due_entry';
+      reason: "no_due_entry";
       cardLast4: string;
       monthYM?: string;
       parsed: ParsedReceipt;
     }
   | {
       ok: false;
-      reason: 'already_paid';
+      reason: "already_paid";
       cardLast4: string;
       parsed: ParsedReceipt;
     }
   | {
       ok: false;
-      reason: 'ambiguous_card';
+      reason: "ambiguous_card";
       cardLast4: string;
       matches: DueEntry[];
       parsed: ParsedReceipt;
     }
   | {
       ok: false;
-      reason: 'amount_below_minimum';
+      reason: "amount_below_minimum";
       entry: DueEntry;
       amountPaid: number;
       amountRaw: string;
@@ -321,17 +320,17 @@ function resolveReceiptEntry(
   entry?: DueEntry;
   matches?: DueEntry[];
   monthYM?: string;
-  reason?: 'no_due_entry' | 'already_paid' | 'ambiguous_card';
+  reason?: "no_due_entry" | "already_paid" | "ambiguous_card";
 } {
   const monthYM = caption ? extractMonthYearLoose(caption) : null;
 
   if (monthYM) {
     const byMonth = findDueEntryByCardAndMonth(cardLast4, monthYM);
     if (byMonth === null) {
-      return { reason: 'no_due_entry', monthYM };
+      return { reason: "no_due_entry", monthYM };
     }
     if (Array.isArray(byMonth)) {
-      return { reason: 'ambiguous_card', matches: byMonth, monthYM };
+      return { reason: "ambiguous_card", matches: byMonth, monthYM };
     }
     // When a specific month is requested, honor it even if already paid.
     return { entry: byMonth, monthYM };
@@ -339,13 +338,13 @@ function resolveReceiptEntry(
 
   const nearest = findNearestUnpaidByLast4(cardLast4);
   if (nearest === null) {
-    return { reason: 'no_due_entry' };
+    return { reason: "no_due_entry" };
   }
-  if (nearest === 'already_paid') {
-    return { reason: 'already_paid' };
+  if (nearest === "already_paid") {
+    return { reason: "already_paid" };
   }
   if (Array.isArray(nearest)) {
-    return { reason: 'ambiguous_card', matches: nearest };
+    return { reason: "ambiguous_card", matches: nearest };
   }
   return { entry: nearest };
 }
@@ -362,34 +361,34 @@ export async function markCardPaidFromReceipt(
   opts: { caption?: string; skipCalendar?: boolean } = {},
 ): Promise<ReceiptPayResult> {
   if (!parsed.cardLast4) {
-    return { ok: false, reason: 'no_card_detected', parsed };
+    return { ok: false, reason: "no_card_detected", parsed };
   }
   if (parsed.amount === undefined || !Number.isFinite(parsed.amount)) {
-    return { ok: false, reason: 'no_amount_detected', parsed };
+    return { ok: false, reason: "no_amount_detected", parsed };
   }
 
   const resolved = resolveReceiptEntry(parsed.cardLast4, opts.caption);
-  if (resolved.reason === 'no_due_entry') {
+  if (resolved.reason === "no_due_entry") {
     return {
       ok: false,
-      reason: 'no_due_entry',
+      reason: "no_due_entry",
       cardLast4: parsed.cardLast4,
       monthYM: resolved.monthYM,
       parsed,
     };
   }
-  if (resolved.reason === 'already_paid') {
+  if (resolved.reason === "already_paid") {
     return {
       ok: false,
-      reason: 'already_paid',
+      reason: "already_paid",
       cardLast4: parsed.cardLast4,
       parsed,
     };
   }
-  if (resolved.reason === 'ambiguous_card') {
+  if (resolved.reason === "ambiguous_card") {
     return {
       ok: false,
-      reason: 'ambiguous_card',
+      reason: "ambiguous_card",
       cardLast4: parsed.cardLast4,
       matches: resolved.matches ?? [],
       parsed,
@@ -409,7 +408,7 @@ export async function markCardPaidFromReceipt(
   if (!Number.isFinite(threshold) || amountPaid + 0.005 < threshold) {
     return {
       ok: false,
-      reason: 'amount_below_minimum',
+      reason: "amount_below_minimum",
       entry,
       amountPaid,
       amountRaw,
@@ -455,8 +454,8 @@ export async function markCardPaidFromReceipt(
 }
 
 function formatPeso(n: number): string {
-  if (!Number.isFinite(n)) return '—';
-  return `PHP ${n.toLocaleString('en-PH', {
+  if (!Number.isFinite(n)) return "—";
+  return `PHP ${n.toLocaleString("en-PH", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
@@ -494,49 +493,49 @@ export function buildReceiptConfirmationMessage(
     return (
       `✅ *Payment Confirmed*\n\n` +
       `*${cardLabel(result.entry)}*\n` +
-      bullets.join('\n')
+      bullets.join("\n")
     );
   }
 
   switch (result.reason) {
-    case 'no_card_detected':
+    case "no_card_detected":
       return (
         `❌ *Card number not detected*\n\n` +
         `Could not read a credit card number from the receipt.\n\n` +
         `_OCR excerpt:_\n\`\`\`\n${result.parsed.rawExcerpt}\n\`\`\`\n\n` +
         `You can still mark it manually:\n\`xxxx - month year - paid\``
       );
-    case 'no_amount_detected':
+    case "no_amount_detected":
       return (
         `❌ *Amount not detected*\n\n` +
         `Could not read the payment amount from the receipt.\n\n` +
         `_OCR excerpt:_\n\`\`\`\n${result.parsed.rawExcerpt}\n\`\`\``
       );
-    case 'no_due_entry':
+    case "no_due_entry":
       return (
         `❌ *No due record found*\n\n` +
-        `Card \`****${result.cardLast4}\`${result.monthYM ? ` for *${result.monthYM}*` : ''} has no pending due entry.\n\n` +
+        `Card \`****${result.cardLast4}\`${result.monthYM ? ` for *${result.monthYM}*` : ""} has no pending due entry.\n\n` +
         `Make sure the SOA has been processed first.`
       );
-    case 'already_paid':
+    case "already_paid":
       return (
         `ℹ️ *Already marked as paid*\n\n` +
         `Card \`****${result.cardLast4}\` is already paid — no changes made.\n\n` +
         `• To re-verify a specific month, resend the photo with a caption like \`april 2026\`\n` +
         `• To undo: \`${result.cardLast4} - month year - unpaid\``
       );
-    case 'ambiguous_card': {
+    case "ambiguous_card": {
       const bullets = result.matches
         .map((m) => `• ${cardLabel(m)} — due ${m.dueDate}`)
-        .join('\n');
+        .join("\n");
       return (
         `⚠️ *Multiple cards matched* \`****${result.cardLast4}\`:\n\n` +
         `${bullets}\n\n` +
         `Resend the photo with a caption like \`april 2026\` to target a specific statement.`
       );
     }
-    case 'amount_below_minimum': {
-      const threshold = receiptConfig.requireTotalDue ? 'total' : 'minimum';
+    case "amount_below_minimum": {
+      const threshold = receiptConfig.requireTotalDue ? "total" : "minimum";
       return (
         `❌ *Payment not confirmed*\n\n` +
         `*${cardLabel(result.entry)}*\n` +
@@ -550,29 +549,29 @@ export function buildReceiptConfirmationMessage(
   }
 }
 
-function indent(text: string, prefix = '   '): string {
+function indent(text: string, prefix = "   "): string {
   return text
-    .split('\n')
+    .split("\n")
     .map((l) => `${prefix}${l}`)
-    .join('\n');
+    .join("\n");
 }
 
 function ymToCaption(ymd: string): string {
   const m = ymd.match(/^(\d{4})-(\d{2})/);
   if (!m) return ymd;
   const monthNames = [
-    'january',
-    'february',
-    'march',
-    'april',
-    'may',
-    'june',
-    'july',
-    'august',
-    'september',
-    'october',
-    'november',
-    'december',
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
   ];
   const idx = Number(m[2]) - 1;
   const name = monthNames[idx] ?? m[2];
@@ -605,17 +604,17 @@ export type MarkUnpaidResult =
       calendarUpdated: number;
       calendarError?: string;
     }
-  | { ok: false; reason: 'not_found'; cardLast4: string; monthYM: string }
+  | { ok: false; reason: "not_found"; cardLast4: string; monthYM: string }
   | {
       ok: false;
-      reason: 'ambiguous';
+      reason: "ambiguous";
       matches: DueEntry[];
       cardLast4: string;
       monthYM: string;
     }
   | {
       ok: false;
-      reason: 'already_unpaid';
+      reason: "already_unpaid";
       cardLast4: string;
       monthYM: string;
     };
@@ -635,12 +634,12 @@ export async function markCardUnpaid(
   const found = findDueEntryByCardAndMonth(cardLast4, monthYM);
 
   if (found === null) {
-    return { ok: false, reason: 'not_found', cardLast4, monthYM };
+    return { ok: false, reason: "not_found", cardLast4, monthYM };
   }
   if (Array.isArray(found)) {
     return {
       ok: false,
-      reason: 'ambiguous',
+      reason: "ambiguous",
       matches: found,
       cardLast4,
       monthYM,
@@ -650,7 +649,7 @@ export async function markCardUnpaid(
   const entry = found;
 
   if (!entry.paidAt) {
-    return { ok: false, reason: 'already_unpaid', cardLast4, monthYM };
+    return { ok: false, reason: "already_unpaid", cardLast4, monthYM };
   }
 
   // 1. Remove paidAt + restore reminder fingerprints.
@@ -687,24 +686,24 @@ export function buildUnpaidConfirmationMessage(
   result: MarkUnpaidResult,
 ): string {
   if (!result.ok) {
-    if (result.reason === 'not_found') {
+    if (result.reason === "not_found") {
       return (
         `❌ *No entry found*\n\n` +
         `Card \`****${result.cardLast4}\` has no due record for *${result.monthYM}*.\n` +
         `Make sure the SOA has been processed first.`
       );
     }
-    if (result.reason === 'already_unpaid') {
+    if (result.reason === "already_unpaid") {
       return (
         `ℹ️ *Already unpaid*\n\n` +
         `Card \`****${result.cardLast4}\` for *${result.monthYM}* is already marked as unpaid — nothing changed.`
       );
     }
     const bullets = (
-      result as Extract<typeof result, { reason: 'ambiguous' }>
+      result as Extract<typeof result, { reason: "ambiguous" }>
     ).matches
       .map((m) => `• ${cardLabel(m)} — due ${m.dueDate}`)
-      .join('\n');
+      .join("\n");
     return (
       `⚠️ *Multiple cards matched* \`****${result.cardLast4}\` in *${result.monthYM}*:\n\n` +
       `${bullets}\n\n` +
@@ -724,6 +723,6 @@ export function buildUnpaidConfirmationMessage(
   }
 
   return (
-    `↩️ *Payment Reverted*\n\n` + `*${cardLabel(entry)}*\n` + bullets.join('\n')
+    `↩️ *Payment Reverted*\n\n` + `*${cardLabel(entry)}*\n` + bullets.join("\n")
   );
 }
