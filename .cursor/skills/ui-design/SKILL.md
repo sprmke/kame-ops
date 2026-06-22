@@ -8,6 +8,7 @@ description: UI/UX design skill for creating professional, responsive, and perfo
 This skill helps you create beautiful, professional, and user-friendly interfaces.
 
 ## Tech Stack Context
+
 - **Framework**: Next.js 16+ (App Router)
 - **UI Library**: shadcn/ui + Tailwind CSS
 - **Animations**: Framer Motion (optional)
@@ -15,25 +16,27 @@ This skill helps you create beautiful, professional, and user-friendly interface
 
 ## Design Principles
 
-1. **Mobile-First**: Design for mobile, then scale up
-2. **Consistency**: Use design system tokens
-3. **Clarity**: Clear visual hierarchy
-4. **Performance**: Optimize for speed
-5. **Accessibility**: WCAG 2.1 AA compliant
+1. **Minimal copy**: No unsolicited UI text — see `.cursor/rules/21-minimal-ui-copy.mdc`
+2. **Mobile-First**: Design for mobile, then scale up
+3. **Consistency**: Use design system tokens
+4. **Clarity**: Clear visual hierarchy (layout and labels, not paragraphs)
+5. **Performance**: Optimize for speed
+6. **Accessibility**: WCAG 2.1 AA compliant
 
 ## Responsive Breakpoints
 
 ```typescript
 // Tailwind breakpoints
-sm: '640px'   // Large phones
-md: '768px'   // Tablets
-lg: '1024px'  // Desktops
-xl: '1280px'  // Large desktops
+sm: "640px"; // Large phones
+md: "768px"; // Tablets
+lg: "1024px"; // Desktops
+xl: "1280px"; // Large desktops
 ```
 
 ## Layout Patterns
 
 ### Page Layout
+
 ```typescript
 export function PageLayout({ title, description, actions, children }) {
   return (
@@ -48,7 +51,7 @@ export function PageLayout({ title, description, actions, children }) {
         </div>
         {actions && <div className="flex gap-2">{actions}</div>}
       </div>
-      
+
       {/* Page Content */}
       <div>{children}</div>
     </div>
@@ -57,6 +60,7 @@ export function PageLayout({ title, description, actions, children }) {
 ```
 
 ### Responsive Grid
+
 ```typescript
 // Auto-fit grid (recommended)
 <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -70,6 +74,7 @@ export function PageLayout({ title, description, actions, children }) {
 ```
 
 ### Two-Column Layout
+
 ```typescript
 <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
   <main>{/* Main content */}</main>
@@ -80,6 +85,7 @@ export function PageLayout({ title, description, actions, children }) {
 ## Card Components
 
 ### Stats Card
+
 ```typescript
 <Card>
   <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -99,6 +105,7 @@ export function PageLayout({ title, description, actions, children }) {
 ```
 
 ### Interactive Card
+
 ```typescript
 <Card className="cursor-pointer transition-all hover:shadow-md hover:border-primary/50">
   <CardContent className="p-4">
@@ -110,6 +117,7 @@ export function PageLayout({ title, description, actions, children }) {
 ## Loading States
 
 ### Skeleton Loader
+
 ```typescript
 export function Skeleton({ className }) {
   return (
@@ -126,6 +134,7 @@ export function Skeleton({ className }) {
 ```
 
 ### Loading Button
+
 ```typescript
 <Button disabled={isLoading}>
   {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -136,6 +145,7 @@ export function Skeleton({ className }) {
 ## Empty & Error States
 
 ### Empty State
+
 ```typescript
 <div className="flex flex-col items-center justify-center py-12 text-center">
   <div className="rounded-full bg-muted p-4 mb-4">
@@ -150,6 +160,7 @@ export function Skeleton({ className }) {
 ```
 
 ### Error State
+
 ```typescript
 <div className="flex flex-col items-center justify-center py-12 text-center">
   <div className="rounded-full bg-destructive/10 p-4 mb-4">
@@ -169,6 +180,7 @@ export function Skeleton({ className }) {
 ## Form Patterns
 
 ### Form Field
+
 ```typescript
 <div className="space-y-2">
   <Label htmlFor="name">Name</Label>
@@ -184,6 +196,7 @@ export function Skeleton({ className }) {
 ```
 
 ### Form Layout
+
 ```typescript
 // Single column (mobile-friendly)
 <form className="space-y-4">
@@ -215,7 +228,7 @@ export function ResponsiveBookings({ bookings }) {
           <BookingCard key={booking.id} booking={booking} />
         ))}
       </div>
-      
+
       {/* Desktop: Table */}
       <div className="hidden lg:block">
         <DataTable columns={columns} data={bookings} />
@@ -228,18 +241,20 @@ export function ResponsiveBookings({ bookings }) {
 ## Animation Patterns
 
 ### Hover Effects
+
 ```typescript
 // Subtle lift
-className="transition-all duration-200 hover:shadow-lg hover:-translate-y-1"
+className = "transition-all duration-200 hover:shadow-lg hover:-translate-y-1";
 
 // Border highlight
-className="transition-colors hover:border-primary"
+className = "transition-colors hover:border-primary";
 
 // Scale
-className="transition-transform hover:scale-105 active:scale-95"
+className = "transition-transform hover:scale-105 active:scale-95";
 ```
 
 ### Page Transitions (Framer Motion)
+
 ```typescript
 <motion.div
   initial={{ opacity: 0, y: 20 }}
@@ -252,6 +267,7 @@ className="transition-transform hover:scale-105 active:scale-95"
 ```
 
 ### Staggered List
+
 ```typescript
 <motion.ul
   initial="hidden"
@@ -312,11 +328,13 @@ className="sr-only"
 ## Performance Tips
 
 1. **Lazy load heavy components**
+
 ```typescript
-const Chart = lazy(() => import('./Chart'));
+const Chart = lazy(() => import("./Chart"));
 ```
 
 2. **Use skeleton loaders**
+
 ```typescript
 <Suspense fallback={<Skeleton />}>
   <AsyncComponent />
@@ -324,6 +342,7 @@ const Chart = lazy(() => import('./Chart'));
 ```
 
 3. **Optimize images**
+
 ```typescript
 <Image
   src={src}
@@ -336,8 +355,9 @@ const Chart = lazy(() => import('./Chart'));
 ```
 
 4. **Virtualize long lists**
+
 ```typescript
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useVirtualizer } from "@tanstack/react-virtual";
 ```
 
 ## Design Checklist
@@ -354,7 +374,6 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 - [ ] Reduced motion support
 
 ## Reference Documentation
+
 - See `.cursor/rules/13-ui-ux-design.mdc` for detailed guidelines
 - See `.cursor/rules/05-components.mdc` for component patterns
-
-

@@ -40,11 +40,11 @@ Use TanStack Table v8 via shared `DataTable` patterns. Credit card and reminder 
 
 ## Empty States
 
-- No cards: CTA to add first card (migrate from `CARDS_JSON` hint in onboarding copy)
-- No integrations: explain Telegram/Slack/Gmail setup with links to settings
-- No SOA yet: prompt to run SOA or enable Gmail poller automation
+- One short title + optional single line + CTA — no essays unless user requests copy
+- Link to settings only when the action truly requires configuration elsewhere
 
 ## Do Not
 
+- Add unsolicited descriptions, helper paragraphs, or `CardDescription` prose (see `21-minimal-ui-copy.mdc`)
 - Put SOA parsing logic in components—call tRPC mutations that invoke services
 - Hardcode bank list in UI—load from server constants or DB

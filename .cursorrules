@@ -30,6 +30,7 @@ Before implementing features, read `@docs/README.md` and:
 4. **Services own logic** — Routers thin; SOA/reminder/cron logic in `server/services/`
 5. **Docs sync** — Update `application-inventory.md` when adding routes, routers, or tables
 6. **Theme** — Light/dark via CSS variables (`bg-background`, `text-foreground`)
+7. **Minimal UI copy** — No unsolicited descriptions or helper paragraphs; add text only when the user asks (see `.cursor/rules/21-minimal-ui-copy.mdc`)
 
 ## Architecture (summary)
 

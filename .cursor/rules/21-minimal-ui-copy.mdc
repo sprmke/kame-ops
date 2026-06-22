@@ -1,0 +1,71 @@
+---
+description: Minimal UI copy — no unsolicited descriptions, helper text, or marketing prose
+alwaysApply: true
+---
+
+# Minimal UI Copy
+
+KameOps UI should stay **clean and sparse**. Agents must not add explanatory text unless the user explicitly asks for copy.
+
+## Default: no new text
+
+- Do **not** add page descriptions, helper paragraphs, tooltips, subtitles, or `CardDescription` blocks unless the user requests them.
+- Do **not** explain how a feature works in the UI (OAuth scopes, legacy paths, env vars, etc.) — that belongs in docs or settings reference, not on every screen.
+- Do **not** duplicate the same message in title + description + body (e.g. login shell + form paragraph + button).
+- Prefer **labels, buttons, badges, and data** over prose.
+
+## When text is allowed
+
+| Situation | OK to add text |
+| --------- | ---------------- |
+| User asks for copy, onboarding, or empty-state message | Yes — match their tone and length |
+| Error / validation / toast | Short, actionable only |
+| Empty state | One short line + CTA (unless user says otherwise) |
+| Destructive confirm dialog | One clear question |
+| Accessibility (`aria-label`, `sr-only`) | As needed — not visible clutter |
+
+## Length limits (when text is required)
+
+- **Page subtitle / description**: ≤ 1 short line (≤ 12 words) or omit
+- **Card description**: omit by default; max 1 line if essential
+- **Helper text under inputs**: only for non-obvious format (e.g. chat ID format)
+- **Empty state**: title + one line + button — no bullet essays
+
+## Examples
+
+```tsx
+// ❌ BAD — unsolicited explanation
+<AuthPageShell
+  title="Sign in with Google"
+  description="Grant Gmail and Calendar access so KameOps can automate your credit card SOA workflow"
+>
+  <p>KameOps uses your Google account to fetch statement PDFs…</p>
+  <Button>Continue with Google</Button>
+</AuthPageShell>
+
+// ✅ GOOD — action speaks for itself
+<AuthPageShell title="Sign in">
+  <Button>Continue with Google</Button>
+</AuthPageShell>
+```
+
+```tsx
+// ❌ BAD — CardDescription restates the title
+<CardTitle>Gmail</CardTitle>
+<CardDescription>
+  Required for SOA PDF fetch from Gmail and optional due-date calendar events.
+  Sign in with Google to grant gmail.readonly and calendar.events scopes.
+</CardDescription>
+
+// ✅ GOOD — status + action only
+<CardTitle>Gmail</CardTitle>
+<StatusBadge label="Connected" />
+<Button>Reconnect</Button>
+```
+
+## Do not
+
+- Add "marketing" or feature-list paragraphs to dashboard pages
+- Paste env var names or file paths into UI (`configs/token.json`, `GOOGLE_CALENDAR_AUTO=1`)
+- Add "Learn more" blocks without user request
+- Expand copy "to be helpful" — ask the user if unsure

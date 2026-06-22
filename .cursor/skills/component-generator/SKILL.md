@@ -15,6 +15,10 @@ This skill helps you generate React components following project patterns and be
 - **Forms**: React Hook Form + Zod
 - **Data Fetching**: TanStack Query via tRPC
 
+## UI copy
+
+Do **not** add descriptions, helper text, or `CardDescription` unless the user explicitly requests copy. See `.cursor/rules/21-minimal-ui-copy.mdc`.
+
 ## File Locations
 
 - UI Components: `apps/web/src/components/ui/` (shadcn primitives)
@@ -28,8 +32,8 @@ This skill helps you generate React components following project patterns and be
 
 ```tsx
 // components/[feature]/feature-list.tsx
-import { db } from '@/lib/db';
-import { FeatureCard } from './feature-card';
+import { db } from "@/lib/db";
+import { FeatureCard } from "./feature-card";
 
 interface FeatureListProps {
   organizationId: string;
@@ -41,7 +45,9 @@ export async function FeatureList({ organizationId }: FeatureListProps) {
   });
 
   if (items.length === 0) {
-    return <EmptyState title="No items" description="Get started by creating one." />;
+    return (
+      <EmptyState title="No items" description="Get started by creating one." />
+    );
   }
 
   return (
@@ -58,20 +64,20 @@ export async function FeatureList({ organizationId }: FeatureListProps) {
 
 ```tsx
 // components/[feature]/feature-form.tsx
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { api } from '@/lib/api/client';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { api } from "@/lib/api/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 
 const formSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
+  name: z.string().min(2, "Name must be at least 2 characters"),
   description: z.string().optional(),
 });
 
@@ -88,7 +94,7 @@ export function FeatureForm({ onSuccess, onCancel }: FeatureFormProps) {
   const createMutation = api.features.create.useMutation({
     onSuccess: () => {
       utils.features.list.invalidate();
-      toast.success('Created successfully');
+      toast.success("Created successfully");
       onSuccess?.();
     },
     onError: (error) => {
@@ -115,10 +121,12 @@ export function FeatureForm({ onSuccess, onCancel }: FeatureFormProps) {
         <Input
           id="name"
           placeholder="Enter name"
-          {...register('name')}
-          className={errors.name ? 'border-destructive' : ''}
+          {...register("name")}
+          className={errors.name ? "border-destructive" : ""}
         />
-        {errors.name && <p className="text-destructive text-sm">{errors.name.message}</p>}
+        {errors.name && (
+          <p className="text-destructive text-sm">{errors.name.message}</p>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -126,7 +134,7 @@ export function FeatureForm({ onSuccess, onCancel }: FeatureFormProps) {
         <Textarea
           id="description"
           placeholder="Optional description"
-          {...register('description')}
+          {...register("description")}
         />
       </div>
 
@@ -136,7 +144,10 @@ export function FeatureForm({ onSuccess, onCancel }: FeatureFormProps) {
             Cancel
           </Button>
         )}
-        <Button type="submit" disabled={isSubmitting || createMutation.isPending}>
+        <Button
+          type="submit"
+          disabled={isSubmitting || createMutation.isPending}
+        >
           {(isSubmitting || createMutation.isPending) && (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           )}
@@ -152,22 +163,22 @@ export function FeatureForm({ onSuccess, onCancel }: FeatureFormProps) {
 
 ```tsx
 // app/(dashboard)/[feature]/page.tsx
-import { Suspense } from 'react';
-import { auth } from '@/lib/auth/config';
-import { redirect } from 'next/navigation';
-import { PageHeader } from '@/components/layout/page-header';
-import { FeatureList } from '@/components/[feature]/feature-list';
-import { FeatureListSkeleton } from '@/components/[feature]/feature-list-skeleton';
-import { CreateFeatureButton } from '@/components/[feature]/create-feature-button';
+import { Suspense } from "react";
+import { auth } from "@/lib/auth/config";
+import { redirect } from "next/navigation";
+import { PageHeader } from "@/components/layout/page-header";
+import { FeatureList } from "@/components/[feature]/feature-list";
+import { FeatureListSkeleton } from "@/components/[feature]/feature-list-skeleton";
+import { CreateFeatureButton } from "@/components/[feature]/create-feature-button";
 
 export const metadata = {
-  title: 'Features | Property Management',
-  description: 'Manage your features',
+  title: "Features | Property Management",
+  description: "Manage your features",
 };
 
 export default async function FeaturesPage() {
   const session = await auth();
-  if (!session?.user) redirect('/login');
+  if (!session?.user) redirect("/login");
 
   return (
     <div className="space-y-6">
@@ -189,13 +200,13 @@ export default async function FeaturesPage() {
 
 ```tsx
 // app/(dashboard)/[feature]/[id]/page.tsx
-import { Suspense } from 'react';
-import { notFound } from 'next/navigation';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FeatureDetails } from '@/components/[feature]/feature-details';
-import { FeatureSettings } from '@/components/[feature]/feature-settings';
-import { FeatureActivity } from '@/components/[feature]/feature-activity';
-import { PageHeader } from '@/components/layout/page-header';
+import { Suspense } from "react";
+import { notFound } from "next/navigation";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FeatureDetails } from "@/components/[feature]/feature-details";
+import { FeatureSettings } from "@/components/[feature]/feature-settings";
+import { FeatureActivity } from "@/components/[feature]/feature-activity";
+import { PageHeader } from "@/components/layout/page-header";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -214,7 +225,10 @@ export default async function FeatureDetailPage({ params }: PageProps) {
     <div className="space-y-6">
       <PageHeader
         title={feature.name}
-        breadcrumbs={[{ label: 'Features', href: '/features' }, { label: feature.name }]}
+        breadcrumbs={[
+          { label: "Features", href: "/features" },
+          { label: feature.name },
+        ]}
       />
 
       <Tabs defaultValue="details" className="space-y-6">
@@ -249,9 +263,9 @@ export default async function FeatureDetailPage({ params }: PageProps) {
 
 ```tsx
 // components/[feature]/create-feature-dialog.tsx
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -259,10 +273,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
-import { FeatureForm } from './feature-form';
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
+import { FeatureForm } from "./feature-form";
 
 export function CreateFeatureDialog() {
   const [open, setOpen] = useState(false);
@@ -278,9 +292,14 @@ export function CreateFeatureDialog() {
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>Create New Feature</DialogTitle>
-          <DialogDescription>Fill in the details below to create a new feature.</DialogDescription>
+          <DialogDescription>
+            Fill in the details below to create a new feature.
+          </DialogDescription>
         </DialogHeader>
-        <FeatureForm onSuccess={() => setOpen(false)} onCancel={() => setOpen(false)} />
+        <FeatureForm
+          onSuccess={() => setOpen(false)}
+          onCancel={() => setOpen(false)}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -291,19 +310,25 @@ export function CreateFeatureDialog() {
 
 ```tsx
 // components/[feature]/feature-card.tsx
-import Link from 'next/link';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import Link from "next/link";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { MoreHorizontal, Pencil, Trash } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+} from "@/components/ui/dropdown-menu";
+import { MoreHorizontal, Pencil, Trash } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 
 interface FeatureCardProps {
   feature: Feature;
@@ -315,12 +340,15 @@ export function FeatureCard({ feature }: FeatureCardProps) {
       <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
         <div className="space-y-1">
           <CardTitle className="text-lg">
-            <Link href={`/features/${feature.id}`} className="underline-offset-4 hover:underline">
+            <Link
+              href={`/features/${feature.id}`}
+              className="underline-offset-4 hover:underline"
+            >
               {feature.name}
             </Link>
           </CardTitle>
           <CardDescription className="line-clamp-2">
-            {feature.description || 'No description'}
+            {feature.description || "No description"}
           </CardDescription>
         </div>
 
@@ -353,10 +381,15 @@ export function FeatureCard({ feature }: FeatureCardProps) {
 
       <CardContent>
         <div className="text-muted-foreground flex items-center justify-between text-sm">
-          <Badge variant={feature.status === 'ACTIVE' ? 'default' : 'secondary'}>
+          <Badge
+            variant={feature.status === "ACTIVE" ? "default" : "secondary"}
+          >
             {feature.status}
           </Badge>
-          <span>Updated {formatDistanceToNow(feature.updatedAt, { addSuffix: true })}</span>
+          <span>
+            Updated{" "}
+            {formatDistanceToNow(feature.updatedAt, { addSuffix: true })}
+          </span>
         </div>
       </CardContent>
     </Card>
@@ -368,8 +401,8 @@ export function FeatureCard({ feature }: FeatureCardProps) {
 
 ```tsx
 // components/[feature]/feature-card-skeleton.tsx
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function FeatureCardSkeleton() {
   return (
@@ -403,15 +436,15 @@ export function FeatureListSkeleton() {
 
 ```tsx
 // hooks/use-features.ts
-'use client';
+"use client";
 
-import { api } from '@/lib/api/client';
-import { useCallback, useMemo } from 'react';
+import { api } from "@/lib/api/client";
+import { useCallback, useMemo } from "react";
 
 export function useFeatures(filters?: FeatureFilters) {
   const { data, isLoading, error, refetch } = api.features.list.useQuery(
     filters ?? {},
-    { staleTime: 1000 * 60 * 5 } // 5 minutes
+    { staleTime: 1000 * 60 * 5 }, // 5 minutes
   );
 
   return {
@@ -449,7 +482,10 @@ export function useFeatureMutations() {
     createFeature,
     updateFeature,
     deleteFeature,
-    isLoading: createFeature.isPending || updateFeature.isPending || deleteFeature.isPending,
+    isLoading:
+      createFeature.isPending ||
+      updateFeature.isPending ||
+      deleteFeature.isPending,
   };
 }
 ```
@@ -458,9 +494,9 @@ export function useFeatureMutations() {
 
 ```tsx
 // components/ui/confirm-dialog.tsx
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -471,9 +507,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react';
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
 
 interface ConfirmDialogProps {
   trigger: React.ReactNode;
@@ -481,7 +517,7 @@ interface ConfirmDialogProps {
   description: string;
   confirmLabel?: string;
   cancelLabel?: string;
-  variant?: 'default' | 'destructive';
+  variant?: "default" | "destructive";
   onConfirm: () => Promise<void> | void;
 }
 
@@ -489,9 +525,9 @@ export function ConfirmDialog({
   trigger,
   title,
   description,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
-  variant = 'default',
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
+  variant = "default",
   onConfirm,
 }: ConfirmDialogProps) {
   const [open, setOpen] = useState(false);
@@ -516,14 +552,16 @@ export function ConfirmDialog({
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isLoading}>{cancelLabel}</AlertDialogCancel>
+          <AlertDialogCancel disabled={isLoading}>
+            {cancelLabel}
+          </AlertDialogCancel>
           <AlertDialogAction
             onClick={handleConfirm}
             disabled={isLoading}
             className={
-              variant === 'destructive'
-                ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                : ''
+              variant === "destructive"
+                ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                : ""
             }
           >
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

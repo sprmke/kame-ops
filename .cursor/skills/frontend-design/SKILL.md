@@ -41,6 +41,7 @@ Match implementation complexity to the vision: maximalist designs need more elab
 
 ## KameOps Context
 
+- **UI copy**: Default to **no** page descriptions, helper paragraphs, or `CardDescription` unless the user asks for copy. See `.cursor/rules/21-minimal-ui-copy.mdc`.
 - **Design system**: `docs/product/design-system.md` – colors (amber/orange primary, money-green success), typography (DM Sans + Sora), spacing, radius, shadows, component patterns.
 - **Theme**: All app UI must work in **light and dark**. Use semantic classes: `bg-background`, `text-foreground`, `border-border`, `bg-card`, `text-muted-foreground`, and `dark:` only when necessary.
 - **Stack**: Next.js 16+, React 19, Tailwind CSS, shadcn/ui, Lucide icons. Optional: Framer Motion.

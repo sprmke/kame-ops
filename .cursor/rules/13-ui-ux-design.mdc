@@ -15,13 +15,14 @@ Create interfaces that are **professional**, **intuitive**, and **delightful** t
 
 ### Core Principles
 
-1. **Clarity First**: Users should immediately understand what they can do
-2. **Consistency**: Use consistent patterns, colors, and interactions
-3. **Feedback**: Always communicate system state to users
-4. **Efficiency**: Minimize steps to complete tasks
-5. **Forgiveness**: Allow users to undo and recover from mistakes
-6. **Accessibility**: Design for all users, including those with disabilities
-7. **Theme Support**: ALL UI MUST work in both light and dark modes
+1. **Minimal copy**: No unsolicited descriptions or helper text — see `21-minimal-ui-copy.mdc`
+2. **Clarity First**: Users should immediately understand what they can do (via layout and labels, not paragraphs)
+3. **Consistency**: Use consistent patterns, colors, and interactions
+4. **Feedback**: Always communicate system state to users
+5. **Efficiency**: Minimize steps to complete tasks
+6. **Forgiveness**: Allow users to undo and recover from mistakes
+7. **Accessibility**: Design for all users, including those with disabilities
+8. **Theme Support**: ALL UI MUST work in both light and dark modes
 
 ## 🌓 Theme Support (REQUIRED)
 
