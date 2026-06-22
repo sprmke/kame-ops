@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { TRPCError } from "@trpc/server";
+
 import { protectedProcedure, router } from "@/server/trpc";
 import { creditCardService } from "@/server/services/credit-card.service";
 
@@ -12,9 +14,13 @@ export const creditCardsRouter = router({
 
   get: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
-    .query(({ ctx, input }) =>
-      creditCardService.getById(ctx.user.id, input.id),
-    ),
+    .query(async ({ ctx, input }) => {
+      const card = await creditCardService.getForEdit(ctx.user.id, input.id);
+      if (!card) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Card not found" });
+      }
+      return card;
+    }),
 
   create: protectedProcedure
     .input(

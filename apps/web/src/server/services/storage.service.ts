@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -46,9 +46,10 @@ export const storageService = {
     filename: string,
     buffer: Buffer,
     contentType?: string,
+    folder = "receipts",
   ): Promise<string> {
     const safeName = sanitizeFilename(filename);
-    const objectKey = `receipts/${userId}/${Date.now()}-${safeName}`;
+    const objectKey = `${folder}/${userId}/${Date.now()}-${safeName}`;
 
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
@@ -64,7 +65,9 @@ export const storageService = {
       return `${SUPABASE_PREFIX}${objectKey}`;
     }
 
-    const dir = join(tmpdir(), "kame-ops-receipts", userId);
+    const localDirName =
+      folder === "receipts" ? "kame-ops-receipts" : `kame-ops-${folder}`;
+    const dir = join(tmpdir(), localDirName, userId);
     await mkdir(dir, { recursive: true });
     const localPath = join(dir, `${Date.now()}-${safeName}`);
     await writeFile(localPath, buffer);
@@ -101,6 +104,36 @@ export const storageService = {
 
     // Legacy: bare absolute path from older uploads
     return storagePath;
+  },
+
+  /** Read a private object from storage (null when missing or unreadable). */
+  async readPrivate(storagePath: string): Promise<Buffer | null> {
+    if (!storagePath) return null;
+
+    if (storagePath.startsWith(LOCAL_PREFIX)) {
+      try {
+        return await readFile(storagePath.slice(LOCAL_PREFIX.length));
+      } catch {
+        return null;
+      }
+    }
+
+    if (storagePath.startsWith(SUPABASE_PREFIX)) {
+      if (!isSupabaseConfigured()) return null;
+      const objectKey = storagePath.slice(SUPABASE_PREFIX.length);
+      const supabase = getSupabaseAdmin();
+      const { data, error } = await supabase.storage
+        .from(env.SUPABASE_STORAGE_BUCKET_PRIVATE!)
+        .download(objectKey);
+      if (error || !data) return null;
+      return Buffer.from(await data.arrayBuffer());
+    }
+
+    try {
+      return await readFile(storagePath);
+    } catch {
+      return null;
+    }
   },
 
   /** Signed URL for private objects (null for local/temp paths). */

@@ -1,7 +1,12 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { creditCards, soaStatements, soaTransactions } from "@/lib/db/schema";
+
+import {
+  categorizeTransaction,
+  transactionCategoryService,
+} from "./transaction-category.service";
 
 type SoaRow = {
   bankLabel: string;
@@ -52,6 +57,7 @@ export const soaPersistService = {
     });
 
     let saved = 0;
+    let updated = 0;
 
     for (const row of rows) {
       if (row.soaUnavailable || row.cardLast4 === "—") continue;
@@ -62,45 +68,80 @@ export const soaPersistService = {
           c.last4 === row.cardLast4,
       );
 
-      const [statement] = await db
-        .insert(soaStatements)
-        .values({
-          userId,
-          creditCardId: creditCard?.id,
-          statementMonth: period.month,
-          statementYear: period.year,
-          bankLabel: row.bankLabel,
-          issuerId: row.issuerId,
-          cardLast4: row.cardLast4,
-          sourceEmailSubject: row.sourceEmailSubject,
-          sourceMessageId: row.sourceMessageId,
-          pdfFileName: row.pdfFileName,
-          minimumDue: row.minimumDue,
-          totalDue: row.totalDue,
-          statementDate: row.statementDate,
-          dueDate: row.dueDate,
-          dueDateYmd: parseDueDateYmd(row.dueDate),
-          parseNotes: row.parseNotes,
-          soaUnavailable: row.soaUnavailable ?? false,
-        })
-        .returning();
+      const statementValues = {
+        creditCardId: creditCard?.id,
+        bankLabel: row.bankLabel,
+        sourceEmailSubject: row.sourceEmailSubject,
+        sourceMessageId: row.sourceMessageId,
+        pdfFileName: row.pdfFileName,
+        minimumDue: row.minimumDue,
+        totalDue: row.totalDue,
+        statementDate: row.statementDate,
+        dueDate: row.dueDate,
+        dueDateYmd: parseDueDateYmd(row.dueDate),
+        parseNotes: row.parseNotes,
+        soaUnavailable: row.soaUnavailable ?? false,
+      };
+
+      const existing = await db.query.soaStatements.findFirst({
+        where: and(
+          eq(soaStatements.userId, userId),
+          eq(soaStatements.issuerId, row.issuerId),
+          eq(soaStatements.cardLast4, row.cardLast4),
+          eq(soaStatements.statementMonth, period.month),
+          eq(soaStatements.statementYear, period.year),
+        ),
+      });
+
+      let statement = existing;
+
+      if (existing) {
+        const [row_] = await db
+          .update(soaStatements)
+          .set(statementValues)
+          .where(eq(soaStatements.id, existing.id))
+          .returning();
+        statement = row_ ?? existing;
+        await db
+          .delete(soaTransactions)
+          .where(eq(soaTransactions.soaStatementId, existing.id));
+        updated++;
+      } else {
+        const [row_] = await db
+          .insert(soaStatements)
+          .values({
+            userId,
+            statementMonth: period.month,
+            statementYear: period.year,
+            issuerId: row.issuerId,
+            cardLast4: row.cardLast4,
+            ...statementValues,
+          })
+          .returning();
+        statement = row_;
+        saved++;
+      }
 
       if (!statement) continue;
 
       if (row.transactions?.length) {
+        const rules = await transactionCategoryService.getRulesForUser(userId);
         await db.insert(soaTransactions).values(
-          row.transactions.map((t) => ({
-            soaStatementId: statement.id,
-            date: t.date,
-            description: t.description,
-            amount: t.amount,
-          })),
+          row.transactions.map((t) => {
+            const categorized = categorizeTransaction(t, rules);
+            return {
+              soaStatementId: statement.id,
+              date: t.date,
+              description: t.description,
+              amount: t.amount,
+              categorySlug: categorized.categorySlug,
+              categorySource: categorized.categorySource,
+            };
+          }),
         );
       }
-
-      saved++;
     }
 
-    return { saved };
+    return { saved, updated };
   },
 };

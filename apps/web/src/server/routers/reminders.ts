@@ -11,8 +11,16 @@ export const remindersRouter = router({
       reminderService.listDueEntries(ctx.user.id, input?.unpaidOnly ?? true),
     ),
 
-  sendNow: protectedProcedure.mutation(({ ctx }) =>
-    reminderService.sendDueRemindersForUser(ctx.user.id),
+  sendNow: protectedProcedure
+    .input(z.object({ force: z.boolean().optional() }).optional())
+    .mutation(({ ctx, input }) =>
+      reminderService.sendDueRemindersForUser(ctx.user.id, {
+        force: input?.force,
+      }),
+    ),
+
+  status: protectedProcedure.query(({ ctx }) =>
+    reminderService.getReminderStatus(ctx.user.id),
   ),
 
   markPaid: protectedProcedure

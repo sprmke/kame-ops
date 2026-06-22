@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { automationJobs, automationRuns } from "@/lib/db/schema";
 import { reminderService } from "./reminder.service";
-import { soaService } from "./soa.service";
+import { defaultRunSoaInput, soaService } from "./soa.service";
 
 const jobSchema = z.object({
   name: z.string().min(1),
@@ -67,7 +67,10 @@ export const automationService = {
           result = await reminderService.sendDueRemindersForUser(userId);
           break;
         case "run_soa_pipeline":
-          result = await soaService.runSoaPipeline(userId);
+          result = await soaService.runSoaPipeline(
+            userId,
+            defaultRunSoaInput(),
+          );
           break;
         default:
           throw new Error(`Unknown job type: ${job.jobType}`);

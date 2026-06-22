@@ -26,6 +26,20 @@ export const integrationService = {
     }));
   },
 
+  async getFormConfigs(userId: string) {
+    const telegram = await this.getConfig<{
+      botToken?: string;
+      chatId?: string;
+      webLink?: string;
+    }>(userId, "telegram");
+    const slack = await this.getConfig<{ webhookUrl?: string }>(
+      userId,
+      "slack",
+    );
+
+    return { telegram, slack };
+  },
+
   async upsert(userId: string, input: z.infer<typeof upsertSchema>) {
     const data = upsertSchema.parse(input);
     const encrypted = encryptSecret(JSON.stringify(data.config));

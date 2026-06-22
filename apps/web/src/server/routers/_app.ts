@@ -7,11 +7,13 @@ import { overviewRouter } from "./overview";
 import { receiptsRouter } from "./receipts";
 import { remindersRouter } from "./reminders";
 import { soaRouter } from "./soa";
+import { transactionCategoriesRouter } from "./transaction-categories";
 
 export const appRouter = router({
   overview: overviewRouter,
   creditCards: creditCardsRouter,
   soa: soaRouter,
+  transactionCategories: transactionCategoriesRouter,
   reminders: remindersRouter,
   integrations: integrationsRouter,
   automations: automationsRouter,

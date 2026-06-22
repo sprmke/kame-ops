@@ -8,6 +8,10 @@ export const integrationsRouter = router({
     integrationService.list(ctx.user.id),
   ),
 
+  getFormConfigs: protectedProcedure.query(({ ctx }) =>
+    integrationService.getFormConfigs(ctx.user.id),
+  ),
+
   upsert: protectedProcedure
     .input(
       z.object({
