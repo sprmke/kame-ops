@@ -1,46 +1,46 @@
 // @ts-nocheck
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from "node:fs";
+import path from "node:path";
 import {
   banks,
   buildGmailQuery,
   ensureDirs,
   isNotifyConfigured,
   loadCardCredentials,
-} from './config';
-import { notifySummaryPdf } from './notify';
-import { upsertDuesFromSoaRows } from './due-reminders-state';
-import { getGmailClient, searchAndDownloadPdfs } from './gmail';
-import { log, logBanner } from './logger';
+} from "./config";
+import { notifySummaryPdf } from "./notify";
+import { upsertDuesFromSoaRows } from "./due-reminders-state";
+import { getGmailClient, searchAndDownloadPdfs } from "./gmail";
+import { log, logBanner } from "./logger";
 import {
   buildMonthContext,
   enumerateMonthsInclusive,
   lastNMonthsEndingAt,
   shiftMonthContext,
-} from './month';
-import { parseSoaText } from './parse-soa';
-import { extractTransactions } from './parse-transactions';
+} from "./month";
+import { parseSoaText } from "./parse-soa";
+import { extractTransactions } from "./parse-transactions";
 import {
   extractPdfLinesReadingOrderDualAxis,
   tryUnlockAndExtractText,
-} from './pdf';
-import { writeRangeSummaryPdf, writeSummaryPdf } from './summary-pdf';
+} from "./pdf";
+import { writeRangeSummaryPdf, writeSummaryPdf } from "./summary-pdf";
 import type {
   CardCredential,
   GmailMonthContext,
   SoaRow,
   TransactionLine,
-} from './types';
+} from "./types";
 
 /** Single-month summary PDF title: optional name + label from env (see .env.example). */
 function buildSoaSingleMonthPdfTitle(
   monthLong: string,
   year: string | number,
 ): string {
-  const display = process.env.SOA_SUMMARY_DISPLAY_NAME?.trim() ?? '';
+  const display = process.env.SOA_SUMMARY_DISPLAY_NAME?.trim() ?? "";
   const doc =
-    process.env.SOA_SUMMARY_DOCUMENT_LABEL?.trim() || 'Credit Card SOA Summary';
-  const y = typeof year === 'number' ? String(year) : year;
+    process.env.SOA_SUMMARY_DOCUMENT_LABEL?.trim() || "Credit Card SOA Summary";
+  const y = typeof year === "number" ? String(year) : year;
   const tail = `${doc} — ${monthLong} ${y}`;
   return display ? `${display} - ${tail}` : tail;
 }
@@ -51,7 +51,7 @@ function buildSoaRangePdfTitle(
   last: GmailMonthContext,
 ): string {
   const label =
-    process.env.SOA_SUMMARY_RANGE_LABEL?.trim() || 'Credit Card SOA';
+    process.env.SOA_SUMMARY_RANGE_LABEL?.trim() || "Credit Card SOA";
   return `${label} — ${first.monthLong} ${first.year} through ${last.monthLong} ${last.year}`;
 }
 
@@ -84,8 +84,8 @@ function rcbcGeomParseImprovesOn(
     const parseAmt = (s: string) =>
       Number.parseFloat(
         s
-          .replace(/\(CR\)/g, '')
-          .replace(/,/g, '')
+          .replace(/\(CR\)/g, "")
+          .replace(/,/g, "")
           .trim(),
       );
     const cb = parseAmt(b0.amount);
@@ -98,7 +98,7 @@ function rcbcGeomParseImprovesOn(
 }
 
 export type RunSoaOptions = {
-  mode: 'single' | 'range';
+  mode: "single" | "range";
   month: string;
   year: string;
   /** When true, do not send Telegram/Slack notification after the PDF is written. */
@@ -115,57 +115,57 @@ export type RunSoaOptions = {
 };
 
 export function parseArgs(argv: string[]): RunSoaOptions {
-  let month = '';
-  let year = '';
+  let month = "";
+  let year = "";
   let skipNotify = false;
   let range = false;
   let rangeMonthCount: number | undefined;
-  let fromMonth = '';
-  let fromYear = '';
-  let toMonth = '';
-  let toYear = '';
+  let fromMonth = "";
+  let fromYear = "";
+  let toMonth = "";
+  let toYear = "";
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === '--month' && argv[i + 1]) {
+    if (a === "--month" && argv[i + 1]) {
       month = argv[++i]!;
-    } else if (a.startsWith('--month=')) {
-      month = a.split('=')[1] ?? '';
-    } else if (a === '--year' && argv[i + 1]) {
+    } else if (a.startsWith("--month=")) {
+      month = a.split("=")[1] ?? "";
+    } else if (a === "--year" && argv[i + 1]) {
       year = argv[++i]!;
-    } else if (a.startsWith('--year=')) {
-      year = a.split('=')[1] ?? '';
-    } else if (a === '--no-notify' || a === '--no-email') {
+    } else if (a.startsWith("--year=")) {
+      year = a.split("=")[1] ?? "";
+    } else if (a === "--no-notify" || a === "--no-email") {
       skipNotify = true;
-    } else if (a === '--range') {
+    } else if (a === "--range") {
       range = true;
-    } else if (a === '--months' && argv[i + 1]) {
+    } else if (a === "--months" && argv[i + 1]) {
       rangeMonthCount = Number.parseInt(argv[++i]!, 10);
-    } else if (a.startsWith('--months=')) {
-      rangeMonthCount = Number.parseInt(a.split('=')[1] ?? '', 10);
-    } else if (a === '--from-month' && argv[i + 1]) {
+    } else if (a.startsWith("--months=")) {
+      rangeMonthCount = Number.parseInt(a.split("=")[1] ?? "", 10);
+    } else if (a === "--from-month" && argv[i + 1]) {
       fromMonth = argv[++i]!;
-    } else if (a.startsWith('--from-month=')) {
-      fromMonth = a.split('=')[1] ?? '';
-    } else if (a === '--from-year' && argv[i + 1]) {
+    } else if (a.startsWith("--from-month=")) {
+      fromMonth = a.split("=")[1] ?? "";
+    } else if (a === "--from-year" && argv[i + 1]) {
       fromYear = argv[++i]!;
-    } else if (a.startsWith('--from-year=')) {
-      fromYear = a.split('=')[1] ?? '';
-    } else if (a === '--to-month' && argv[i + 1]) {
+    } else if (a.startsWith("--from-year=")) {
+      fromYear = a.split("=")[1] ?? "";
+    } else if (a === "--to-month" && argv[i + 1]) {
       toMonth = argv[++i]!;
-    } else if (a.startsWith('--to-month=')) {
-      toMonth = a.split('=')[1] ?? '';
-    } else if (a === '--to-year' && argv[i + 1]) {
+    } else if (a.startsWith("--to-month=")) {
+      toMonth = a.split("=")[1] ?? "";
+    } else if (a === "--to-year" && argv[i + 1]) {
       toYear = argv[++i]!;
-    } else if (a.startsWith('--to-year=')) {
-      toYear = a.split('=')[1] ?? '';
+    } else if (a.startsWith("--to-year=")) {
+      toYear = a.split("=")[1] ?? "";
     }
   }
   const now = new Date();
   if (!month) month = String(now.getMonth() + 1);
   if (!year) year = String(now.getFullYear());
-  const mode: 'single' | 'range' = range ? 'range' : 'single';
+  const mode: "single" | "range" = range ? "range" : "single";
   const out: RunSoaOptions = { mode, month, year, skipNotify };
-  if (mode === 'range') {
+  if (mode === "range") {
     if (fromMonth && fromYear && toMonth && toYear) {
       out.fromMonth = fromMonth;
       out.fromYear = fromYear;
@@ -195,7 +195,7 @@ function enrichSoaRowFromCredentials(
   row: SoaRow,
   cards: CardCredential[],
 ): void {
-  if (row.cardLast4 === '—') return;
+  if (row.cardLast4 === "—") return;
   const c = cards.find(
     (x) =>
       x.issuer.toLowerCase() === row.issuerId.toLowerCase() &&
@@ -215,7 +215,7 @@ function gmailOffsetsForIssuer(
   const set = new Set<number>();
   for (const c of cards) {
     if (c.issuer.toLowerCase() !== issuerId.toLowerCase()) continue;
-    set.add(typeof c.gmailMonthOffset === 'number' ? c.gmailMonthOffset : 0);
+    set.add(typeof c.gmailMonthOffset === "number" ? c.gmailMonthOffset : 0);
   }
   if (set.size === 0) set.add(0);
   return [...set].sort((a, b) => a - b);
@@ -228,14 +228,14 @@ function unavailableRow(
   return {
     bankLabel: bank.label,
     issuerId: bank.id,
-    cardLast4: '—',
+    cardLast4: "—",
     sourceEmailSubject: `${ctx.monthLong} ${ctx.year}`,
-    sourceMessageId: '—',
-    pdfFileName: '—',
-    minimumDue: '—',
-    totalDue: '—',
-    statementDate: '—',
-    dueDate: '—',
+    sourceMessageId: "—",
+    pdfFileName: "—",
+    minimumDue: "—",
+    totalDue: "—",
+    statementDate: "—",
+    dueDate: "—",
     soaUnavailable: true,
   };
 }
@@ -269,19 +269,19 @@ export async function runSoaSingleMonth(options: {
   const cards = loadCardCredentials();
 
   if (!skipBanner) {
-    logBanner('pay-credit-cards · SOA run', `${ctx.monthLong} ${ctx.year}`);
+    logBanner("pay-credit-cards · SOA run", `${ctx.monthLong} ${ctx.year}`);
   }
 
   if (cards.length === 0) {
     log.error(
-      'CARDS_JSON is empty or missing. Set it in .env (see .env.example).',
+      "CARDS_JSON is empty or missing. Set it in .env (see .env.example).",
     );
     process.exit(1);
   }
 
-  log.header('Pre-flight');
-  log.kv('Statement period', `${ctx.monthLong} ${ctx.year}`);
-  log.kv('Cards in CARDS_JSON', String(cards.length));
+  log.header("Pre-flight");
+  log.kv("Statement period", `${ctx.monthLong} ${ctx.year}`);
+  log.kv("Cards in CARDS_JSON", String(cards.length));
 
   const { downloads, output } = ensureDirs();
   const periodKey = `${ctx.year}-${ctx.monthNum2}`;
@@ -289,12 +289,12 @@ export async function runSoaSingleMonth(options: {
   const monthOutputDir = path.join(output, periodKey);
   fs.mkdirSync(monthDownloadsDir, { recursive: true });
   fs.mkdirSync(monthOutputDir, { recursive: true });
-  log.kv('Download folder', monthDownloadsDir);
-  log.kv('Output folder', monthOutputDir);
+  log.kv("Download folder", monthDownloadsDir);
+  log.kv("Output folder", monthOutputDir);
 
-  log.header('Gmail · search & download');
+  log.header("Gmail · search & download");
   const gmail = await getGmailClient();
-  log.success('Gmail API client ready');
+  log.success("Gmail API client ready");
 
   const downloaded: Awaited<ReturnType<typeof searchAndDownloadPdfs>> = [];
   const seenMessage = new Set<string>();
@@ -338,7 +338,7 @@ export async function runSoaSingleMonth(options: {
         );
       } else {
         log.success(
-          `${pdfs.length} PDF file(s) saved${off !== 0 ? ` (offset ${off})` : ''}`,
+          `${pdfs.length} PDF file(s) saved${off !== 0 ? ` (offset ${off})` : ""}`,
         );
         for (const p of pdfs) {
           log.detail(p.fileName);
@@ -347,13 +347,13 @@ export async function runSoaSingleMonth(options: {
     }
   }
 
-  log.header('PDFs · unlock & parse');
+  log.header("PDFs · unlock & parse");
   const rows: SoaRow[] = [];
   let parseWarnings = 0;
   let parseFailures = 0;
 
   if (downloaded.length === 0) {
-    log.warn('No PDFs downloaded — skipping unlock/parse.');
+    log.warn("No PDFs downloaded — skipping unlock/parse.");
   }
 
   for (const item of downloaded) {
@@ -368,16 +368,30 @@ export async function runSoaSingleMonth(options: {
     log.info(`${item.bankLabel} · ${item.fileName}`);
     try {
       const unlocked = await tryUnlockAndExtractText(item.filePath, pws);
+      const unlockedFileName = `unlocked-${path.basename(item.filePath)}`;
+      const unlockedPath = path.join(monthDownloadsDir, unlockedFileName);
+      try {
+        const { writeUnlockedPdfCopy } =
+          await import("@/server/services/pdf-unlock.service");
+        await writeUnlockedPdfCopy(
+          item.filePath,
+          unlocked.password,
+          unlockedPath,
+        );
+      } catch (unlockErr) {
+        log.warn(`Could not write unlocked PDF copy: ${errMsg(unlockErr)}`);
+      }
+
       let parseText = unlocked.text;
       let bpiUsedOcrText = false;
 
       const bpiOcrOn =
-        item.bankId === 'bpi' &&
-        /^(1|true|yes)$/i.test(process.env.BPI_OCR?.trim() ?? '');
+        item.bankId === "bpi" &&
+        /^(1|true|yes)$/i.test(process.env.BPI_OCR?.trim() ?? "");
       if (bpiOcrOn) {
         const rawPages = process.env.BPI_OCR_PAGES?.trim();
         const parsed =
-          rawPages !== undefined && rawPages !== ''
+          rawPages !== undefined && rawPages !== ""
             ? Number.parseInt(rawPages, 10)
             : 0;
         const maxPages =
@@ -388,29 +402,28 @@ export async function runSoaSingleMonth(options: {
           4,
           Math.max(
             1.5,
-            Number.parseFloat(process.env.BPI_OCR_SCALE ?? '3') || 3,
+            Number.parseFloat(process.env.BPI_OCR_SCALE ?? "3") || 3,
           ),
         );
-        const { ocrPdfToPlainText, parseBpiPsmEnv } =
-          await import('./bpi-ocr.js');
+        const { ocrPdfToPlainText, parseBpiPsmEnv } = await import("./bpi-ocr");
         const psm = parseBpiPsmEnv(process.env.BPI_OCR_PSM);
         const dualSparse = /^(1|true|yes)$/i.test(
-          process.env.BPI_OCR_DUAL?.trim() ?? '',
+          process.env.BPI_OCR_DUAL?.trim() ?? "",
         );
         const ocrDebug = /^(1|true|yes)$/i.test(
-          process.env.BPI_OCR_DEBUG?.trim() ?? '',
+          process.env.BPI_OCR_DEBUG?.trim() ?? "",
         );
         try {
           log.info(
             [
-              'BPI OCR',
-              maxPages === 0 ? 'all pages' : `max ${maxPages} pg`,
+              "BPI OCR",
+              maxPages === 0 ? "all pages" : `max ${maxPages} pg`,
               `scale ${scale}`,
               `psm ${psm}`,
-              dualSparse ? 'dual' : '',
+              dualSparse ? "dual" : "",
             ]
               .filter(Boolean)
-              .join(' · '),
+              .join(" · "),
           );
           const ocrText = await ocrPdfToPlainText(
             item.filePath,
@@ -425,16 +438,16 @@ export async function runSoaSingleMonth(options: {
           if (ocrDebug && ocrText.trim().length > 0) {
             const debugName = `bpi-ocr-${unlocked.last4}-${periodKey}.txt`;
             const debugPath = path.join(monthOutputDir, debugName);
-            fs.writeFileSync(debugPath, ocrText, 'utf8');
+            fs.writeFileSync(debugPath, ocrText, "utf8");
             log.detail(`BPI_OCR_DEBUG → ${debugPath}`);
           }
           if (ocrText.trim().length >= 40) {
             parseText = ocrText;
             bpiUsedOcrText = true;
-            log.success('BPI · using OCR text for parse');
+            log.success("BPI · using OCR text for parse");
           } else {
             log.warn(
-              'BPI OCR returned almost no text — falling back to pdf.js extract',
+              "BPI OCR returned almost no text — falling back to pdf.js extract",
             );
           }
         } catch (ocrErr) {
@@ -443,17 +456,17 @@ export async function runSoaSingleMonth(options: {
       }
 
       let txnSourceText = parseText;
-      if (item.bankId === 'rcbc') {
+      if (item.bankId === "rcbc") {
         try {
           const [linesYDesc, linesYAsc] =
             await extractPdfLinesReadingOrderDualAxis(
               item.filePath,
               unlocked.password,
             );
-          let bestTxns = extractTransactions('rcbc', parseText);
+          let bestTxns = extractTransactions("rcbc", parseText);
           for (const lines of [linesYDesc, linesYAsc]) {
-            const candidate = lines.join('\n');
-            const tx = extractTransactions('rcbc', candidate);
+            const candidate = lines.join("\n");
+            const tx = extractTransactions("rcbc", candidate);
             if (rcbcGeomParseImprovesOn(bestTxns, tx)) {
               bestTxns = tx;
               txnSourceText = candidate;
@@ -461,7 +474,7 @@ export async function runSoaSingleMonth(options: {
           }
           if (txnSourceText !== parseText) {
             log.detail(
-              'RCBC · transactions from PDF geometry (x/y reading order, dual y-axis)',
+              "RCBC · transactions from PDF geometry (x/y reading order, dual y-axis)",
             );
           }
         } catch (geoErr) {
@@ -475,7 +488,7 @@ export async function runSoaSingleMonth(options: {
         unlocked.last4,
         item.subject,
         item.messageId,
-        item.fileName,
+        unlockedFileName,
         parseText,
         { bpiFromOcr: bpiUsedOcrText },
       );
@@ -499,7 +512,7 @@ export async function runSoaSingleMonth(options: {
   const banksWithPdf = new Set(downloaded.map((d) => d.bankId));
   const missingBanks = banks.filter((b) => !banksWithPdf.has(b.id));
   if (missingBanks.length > 0) {
-    log.header('Banks with no SOA email this period');
+    log.header("Banks with no SOA email this period");
     for (const b of missingBanks) {
       log.warn(`${b.label} — placeholder row will appear in summary PDF`);
       rows.push(unavailableRow(b, ctx));
@@ -510,7 +523,7 @@ export async function runSoaSingleMonth(options: {
 
   /** Parse a normalized "Mon DD, YYYY" date back to a sortable timestamp (ms). */
   function dueDateMs(row: SoaRow): number {
-    if (!row.dueDate || row.dueDate === '—') return Number.MAX_SAFE_INTEGER;
+    if (!row.dueDate || row.dueDate === "—") return Number.MAX_SAFE_INTEGER;
     const m = row.dueDate.match(/^([A-Za-z]{3})\s+(\d{2}),\s+(\d{4})$/);
     if (!m) return Number.MAX_SAFE_INTEGER;
     const MON: Record<string, number> = {
@@ -576,7 +589,7 @@ async function runSoaRange(options: RunSoaOptions): Promise<SoaRow[]> {
   const cards = loadCardCredentials();
   if (cards.length === 0) {
     log.error(
-      'CARDS_JSON is empty or missing. Set it in .env (see .env.example).',
+      "CARDS_JSON is empty or missing. Set it in .env (see .env.example).",
     );
     process.exit(1);
   }
@@ -595,7 +608,7 @@ async function runSoaRange(options: RunSoaOptions): Promise<SoaRow[]> {
   let contexts: GmailMonthContext[];
   if (anyEndpoint && !allEndpoints) {
     log.error(
-      'For --range with explicit bounds, pass all of: --from-month, --from-year, --to-month, --to-year (or omit all four and use --months).',
+      "For --range with explicit bounds, pass all of: --from-month, --from-year, --to-month, --to-year (or omit all four and use --months).",
     );
     process.exit(1);
   }
@@ -615,17 +628,17 @@ async function runSoaRange(options: RunSoaOptions): Promise<SoaRow[]> {
     const first = contexts[0]!;
     const last = contexts[contexts.length - 1]!;
     logBanner(
-      'pay-credit-cards · SOA range',
+      "pay-credit-cards · SOA range",
       `${first.monthLong} ${first.year} → ${last.monthLong} ${last.year} (${contexts.length} months)`,
     );
   }
 
-  log.header('Pre-flight');
-  log.kv('Months in range', String(contexts.length));
-  log.kv('Cards in CARDS_JSON', String(cards.length));
+  log.header("Pre-flight");
+  log.kv("Months in range", String(contexts.length));
+  log.kv("Cards in CARDS_JSON", String(cards.length));
   log.kv(
-    'Notify step',
-    skipNotify ? 'skipped (--no-notify / --no-email)' : 'enabled',
+    "Notify step",
+    skipNotify ? "skipped (--no-notify / --no-email)" : "enabled",
   );
 
   const results: SoaSingleMonthResult[] = [];
@@ -634,7 +647,7 @@ async function runSoaRange(options: RunSoaOptions): Promise<SoaRow[]> {
 
   for (let i = 0; i < contexts.length; i++) {
     const g = contexts[i]!;
-    log.line('');
+    log.line("");
     log.header(`Period ${i + 1}/${contexts.length}: ${g.monthLong} ${g.year}`);
     const r = await runSoaSingleMonth({
       month: String(g.monthIndex0 + 1),
@@ -653,7 +666,7 @@ async function runSoaRange(options: RunSoaOptions): Promise<SoaRow[]> {
       singleTitle,
       `${g.monthLong} ${g.year}`,
     );
-    log.success('Written');
+    log.success("Written");
     log.detail(r.summaryPath);
   }
 
@@ -665,7 +678,7 @@ async function runSoaRange(options: RunSoaOptions): Promise<SoaRow[]> {
   const rangePdfName = `soa-summary-range-${first.year}-${first.monthNum2}-to-${last.year}-${last.monthNum2}.pdf`;
   const rangePdfPath = path.join(rangeDir, rangePdfName);
   const rangeTitle = buildSoaRangePdfTitle(first, last);
-  log.header('Combined range PDF');
+  log.header("Combined range PDF");
   await writeRangeSummaryPdf(
     results.map((r) => ({
       periodLabel: `${r.ctx.monthLong} ${r.ctx.year}`,
@@ -675,15 +688,15 @@ async function runSoaRange(options: RunSoaOptions): Promise<SoaRow[]> {
     rangePdfPath,
     rangeTitle,
   );
-  log.success('Written');
+  log.success("Written");
   log.detail(rangePdfPath);
 
   if (!skipNotify) {
-    log.header('Notify (Telegram / Slack)');
+    log.header("Notify (Telegram / Slack)");
     if (!isNotifyConfigured()) {
-      log.warn('No notifier configured — skipping send.');
+      log.warn("No notifier configured — skipping send.");
       log.detail(
-        'Set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID (PDF) and/or SLACK_WEBHOOK_URL, or use --no-notify.',
+        "Set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID (PDF) and/or SLACK_WEBHOOK_URL, or use --no-notify.",
       );
     } else {
       try {
@@ -691,25 +704,25 @@ async function runSoaRange(options: RunSoaOptions): Promise<SoaRow[]> {
           rangePdfPath,
           `${rangeTitle} (automated)`,
         );
-        if (n.telegram) log.success('Sent summary PDF to Telegram.');
-        if (n.slack) log.success('Posted summary notice to Slack.');
+        if (n.telegram) log.success("Sent summary PDF to Telegram.");
+        if (n.slack) log.success("Posted summary notice to Slack.");
       } catch (e) {
         log.error(errMsg(e));
-        log.detail('Range PDF was still saved locally.');
+        log.detail("Range PDF was still saved locally.");
       }
     }
   }
 
-  log.header('Run summary');
+  log.header("Run summary");
   const parsedCards = results.reduce(
-    (acc, r) => acc + r.rows.filter((row) => row.cardLast4 !== '—').length,
+    (acc, r) => acc + r.rows.filter((row) => row.cardLast4 !== "—").length,
     0,
   );
-  log.kv('Months processed', String(results.length));
-  log.kv('Card-rows total (sum per month)', String(parsedCards));
-  log.kv('Parse warnings', String(totalWarnings));
-  log.kv('PDF failures', String(totalFailures));
-  log.line('');
+  log.kv("Months processed", String(results.length));
+  log.kv("Card-rows total (sum per month)", String(parsedCards));
+  log.kv("Parse warnings", String(totalWarnings));
+  log.kv("PDF failures", String(totalFailures));
+  log.line("");
 
   const allRows = results.flatMap((r) => r.rows);
   persistDueReminders(allRows);
@@ -734,7 +747,7 @@ function persistDueReminders(rows: SoaRow[]): void {
 }
 
 export async function runSoa(options: RunSoaOptions): Promise<SoaRow[]> {
-  if (options.mode === 'range') {
+  if (options.mode === "range") {
     return runSoaRange(options);
   }
 
@@ -742,11 +755,11 @@ export async function runSoa(options: RunSoaOptions): Promise<SoaRow[]> {
   const r = await runSoaSingleMonth({ month, year, skipBanner });
 
   log.kv(
-    'Notify step',
-    skipNotify ? 'skipped (--no-notify / --no-email)' : 'enabled',
+    "Notify step",
+    skipNotify ? "skipped (--no-notify / --no-email)" : "enabled",
   );
 
-  log.header('Summary PDF');
+  log.header("Summary PDF");
   const title = buildSoaSingleMonthPdfTitle(r.ctx.monthLong, r.ctx.year);
   await writeSummaryPdf(
     r.rows,
@@ -758,31 +771,31 @@ export async function runSoa(options: RunSoaOptions): Promise<SoaRow[]> {
   log.detail(r.summaryPath);
 
   if (!skipNotify) {
-    log.header('Notify (Telegram / Slack)');
+    log.header("Notify (Telegram / Slack)");
     if (!isNotifyConfigured()) {
-      log.warn('No notifier configured — skipping send.');
+      log.warn("No notifier configured — skipping send.");
       log.detail(
-        'Set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID (PDF) and/or SLACK_WEBHOOK_URL, or use --no-notify.',
+        "Set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID (PDF) and/or SLACK_WEBHOOK_URL, or use --no-notify.",
       );
     } else {
       try {
         const n = await notifySummaryPdf(r.summaryPath, `${title} (automated)`);
-        if (n.telegram) log.success('Sent summary PDF to Telegram.');
-        if (n.slack) log.success('Posted summary notice to Slack.');
+        if (n.telegram) log.success("Sent summary PDF to Telegram.");
+        if (n.slack) log.success("Posted summary notice to Slack.");
       } catch (e) {
         log.error(errMsg(e));
-        log.detail('Summary PDF was still saved locally.');
+        log.detail("Summary PDF was still saved locally.");
       }
     }
   }
 
-  log.header('Run summary');
-  const parsedCards = r.rows.filter((row) => row.cardLast4 !== '—').length;
-  log.kv('Rows in summary', String(r.rows.length));
-  log.kv('Cards with parsed SOA', String(parsedCards));
-  log.kv('Parse warnings', String(r.parseWarnings));
-  log.kv('PDF failures', String(r.parseFailures));
-  log.line('');
+  log.header("Run summary");
+  const parsedCards = r.rows.filter((row) => row.cardLast4 !== "—").length;
+  log.kv("Rows in summary", String(r.rows.length));
+  log.kv("Cards with parsed SOA", String(parsedCards));
+  log.kv("Parse warnings", String(r.parseWarnings));
+  log.kv("PDF failures", String(r.parseFailures));
+  log.line("");
 
   persistDueReminders(r.rows);
   return r.rows;

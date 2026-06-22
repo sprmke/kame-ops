@@ -10,11 +10,11 @@
  * Both are upserted in-place; old entries are pruned when they go past due by
  * more than `PRUNE_GRACE_DAYS` so the file stays small.
  */
-import fs from 'node:fs';
-import path from 'node:path';
-import { projectPaths } from './config';
-import { formatInterestCharges } from './notification-body';
-import type { SoaRow } from './types';
+import fs from "node:fs";
+import path from "node:path";
+import { loadCardCredentials, projectPaths } from "./config";
+import { formatInterestCharges } from "./notification-body";
+import type { SoaRow } from "./types";
 
 const PRUNE_GRACE_DAYS = 30;
 
@@ -50,6 +50,10 @@ export type DueEntry = {
   interestCharges?: string;
   /** Optional — hotline / IVR line from CARDS_JSON.contactLine. */
   contactLine?: string;
+  /** Per-card reminder window override (days before due). */
+  reminderWindowDays?: number;
+  /** Minutes between reminder pings while in window. */
+  reminderIntervalMinutes?: number;
   /** ISO timestamp when this card was marked as paid via mark-paid. */
   paidAt?: string;
   /** ISO timestamp of the last time this entry was refreshed from an SOA run. */
@@ -68,7 +72,7 @@ function stateFilePath(): string {
   if (override && override.trim().length > 0) {
     return path.resolve(projectPaths.root, override.trim());
   }
-  return path.join(projectPaths.dataDir, 'due-reminders-state.json');
+  return path.join(projectPaths.dataDir, "due-reminders-state.json");
 }
 
 function emptyState(): DueRemindersState {
@@ -77,9 +81,9 @@ function emptyState(): DueRemindersState {
 
 /** Last-4 for matching: digits only, right-aligned to 4 (handles leading zeros). */
 export function normalizeCardLast4(last4: string): string {
-  const d = last4.replace(/\D/g, '');
+  const d = last4.replace(/\D/g, "");
   if (d.length === 0) return last4.trim();
-  return d.slice(-4).padStart(4, '0');
+  return d.slice(-4).padStart(4, "0");
 }
 
 function dueKey(issuerId: string, cardLast4: string): string {
@@ -99,11 +103,11 @@ export function overviewIsPaidLabel(
   row: SoaRow,
   state: DueRemindersState,
 ): string {
-  if (row.soaUnavailable || row.minimumDue === 'SOA not yet available') {
-    return '—';
+  if (row.soaUnavailable || row.minimumDue === "SOA not yet available") {
+    return "—";
   }
   const ymd = parseDueDateToYMD(row.dueDate);
-  if (!ymd) return '—';
+  if (!ymd) return "—";
 
   const rowKey = dueKey(row.issuerId, row.cardLast4);
   const rowIss = row.issuerId.trim().toLowerCase();
@@ -112,7 +116,7 @@ export function overviewIsPaidLabel(
     dueKey(d.issuerId, d.cardLast4) === rowKey && d.dueDateYMD.trim() === ymd;
 
   const strict = state.dues.find(sameCardAndDue);
-  if (strict) return strict.paidAt ? 'Yes' : 'No';
+  if (strict) return strict.paidAt ? "Yes" : "No";
 
   const sameLast4AndDue = (d: DueEntry) =>
     normalizeCardLast4(d.cardLast4) === normalizeCardLast4(row.cardLast4) &&
@@ -121,29 +125,29 @@ export function overviewIsPaidLabel(
   const byLastAndDue = state.dues.filter(sameLast4AndDue);
   if (byLastAndDue.length === 1) {
     const e = byLastAndDue[0]!;
-    return e.paidAt ? 'Yes' : 'No';
+    return e.paidAt ? "Yes" : "No";
   }
   if (byLastAndDue.length > 1) {
     const iss = byLastAndDue.filter(
-      (d) => (d.issuerId ?? '').trim().toLowerCase() === rowIss,
+      (d) => (d.issuerId ?? "").trim().toLowerCase() === rowIss,
     );
-    if (iss.length === 1) return iss[0]!.paidAt ? 'Yes' : 'No';
-    return '—';
+    if (iss.length === 1) return iss[0]!.paidAt ? "Yes" : "No";
+    return "—";
   }
 
-  return '—';
+  return "—";
 }
 
 export function parseDueDateToYMD(dueDateStr: string): string | null {
-  if (!dueDateStr || dueDateStr === '—') return null;
+  if (!dueDateStr || dueDateStr === "—") return null;
   const m = dueDateStr.match(/^([A-Za-z]{3})\s+(\d{1,2}),\s+(\d{4})$/);
   if (!m) return null;
   const mon = MON[m[1]!];
   if (mon === undefined) return null;
   const y = Number(m[3]);
   const d = Number(m[2]);
-  const mo = String(mon + 1).padStart(2, '0');
-  const dy = String(d).padStart(2, '0');
+  const mo = String(mon + 1).padStart(2, "0");
+  const dy = String(d).padStart(2, "0");
   return `${y}-${mo}-${dy}`;
 }
 
@@ -152,13 +156,13 @@ function migrateDueOnLoad(raw: DueEntry): DueEntry {
   const ext = raw as DueEntry & { paid_at?: string };
   const paidAt = ext.paidAt ?? ext.paid_at;
   return {
-    issuerId: (raw.issuerId ?? '').trim().toLowerCase(),
-    cardLast4: normalizeCardLast4(String(raw.cardLast4 ?? '')),
+    issuerId: (raw.issuerId ?? "").trim().toLowerCase(),
+    cardLast4: normalizeCardLast4(String(raw.cardLast4 ?? "")),
     bankLabel: raw.bankLabel,
     cardDisplayLabel: raw.cardDisplayLabel,
     fullPan: raw.fullPan,
     dueDate: raw.dueDate,
-    dueDateYMD: (raw.dueDateYMD ?? '').trim(),
+    dueDateYMD: (raw.dueDateYMD ?? "").trim(),
     minimumDue: raw.minimumDue,
     totalDue: raw.totalDue,
     interestCharges: raw.interestCharges,
@@ -172,13 +176,13 @@ export function loadState(): DueRemindersState {
   const p = stateFilePath();
   if (!fs.existsSync(p)) return emptyState();
   try {
-    const raw = fs.readFileSync(p, 'utf8');
+    const raw = fs.readFileSync(p, "utf8");
     const parsed = JSON.parse(raw) as Partial<DueRemindersState>;
     const rawDues = Array.isArray(parsed.dues) ? parsed.dues : [];
     return {
       version: 1,
       dues: rawDues.map((d) => migrateDueOnLoad(d as DueEntry)),
-      sent: parsed.sent && typeof parsed.sent === 'object' ? parsed.sent : {},
+      sent: parsed.sent && typeof parsed.sent === "object" ? parsed.sent : {},
     };
   } catch {
     return emptyState();
@@ -188,7 +192,7 @@ export function loadState(): DueRemindersState {
 export function saveState(state: DueRemindersState): string {
   const p = stateFilePath();
   fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(state, null, 2) + '\n', 'utf8');
+  fs.writeFileSync(p, JSON.stringify(state, null, 2) + "\n", "utf8");
   return p;
 }
 
@@ -196,13 +200,13 @@ export function saveState(state: DueRemindersState): string {
 export function todayYMD(): string {
   const now = new Date();
   const y = now.getFullYear();
-  const mo = String(now.getMonth() + 1).padStart(2, '0');
-  const dy = String(now.getDate()).padStart(2, '0');
+  const mo = String(now.getMonth() + 1).padStart(2, "0");
+  const dy = String(now.getDate()).padStart(2, "0");
   return `${y}-${mo}-${dy}`;
 }
 
 function ymdToDate(ymd: string): Date {
-  const [y, m, d] = ymd.split('-').map(Number);
+  const [y, m, d] = ymd.split("-").map(Number);
   return new Date(y!, m! - 1, d!);
 }
 
@@ -275,6 +279,26 @@ export function upsertDuesFromSoaRows(rows: SoaRow[]): UpsertResult {
       contactLine: r.contactLine?.trim() ? r.contactLine.trim() : undefined,
       updatedAt: nowIso,
     };
+    const cards = loadCardCredentials();
+    const card = cards.find(
+      (c) =>
+        c.issuer.toLowerCase() === entry.issuerId &&
+        normalizeCardLast4(c.last4) === entry.cardLast4,
+    );
+    if (card) {
+      if (card.reminderWindowDays != null) {
+        entry.reminderWindowDays = card.reminderWindowDays;
+      }
+      if (card.reminderIntervalMinutes != null) {
+        entry.reminderIntervalMinutes = card.reminderIntervalMinutes;
+      }
+      if (!entry.contactLine && card.contactLine?.trim()) {
+        entry.contactLine = card.contactLine.trim();
+      }
+      if (!entry.fullPan && card.fullPan?.trim()) {
+        entry.fullPan = card.fullPan.trim();
+      }
+    }
     const key = dueKey(r.issuerId, r.cardLast4);
     const existing = byKey.get(key);
     if (!existing) {
@@ -434,7 +458,7 @@ export function findDueEntryByCardAndMonth(
  */
 export function findNearestUnpaidByLast4(
   cardLast4: string,
-): DueEntry | DueEntry[] | null | 'already_paid' {
+): DueEntry | DueEntry[] | null | "already_paid" {
   const state = loadState();
   const lastNorm = normalizeCardLast4(cardLast4);
   const all = state.dues.filter(
@@ -443,7 +467,7 @@ export function findNearestUnpaidByLast4(
   if (all.length === 0) return null;
 
   const unpaid = all.filter((d) => !d.paidAt);
-  if (unpaid.length === 0) return 'already_paid';
+  if (unpaid.length === 0) return "already_paid";
 
   const today = todayYMD();
   const byIssuer = new Map<string, DueEntry>();

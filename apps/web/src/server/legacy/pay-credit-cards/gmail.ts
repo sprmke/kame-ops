@@ -1,40 +1,10 @@
 // @ts-nocheck
-import fs from 'node:fs';
-import path from 'node:path';
-import type { gmail_v1 } from 'googleapis';
-import { google } from 'googleapis';
-import { projectPaths } from './config';
+import fs from "node:fs";
+import path from "node:path";
+import { google } from "googleapis";
+import type { gmail_v1 } from "googleapis";
 
-/** True when Google OAuth refresh failed (expired / revoked token, wrong client, etc.). */
-export function isInvalidGrantError(err: unknown): boolean {
-  const s =
-    err instanceof Error
-      ? `${err.message}\n${(err as NodeJS.ErrnoException).code ?? ''}`
-      : String(err);
-  if (/invalid_grant/i.test(s)) return true;
-  const g = err as {
-    response?: { data?: { error?: string; error_description?: string } };
-  };
-  const d = g.response?.data;
-  if (d?.error === 'invalid_grant') return true;
-  if (
-    typeof d?.error_description === 'string' &&
-    /invalid_grant/i.test(d.error_description)
-  )
-    return true;
-  return false;
-}
-
-export function formatGmailAuthError(err: unknown): string {
-  if (!isInvalidGrantError(err)) {
-    return err instanceof Error ? err.message : String(err);
-  }
-  return [
-    'Gmail OAuth failed: invalid_grant (refresh token expired, revoked, or not valid for this OAuth client).',
-    `Fix: run  npm run gmail-auth  in pay-credit-cards to sign in again and refresh ${projectPaths.tokenJson}.`,
-    'If it keeps failing, confirm configs/credentials.json matches the same Desktop OAuth client used when the token was created.',
-  ].join('\n');
-}
+import { createGoogleOAuth2Client } from "./google-oauth";
 
 export type DownloadedPdf = {
   bankId: string;
@@ -49,9 +19,9 @@ function getHeader(
   headers: gmail_v1.Schema$MessagePartHeader[] | undefined,
   name: string,
 ): string {
-  if (!headers) return '';
+  if (!headers) return "";
   const h = headers.find((x) => x.name?.toLowerCase() === name.toLowerCase());
-  return h?.value ?? '';
+  return h?.value ?? "";
 }
 
 function collectAttachmentParts(
@@ -62,42 +32,18 @@ function collectAttachmentParts(
   if (part.parts) {
     for (const p of part.parts) collectAttachmentParts(p, out);
   }
-  const mime = (part.mimeType ?? '').toLowerCase();
-  const name = part.filename ?? '';
-  if (part.body?.attachmentId && name.toLowerCase().endsWith('.pdf')) {
+  const mime = (part.mimeType ?? "").toLowerCase();
+  const name = part.filename ?? "";
+  if (part.body?.attachmentId && name.toLowerCase().endsWith(".pdf")) {
     out.push(part);
-  } else if (part.body?.attachmentId && mime === 'application/pdf') {
+  } else if (part.body?.attachmentId && mime === "application/pdf") {
     out.push(part);
   }
 }
 
 export async function getGmailClient() {
-  if (!fs.existsSync(projectPaths.credentialsJson)) {
-    throw new Error(`Missing ${projectPaths.credentialsJson}`);
-  }
-  if (!fs.existsSync(projectPaths.tokenJson)) {
-    throw new Error(
-      `Missing ${projectPaths.tokenJson}. Run: npm run gmail-auth`,
-    );
-  }
-  const creds = JSON.parse(
-    fs.readFileSync(projectPaths.credentialsJson, 'utf8'),
-  );
-  const installed = creds.installed ?? creds.web;
-  const oauth2Client = new google.auth.OAuth2(
-    installed.client_id,
-    installed.client_secret,
-    'http://127.0.0.1:8765/oauth2callback',
-  );
-  oauth2Client.setCredentials(
-    JSON.parse(fs.readFileSync(projectPaths.tokenJson, 'utf8')),
-  );
-  try {
-    await oauth2Client.getAccessToken();
-  } catch (e) {
-    throw new Error(formatGmailAuthError(e));
-  }
-  return google.gmail({ version: 'v1', auth: oauth2Client });
+  const oauth2Client = await createGoogleOAuth2Client();
+  return google.gmail({ version: "v1", auth: oauth2Client });
 }
 
 export async function searchAndDownloadPdfs(options: {
@@ -111,7 +57,7 @@ export async function searchAndDownloadPdfs(options: {
   const { gmail, query, bankId, bankLabel, downloadsDir } = options;
   const maxResults = options.maxResults ?? 15;
   const list = await gmail.users.messages.list({
-    userId: 'me',
+    userId: "me",
     q: query,
     maxResults,
   });
@@ -121,11 +67,11 @@ export async function searchAndDownloadPdfs(options: {
   for (const id of ids) {
     if (!id) continue;
     const full = await gmail.users.messages.get({
-      userId: 'me',
+      userId: "me",
       id,
-      format: 'full',
+      format: "full",
     });
-    const subject = getHeader(full.data.payload?.headers, 'Subject');
+    const subject = getHeader(full.data.payload?.headers, "Subject");
     const parts: gmail_v1.Schema$MessagePart[] = [];
     collectAttachmentParts(full.data.payload, parts);
 
@@ -134,18 +80,18 @@ export async function searchAndDownloadPdfs(options: {
       const attachmentId = part.body?.attachmentId;
       if (!attachmentId) continue;
       const att = await gmail.users.messages.attachments.get({
-        userId: 'me',
+        userId: "me",
         messageId: id,
         id: attachmentId,
       });
-      const b64 = att.data.data ?? '';
+      const b64 = att.data.data ?? "";
       const buffer = Buffer.from(
-        b64.replace(/-/g, '+').replace(/_/g, '/'),
-        'base64',
+        b64.replace(/-/g, "+").replace(/_/g, "/"),
+        "base64",
       );
       const safeName = (part.filename || `statement-${i + 1}.pdf`).replace(
         /[^\w.\-]+/g,
-        '_',
+        "_",
       );
       const outName = `${bankId}-${id.slice(0, 8)}-${i}-${safeName}`;
       const filePath = path.join(downloadsDir, outName);

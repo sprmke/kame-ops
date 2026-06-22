@@ -1,5 +1,6 @@
 // @ts-nocheck
 import fs from "node:fs";
+import "./pdf-node-polyfill";
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { CardCredential } from "./types";
 
@@ -49,7 +50,7 @@ function textItemsToPlaced(content: { items: unknown[] }): PlacedStr[] {
 function linesFromPlacedItems(
   items: PlacedStr[],
   yTol = 5,
-  yDescending: boolean
+  yDescending: boolean,
 ): string[] {
   if (items.length === 0) return [];
   const buckets = new Map<number, PlacedStr[]>();
@@ -62,14 +63,16 @@ function linesFromPlacedItems(
     }
     b.push(it);
   }
-  const ys = [...buckets.keys()].sort((a, b) =>
-    yDescending ? b - a : a - b
-  );
+  const ys = [...buckets.keys()].sort((a, b) => (yDescending ? b - a : a - b));
   const lines: string[] = [];
   for (const yk of ys) {
     const row = buckets.get(yk)!;
     row.sort((a, b) => a.x - b.x);
-    const line = row.map((r) => r.str).join(" ").replace(/\s+/g, " ").trim();
+    const line = row
+      .map((r) => r.str)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
     if (line) lines.push(line);
   }
   return lines;
@@ -81,7 +84,7 @@ function linesFromPlacedItems(
  */
 export async function extractPdfLinesReadingOrder(
   pdfPath: string,
-  password: string
+  password: string,
 ): Promise<string[]> {
   const [desc] = await extractPdfLinesReadingOrderDualAxis(pdfPath, password);
   return desc;
@@ -93,7 +96,7 @@ export async function extractPdfLinesReadingOrder(
  */
 export async function extractPdfLinesReadingOrderDualAxis(
   pdfPath: string,
-  password: string
+  password: string,
 ): Promise<[string[], string[]]> {
   const data = readPdfBinary(pdfPath);
   const loadingTask = pdfjs.getDocument({
@@ -122,7 +125,7 @@ export async function extractPdfLinesReadingOrderDualAxis(
 
 export async function tryUnlockAndExtractText(
   pdfPath: string,
-  passwords: CardCredential[]
+  passwords: CardCredential[],
 ): Promise<UnlockResult> {
   let lastErr: unknown;
 
@@ -154,7 +157,7 @@ export async function tryUnlockAndExtractText(
             .join("")
             .replace(/[ \t]+\n/g, "\n")
             .replace(/\n{3,}/g, "\n\n")
-            .trim()
+            .trim(),
         );
       }
       await doc.destroy();
@@ -174,6 +177,6 @@ export async function tryUnlockAndExtractText(
   }
 
   throw new Error(
-    `Could not open PDF with any configured password (${pdfPath}): ${String(lastErr)}`
+    `Could not open PDF with any configured password (${pdfPath}): ${String(lastErr)}`,
   );
 }

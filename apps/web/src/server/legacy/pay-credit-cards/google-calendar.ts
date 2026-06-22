@@ -1,18 +1,26 @@
 // @ts-nocheck
-import fs from "node:fs";
 import { google } from "googleapis";
-import { projectPaths, notifyConfig } from "./config";
+
+import { createGoogleOAuth2Client } from "./google-oauth";
+import { notifyConfig } from "./config";
 import { log } from "./logger";
-import {
-  buildDueBodyLines,
-  dueBodyInfoFromSoaRow,
-} from "./notification-body";
+import { buildDueBodyLines, dueBodyInfoFromSoaRow } from "./notification-body";
 import type { DueEntry } from "./due-reminders-state";
 import type { SoaRow } from "./types";
 
 const MON: Record<string, number> = {
-  Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
-  Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+  Jan: 0,
+  Feb: 1,
+  Mar: 2,
+  Apr: 3,
+  May: 4,
+  Jun: 5,
+  Jul: 6,
+  Aug: 7,
+  Sep: 8,
+  Oct: 9,
+  Nov: 10,
+  Dec: 11,
 };
 
 function parseDueDate(dueDateStr: string): Date | null {
@@ -38,38 +46,7 @@ function addDays(d: Date, n: number): Date {
 }
 
 export async function getCalendarClient() {
-  if (!fs.existsSync(projectPaths.credentialsJson)) {
-    throw new Error(
-      `Missing ${projectPaths.credentialsJson}. Run: npm run gmail-auth`
-    );
-  }
-  if (!fs.existsSync(projectPaths.tokenJson)) {
-    throw new Error(
-      `Missing ${projectPaths.tokenJson}. Run: npm run gmail-auth`
-    );
-  }
-  const creds = JSON.parse(
-    fs.readFileSync(projectPaths.credentialsJson, "utf8")
-  );
-  const installed = creds.installed ?? creds.web;
-  const oauth2Client = new google.auth.OAuth2(
-    installed.client_id,
-    installed.client_secret,
-    "http://127.0.0.1:8765/oauth2callback"
-  );
-  oauth2Client.setCredentials(
-    JSON.parse(fs.readFileSync(projectPaths.tokenJson, "utf8"))
-  );
-  try {
-    await oauth2Client.getAccessToken();
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(
-      `Calendar OAuth failed: ${msg}\n` +
-        `Your token may not include the Calendar scope yet.\n` +
-        `Fix: run  npm run gmail-auth  to re-authorize with both Gmail + Calendar scopes.`
-    );
-  }
+  const oauth2Client = await createGoogleOAuth2Client();
   return google.calendar({ version: "v3", auth: oauth2Client });
 }
 
@@ -173,7 +150,7 @@ export type MarkUnpaidCalendarResult = {
 
 export async function createDueDateCalendarEvents(
   rows: SoaRow[],
-  calendarId = "primary"
+  calendarId = "primary",
 ): Promise<CalendarResult> {
   const calendar = await getCalendarClient();
   const result: CalendarResult = { created: 0, deleted: 0, skipped: 0 };
@@ -183,7 +160,7 @@ export async function createDueDateCalendarEvents(
   todayMidnight.setHours(0, 0, 0, 0);
 
   const allParseable = rows.filter(
-    (r) => !r.soaUnavailable && parseDueDate(r.dueDate)
+    (r) => !r.soaUnavailable && parseDueDate(r.dueDate),
   );
 
   // Rows whose due date is still today or in the future.
@@ -206,7 +183,9 @@ export async function createDueDateCalendarEvents(
     if (pastRows.length > 0) {
       log.warn("All due dates are in the past — no calendar events created.");
     } else {
-      log.warn("No rows with parseable due dates — nothing to add to Calendar.");
+      log.warn(
+        "No rows with parseable due dates — nothing to add to Calendar.",
+      );
     }
     return result;
   }
@@ -234,12 +213,12 @@ export async function createDueDateCalendarEvents(
       timeMin: new Date(
         scanStart.getFullYear(),
         scanStart.getMonth(),
-        scanStart.getDate()
+        scanStart.getDate(),
       ).toISOString(),
       timeMax: new Date(
         scanEnd.getFullYear(),
         scanEnd.getMonth(),
-        scanEnd.getDate() + 1
+        scanEnd.getDate() + 1,
       ).toISOString(),
       maxResults: 500,
       singleEvents: true,
@@ -250,7 +229,7 @@ export async function createDueDateCalendarEvents(
     if (/insufficient.?scope|forbidden|403/i.test(msg)) {
       throw new Error(
         `Google Calendar scope missing.\n` +
-          `Re-run  npm run gmail-auth  to add the Calendar.Events permission to your token.`
+          `Re-run  npm run gmail-auth  to add the Calendar.Events permission to your token.`,
       );
     }
     throw e;
@@ -319,7 +298,7 @@ export async function createDueDateCalendarEvents(
  */
 export async function markCalendarEventsPaid(
   entry: DueEntry,
-  calendarId = "primary"
+  calendarId = "primary",
 ): Promise<MarkPaidCalendarResult> {
   const result: MarkPaidCalendarResult = { updated: 0, skipped: 0 };
 
@@ -354,12 +333,12 @@ export async function markCalendarEventsPaid(
       timeMin: new Date(
         scanStart.getFullYear(),
         scanStart.getMonth(),
-        scanStart.getDate()
+        scanStart.getDate(),
       ).toISOString(),
       timeMax: new Date(
         scanEnd.getFullYear(),
         scanEnd.getMonth(),
-        scanEnd.getDate() + 1
+        scanEnd.getDate() + 1,
       ).toISOString(),
       maxResults: 200,
       singleEvents: true,
@@ -432,7 +411,7 @@ export async function markCalendarEventsPaid(
  */
 export async function markCalendarEventsUnpaid(
   entry: DueEntry,
-  calendarId = "primary"
+  calendarId = "primary",
 ): Promise<MarkUnpaidCalendarResult> {
   const result: MarkUnpaidCalendarResult = { updated: 0, skipped: 0 };
 
@@ -466,12 +445,12 @@ export async function markCalendarEventsUnpaid(
       timeMin: new Date(
         scanStart.getFullYear(),
         scanStart.getMonth(),
-        scanStart.getDate()
+        scanStart.getDate(),
       ).toISOString(),
       timeMax: new Date(
         scanEnd.getFullYear(),
         scanEnd.getMonth(),
-        scanEnd.getDate() + 1
+        scanEnd.getDate() + 1,
       ).toISOString(),
       maxResults: 200,
       singleEvents: true,

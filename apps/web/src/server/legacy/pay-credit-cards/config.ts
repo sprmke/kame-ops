@@ -3,26 +3,40 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
-import type { BankDefinition, CardCredential, GmailMonthContext } from "./types";
+import type {
+  BankDefinition,
+  CardCredential,
+  GmailMonthContext,
+} from "./types";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
 
 dotenv.config({ path: path.join(projectRoot, ".env") });
 
+function resolveDataDir(): string {
+  if (process.env.DATA_DIR) {
+    return path.isAbsolute(process.env.DATA_DIR)
+      ? process.env.DATA_DIR
+      : path.resolve(projectRoot, process.env.DATA_DIR);
+  }
+  return path.join(projectRoot, "data");
+}
+
 export const projectPaths = {
   root: projectRoot,
   configsDir: path.join(projectRoot, "configs"),
   credentialsJson: path.join(projectRoot, "configs", "credentials.json"),
   tokenJson: path.join(projectRoot, "configs", "token.json"),
-  dataDir: process.env.DATA_DIR
-    ? path.resolve(projectRoot, process.env.DATA_DIR)
-    : path.join(projectRoot, "data"),
+  get dataDir() {
+    return resolveDataDir();
+  },
 };
 
 export function ensureDirs() {
-  const downloads = path.join(projectPaths.dataDir, "downloads");
-  const output = path.join(projectPaths.dataDir, "output");
+  const dataDir = resolveDataDir();
+  const downloads = path.join(dataDir, "downloads");
+  const output = path.join(dataDir, "output");
   fs.mkdirSync(downloads, { recursive: true });
   fs.mkdirSync(output, { recursive: true });
   return { downloads, output };
@@ -50,7 +64,10 @@ export function loadCardCredentials(): CardCredential[] {
           last4: c.last4,
           password: c.password,
         };
-        if (typeof c.gmailMonthOffset === "number" && Number.isFinite(c.gmailMonthOffset)) {
+        if (
+          typeof c.gmailMonthOffset === "number" &&
+          Number.isFinite(c.gmailMonthOffset)
+        ) {
           card.gmailMonthOffset = Math.trunc(c.gmailMonthOffset);
         }
         if (typeof c.label === "string" && c.label.trim()) {
@@ -61,6 +78,18 @@ export function loadCardCredentials(): CardCredential[] {
         }
         if (typeof c.contactLine === "string" && c.contactLine.trim()) {
           card.contactLine = c.contactLine.trim();
+        }
+        if (
+          typeof c.reminderWindowDays === "number" &&
+          Number.isFinite(c.reminderWindowDays)
+        ) {
+          card.reminderWindowDays = Math.trunc(c.reminderWindowDays);
+        }
+        if (
+          typeof c.reminderIntervalMinutes === "number" &&
+          Number.isFinite(c.reminderIntervalMinutes)
+        ) {
+          card.reminderIntervalMinutes = Math.trunc(c.reminderIntervalMinutes);
         }
         return card;
       })
@@ -84,7 +113,7 @@ function resolveTelegramWebLink(): string {
   if (looksTruncated) {
     const hint =
       'TELEGRAM_WEB_LINK looks truncated at the "/#" fragment. ' +
-      'Wrap the value in quotes in .env, e.g.:\n' +
+      "Wrap the value in quotes in .env, e.g.:\n" +
       '  TELEGRAM_WEB_LINK="https://web.telegram.org/k/#@your_bot_username"';
     console.warn(`\x1b[33m⚠  ${hint}\x1b[0m`);
   }
@@ -93,32 +122,31 @@ function resolveTelegramWebLink(): string {
 
 /** Telegram: @BotFather → token; chat id from getUpdates after messaging the bot */
 export const notifyConfig = {
-  telegramBotToken: (process.env.TELEGRAM_BOT_TOKEN ?? "").trim(),
-  telegramChatId: (process.env.TELEGRAM_CHAT_ID ?? "").trim(),
-  /**
-   * Optional: URL included in the Slack ping and in due-date reminders when the
-   * PDF was sent to Telegram (e.g. https://web.telegram.org/k/#@your_bot).
-   * Must be quoted in .env because the URL contains `#`.
-   */
-  telegramWebLink: resolveTelegramWebLink(),
-  /** Slack: app → Incoming Webhooks → webhook URL (text only; use Telegram for the PDF). */
-  slackWebhookUrl: (process.env.SLACK_WEBHOOK_URL ?? "").trim(),
+  get telegramBotToken() {
+    return (process.env.TELEGRAM_BOT_TOKEN ?? "").trim();
+  },
+  get telegramChatId() {
+    return (process.env.TELEGRAM_CHAT_ID ?? "").trim();
+  },
+  /** Optional web link for Slack/reminder copy (quote value in .env if URL contains #). */
+  get telegramWebLink() {
+    return resolveTelegramWebLink();
+  },
+  get slackWebhookUrl() {
+    return (process.env.SLACK_WEBHOOK_URL ?? "").trim();
+  },
 };
 
 /** Google Calendar: target calendar for due-date reminder events. */
 export const calendarConfig = {
-  /**
-   * Calendar ID to write events to. "primary" = the user's default calendar.
-   * Override with GOOGLE_CALENDAR_ID in .env (e.g. a dedicated credit-cards calendar).
-   */
-  calendarId: (process.env.GOOGLE_CALENDAR_ID ?? "primary").trim(),
-  /**
-   * When true, the Gmail poller automatically creates calendar events after each SOA run
-   * without any interactive prompt. Set GOOGLE_CALENDAR_AUTO=1 in .env to enable.
-   */
-  autoCreate: /^(1|true|yes)$/i.test(
-    (process.env.GOOGLE_CALENDAR_AUTO ?? "").trim()
-  ),
+  get calendarId() {
+    return (process.env.GOOGLE_CALENDAR_ID ?? "primary").trim();
+  },
+  get autoCreate() {
+    return /^(1|true|yes)$/i.test(
+      (process.env.GOOGLE_CALENDAR_AUTO ?? "").trim(),
+    );
+  },
 };
 
 /**
@@ -129,7 +157,7 @@ export const calendarConfig = {
 export const remindersConfig = {
   windowDays: Math.max(
     0,
-    Number(process.env.DUE_REMINDERS_WINDOW_DAYS ?? "4") || 4
+    Number(process.env.DUE_REMINDERS_WINDOW_DAYS ?? "4") || 4,
   ),
   /** Ping only Telegram / Slack whose credentials are set (same as notifyConfig). */
   dryRun:
@@ -152,7 +180,7 @@ export const receiptConfig = {
     : path.join(projectPaths.dataDir, "receipts"),
   tesseractPsm: (process.env.RECEIPT_TESSERACT_PSM ?? "").trim(),
   requireTotalDue: /^(1|true|yes)$/i.test(
-    (process.env.RECEIPT_REQUIRE_TOTAL_DUE ?? "").trim()
+    (process.env.RECEIPT_REQUIRE_TOTAL_DUE ?? "").trim(),
   ),
 };
 
@@ -207,7 +235,7 @@ export const banks: BankDefinition[] = [
 
 export function buildGmailQuery(
   bank: BankDefinition,
-  ctx: GmailMonthContext
+  ctx: GmailMonthContext,
 ): string {
   const core = bank.buildQuery(ctx);
   return `(${core}) after:${ctx.afterYMD} before:${ctx.beforeYMD}`;

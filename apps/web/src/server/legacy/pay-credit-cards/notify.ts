@@ -37,7 +37,7 @@ async function sendTelegramText(text: string): Promise<void> {
     throw new Error(
       data.description
         ? `Telegram: ${data.description}`
-        : `Telegram: HTTP ${res.status}`
+        : `Telegram: HTTP ${res.status}`,
     );
   }
 }
@@ -45,7 +45,7 @@ async function sendTelegramText(text: string): Promise<void> {
 async function sendTelegramPdf(
   pdfPath: string,
   fileName: string,
-  caption: string
+  caption: string,
 ): Promise<void> {
   const token = notifyConfig.telegramBotToken;
   const chatId = notifyConfig.telegramChatId;
@@ -65,7 +65,7 @@ async function sendTelegramPdf(
     throw new Error(
       data.description
         ? `Telegram: ${data.description}`
-        : `Telegram: HTTP ${res.status}`
+        : `Telegram: HTTP ${res.status}`,
     );
   }
 }
@@ -89,32 +89,39 @@ async function sendSlackWebhook(text: string): Promise<void> {
  */
 export async function notifySummaryPdf(
   pdfPath: string,
-  title: string
+  title: string,
+  options?: { telegram?: boolean; slack?: boolean },
 ): Promise<NotifySummaryResult> {
   const fileName = path.basename(pdfPath);
   const result: NotifySummaryResult = { telegram: false, slack: false };
+  const sendTelegram = options?.telegram !== false;
+  const sendSlack = options?.slack !== false;
 
-  if (notifyConfig.telegramBotToken && notifyConfig.telegramChatId) {
+  if (
+    sendTelegram &&
+    notifyConfig.telegramBotToken &&
+    notifyConfig.telegramChatId
+  ) {
     await sendTelegramPdf(pdfPath, fileName, title);
     result.telegram = true;
   }
 
-  if (notifyConfig.slackWebhookUrl) {
+  if (sendSlack && notifyConfig.slackWebhookUrl) {
     const lines = [`*${title}*`];
     if (result.telegram) {
       const webLink = notifyConfig.telegramWebLink;
       lines.push(
         webLink.length > 0
           ? `Summary PDF was sent to Telegram. Click <${webLink}|here>.`
-          : "Summary PDF was sent to Telegram."
+          : "Summary PDF was sent to Telegram.",
       );
     } else {
       lines.push(
         "Incoming webhooks cannot attach files; PDF is only on disk:",
-        `\`${pdfPath}\``
+        `\`${pdfPath}\``,
       );
       lines.push(
-        "Tip: add `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` to receive the PDF in Telegram."
+        "Tip: add `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` to receive the PDF in Telegram.",
       );
     }
     await sendSlackWebhook(lines.join("\n"));
@@ -122,8 +129,11 @@ export async function notifySummaryPdf(
   }
 
   if (!result.telegram && !result.slack) {
+    if (!sendTelegram && !sendSlack) {
+      return result;
+    }
     throw new Error(
-      "Notifier misconfigured: set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID and/or SLACK_WEBHOOK_URL"
+      "Notifier misconfigured: set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID and/or SLACK_WEBHOOK_URL",
     );
   }
 
@@ -136,7 +146,7 @@ export async function notifySummaryPdf(
  */
 export async function sendReminderText(
   telegramText: string,
-  slackText: string
+  slackText: string,
 ): Promise<NotifySummaryResult> {
   const result: NotifySummaryResult = { telegram: false, slack: false };
 
@@ -152,7 +162,7 @@ export async function sendReminderText(
 
   if (!result.telegram && !result.slack) {
     throw new Error(
-      "Notifier misconfigured: set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID and/or SLACK_WEBHOOK_URL"
+      "Notifier misconfigured: set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID and/or SLACK_WEBHOOK_URL",
     );
   }
 

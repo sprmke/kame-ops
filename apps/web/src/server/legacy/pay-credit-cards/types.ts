@@ -15,6 +15,10 @@ export type CardCredential = {
   fullPan?: string;
   /** Hotline, IVR steps, hours — printed under the card heading in the transaction section. */
   contactLine?: string;
+  /** Override global DUE_REMINDERS_WINDOW_DAYS for this card. */
+  reminderWindowDays?: number;
+  /** Minutes between pings while in the due window (default 1440 = once per day). */
+  reminderIntervalMinutes?: number;
 };
 
 export type TransactionLine = {

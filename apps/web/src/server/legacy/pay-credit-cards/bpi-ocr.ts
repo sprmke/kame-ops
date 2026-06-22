@@ -1,4 +1,5 @@
 // @ts-nocheck
+import "./pdf-node-polyfill";
 import { createWorker, PSM } from "tesseract.js";
 import { pdf } from "pdf-to-img";
 
@@ -32,7 +33,7 @@ function normalizeBpiOcrChunk(s: string): string {
 async function recognizeWithPsm(
   worker: Awaited<ReturnType<typeof createWorker>>,
   pageBuf: Buffer,
-  psm: PSM
+  psm: PSM,
 ): Promise<string> {
   await worker.setParameters({
     tessedit_pageseg_mode: psm,
@@ -49,7 +50,7 @@ async function recognizeWithPsm(
 export async function ocrPdfToPlainText(
   pdfPath: string,
   password: string,
-  options: BpiOcrOptions
+  options: BpiOcrOptions,
 ): Promise<string> {
   const { maxPages, scale, psm, dualSparse } = options;
   const doc = await pdf(pdfPath, { password, scale });

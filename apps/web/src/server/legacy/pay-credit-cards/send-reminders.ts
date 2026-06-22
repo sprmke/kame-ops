@@ -127,14 +127,39 @@ type Plan = {
   alreadySent: boolean;
 };
 
+function windowDaysForEntry(entry: DueEntry, defaultWindow: number): number {
+  const w = entry.reminderWindowDays;
+  return w != null && Number.isFinite(w)
+    ? Math.max(0, Math.trunc(w))
+    : defaultWindow;
+}
+
+function intervalMinutesForEntry(entry: DueEntry): number {
+  const m = entry.reminderIntervalMinutes;
+  return m != null && Number.isFinite(m) && m > 0 ? Math.trunc(m) : 1440;
+}
+
+function canSendReminder(
+  state: DueRemindersState,
+  fingerprint: string,
+  intervalMinutes: number,
+  force: boolean,
+): boolean {
+  if (force) return true;
+  const last = state.sent[fingerprint];
+  if (!last) return true;
+  if (intervalMinutes >= 1440) return false;
+  const elapsed = Date.now() - Date.parse(last);
+  return elapsed >= intervalMinutes * 60 * 1000;
+}
+
 function buildPlan(
   state: DueRemindersState,
-  windowDays: number,
+  defaultWindowDays: number,
   fromYmd: string,
 ): Plan[] {
   const plans: Plan[] = [];
   for (const entry of state.dues) {
-    // Skip cards already marked as paid — no need to remind.
     if (entry.paidAt) {
       const label =
         entry.cardDisplayLabel ?? `${entry.bankLabel} ****${entry.cardLast4}`;
@@ -143,6 +168,7 @@ function buildPlan(
       );
       continue;
     }
+    const windowDays = windowDaysForEntry(entry, defaultWindowDays);
     const daysAway = daysUntil(entry.dueDateYMD, fromYmd);
     if (daysAway > windowDays) continue;
     if (daysAway < 0) continue;
@@ -305,7 +331,14 @@ export async function runSendReminders(
   log.header(dryRun ? "Dry run · messages" : "Sending reminders");
 
   for (const p of plans) {
-    if (p.alreadySent && !force) {
+    const intervalMinutes = intervalMinutesForEntry(p.entry);
+    const alreadySent = !canSendReminder(
+      state,
+      p.fingerprint,
+      intervalMinutes,
+      force,
+    );
+    if (alreadySent) {
       skipped++;
       continue;
     }
