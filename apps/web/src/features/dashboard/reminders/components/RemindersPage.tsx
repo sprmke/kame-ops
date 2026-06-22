@@ -10,16 +10,39 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api/client";
+import {
+  formatDaysBeforeDue,
+  inWindowCountLabel,
+} from "@/lib/reminders/reminder-labels";
 import { cn } from "@/lib/utils/cn";
+import { sentRemindersMessage } from "@/lib/utils/toast-messages";
+
+function statusVariant(
+  status: string,
+): "success" | "warning" | "muted" | "default" {
+  if (status === "in_window_ready") return "warning";
+  if (status === "paid") return "success";
+  if (status === "in_window_already_sent") return "default";
+  return "muted";
+}
 
 export function RemindersPage() {
   const utils = api.useUtils();
   const { data: dues, isLoading } = api.reminders.listDue.useQuery({
     unpaidOnly: false,
   });
+  const { data: status } = api.reminders.status.useQuery();
 
   const sendNow = api.reminders.sendNow.useMutation({
-    onSuccess: (r) => toast.success(`Sent ${r.sent} reminder(s)`),
+    onSuccess: (r) => {
+      if (r.message) {
+        toast.message(r.message);
+      } else {
+        toast.success(sentRemindersMessage(r.sent));
+      }
+      void utils.reminders.status.invalidate();
+      void utils.reminders.listDue.invalidate();
+    },
     onError: (e) => toast.error(e.message),
   });
 
@@ -27,6 +50,7 @@ export function RemindersPage() {
     onSuccess: () => {
       toast.success("Marked as paid");
       void utils.reminders.listDue.invalidate();
+      void utils.reminders.status.invalidate();
       void utils.overview.stats.invalidate();
     },
     onError: (e) => toast.error(e.message),
@@ -34,12 +58,17 @@ export function RemindersPage() {
 
   const markUnpaid = api.reminders.markUnpaid.useMutation({
     onSuccess: () => {
-      toast.success("Marked as unpaid — reminders will resume");
+      toast.success("Marked as unpaid");
       void utils.reminders.listDue.invalidate();
+      void utils.reminders.status.invalidate();
       void utils.overview.stats.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const statusByDueId = new Map(
+    status?.cards.map((c) => [c.dueEntryId, c]) ?? [],
+  );
 
   const unpaid = dues?.filter((d) => !d.paidAt) ?? [];
   const paid = dues?.filter((d) => d.paidAt) ?? [];
@@ -48,14 +77,45 @@ export function RemindersPage() {
     <div className="space-y-8">
       <DashboardPageHeader
         title="Reminders"
-        description="Due-date notification window (D-4 through D-0). Mark cards paid to stop pings and update calendar."
         actions={
-          <Button onClick={() => sendNow.mutate()} disabled={sendNow.isPending}>
-            <Bell className="mr-2 h-4 w-4" />
-            Send reminders now
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={() => sendNow.mutate({})}
+              disabled={sendNow.isPending}
+            >
+              <Bell className="mr-2 h-4 w-4" />
+              Send now
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => sendNow.mutate({ force: true })}
+              disabled={sendNow.isPending}
+            >
+              Force send
+            </Button>
+          </div>
         }
       />
+
+      {status && (
+        <Card className="border-border/80">
+          <CardContent className="flex flex-wrap items-center gap-3 py-4 text-sm">
+            <span className="text-muted-foreground">Today {status.asOf}</span>
+            <StatusBadge
+              label={`${status.readyCount} ready`}
+              variant={status.readyCount > 0 ? "warning" : "muted"}
+            />
+            <StatusBadge
+              label={inWindowCountLabel(status.inWindowCount)}
+              variant="muted"
+            />
+            <StatusBadge
+              label={formatDaysBeforeDue(status.defaultWindowDays)}
+              variant="muted"
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {isLoading ? (
         <div className="flex justify-center py-16">
@@ -65,7 +125,7 @@ export function RemindersPage() {
         <EmptyState
           icon={<Bell className="h-6 w-6 text-muted-foreground" />}
           title="No due entries"
-          message="Run an SOA pipeline first to populate due dates from your statements."
+          message="Run SOA to populate due dates."
         />
       ) : (
         <div className="space-y-8">
@@ -78,14 +138,13 @@ export function RemindersPage() {
                 <DueCard
                   key={d.id}
                   entry={d}
+                  reminderStatus={statusByDueId.get(d.id)}
                   onMarkPaid={() => markPaid.mutate({ dueEntryId: d.id })}
                   isPending={markPaid.isPending}
                 />
               ))}
               {!unpaid.length && (
-                <p className="text-sm text-muted-foreground">
-                  All caught up — no unpaid dues.
-                </p>
+                <p className="text-sm text-muted-foreground">All caught up.</p>
               )}
             </div>
           </section>
@@ -101,6 +160,7 @@ export function RemindersPage() {
                     key={d.id}
                     entry={d}
                     paid
+                    reminderStatus={statusByDueId.get(d.id)}
                     onMarkUnpaid={() => markUnpaid.mutate({ dueEntryId: d.id })}
                     isPending={markUnpaid.isPending}
                   />
@@ -117,6 +177,7 @@ export function RemindersPage() {
 function DueCard({
   entry,
   paid,
+  reminderStatus,
   onMarkPaid,
   onMarkUnpaid,
   isPending,
@@ -132,6 +193,12 @@ function DueCard({
     paidAt: Date | null;
   };
   paid?: boolean;
+  reminderStatus?: {
+    statusLabel: string;
+    status: string;
+    daysAway: number;
+    windowDays: number;
+  };
   onMarkPaid?: () => void;
   onMarkUnpaid?: () => void;
   isPending?: boolean;
@@ -151,6 +218,13 @@ function DueCard({
         />
       </CardHeader>
       <CardContent className="space-y-3">
+        {reminderStatus && (
+          <StatusBadge
+            label={reminderStatus.statusLabel}
+            variant={statusVariant(reminderStatus.status)}
+            className="w-full justify-center py-1"
+          />
+        )}
         <div className="flex justify-between text-sm">
           <span className="text-muted-foreground">Minimum</span>
           <span className="font-medium">{entry.minimumDue}</span>

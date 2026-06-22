@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  BarChart3,
   Bell,
   CreditCard,
   FileText,
@@ -31,7 +30,6 @@ const ICONS = {
   Zap,
   Plug,
   Receipt,
-  BarChart3,
   Settings,
 } as const;
 

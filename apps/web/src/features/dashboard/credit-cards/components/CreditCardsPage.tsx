@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { CreditCard, Pencil, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CreditCard, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DashboardPageHeader } from "@/components/shared/DashboardPageHeader";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { ListViewToolbar } from "@/components/shared/ListViewToolbar";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -18,8 +19,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 import {
   Select,
   SelectContent,
@@ -27,15 +36,32 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api/client";
+import { useListPagination } from "@/lib/hooks/use-list-pagination";
+import {
+  BANK_ISSUERS,
+  formatBankIssuer,
+  normalizeBankIssuer,
+  REMINDER_INTERVALS,
+  type BankIssuer,
+  type ReminderIntervalMinutes,
+} from "@/lib/db/schema/credit-cards";
 
-const ISSUERS = ["metrobank", "rcbc", "bpi", "unionbank"] as const;
+import {
+  DEFAULT_REMINDER_WINDOW_DAYS,
+  formatReminderSummary,
+} from "../lib/reminder-labels";
+import { CreditCardsTable } from "./CreditCardsTable";
+import { useCreditCardsViewMode } from "../hooks/use-credit-cards-view-mode";
 
-type Issuer = (typeof ISSUERS)[number];
+const DEFAULT_WINDOW = DEFAULT_REMINDER_WINDOW_DAYS;
 
 export function CreditCardsPage() {
   const utils = api.useUtils();
   const { data: cards, isLoading } = api.creditCards.list.useQuery();
+  const { viewMode, setViewMode } = useCreditCardsViewMode();
+  const pagination = useListPagination(cards ?? [], 7);
 
   const create = api.creditCards.create.useMutation({
     onSuccess: () => {
@@ -69,25 +95,77 @@ export function CreditCardsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [issuer, setIssuer] = useState<Issuer>("bpi");
+  const [issuer, setIssuer] = useState<BankIssuer>("bpi");
   const [last4, setLast4] = useState("");
   const [label, setLabel] = useState("");
+  const [fullPan, setFullPan] = useState("");
+  const [contactLine, setContactLine] = useState("");
   const [pdfPassword, setPdfPassword] = useState("");
+  const [gmailMonthOffset, setGmailMonthOffset] = useState("0");
+  const [reminderWindowDays, setReminderWindowDays] = useState("");
+  const [reminderIntervalMinutes, setReminderIntervalMinutes] =
+    useState<ReminderIntervalMinutes>(1440);
+  const [notes, setNotes] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const { data: editingCard, isLoading: isLoadingEdit } =
+    api.creditCards.get.useQuery(
+      { id: editingId! },
+      { enabled: !!editingId && editOpen },
+    );
+
+  useEffect(() => {
+    if (!editingCard) return;
+    setIssuer(normalizeBankIssuer(editingCard.issuer));
+    setLast4(editingCard.last4);
+    setLabel(editingCard.label ?? "");
+    setFullPan(editingCard.fullPan ?? "");
+    setContactLine(editingCard.contactLine ?? "");
+    setPdfPassword(editingCard.pdfPassword);
+    setGmailMonthOffset(String(editingCard.gmailMonthOffset ?? 0));
+    setReminderWindowDays(
+      editingCard.reminderWindowDays != null
+        ? String(editingCard.reminderWindowDays)
+        : "",
+    );
+    setReminderIntervalMinutes(
+      (editingCard.reminderIntervalMinutes as ReminderIntervalMinutes) ?? 1440,
+    );
+    setNotes(editingCard.notes ?? "");
+  }, [editingCard]);
 
   function resetForm() {
     setIssuer("bpi");
     setLast4("");
     setLabel("");
+    setFullPan("");
+    setContactLine("");
     setPdfPassword("");
+    setGmailMonthOffset("0");
+    setReminderWindowDays("");
+    setReminderIntervalMinutes(1440);
+    setNotes("");
   }
 
-  function openEdit(card: NonNullable<typeof cards>[number]) {
-    setEditingId(card.id);
-    setIssuer(card.issuer as Issuer);
-    setLast4(card.last4);
-    setLabel(card.label ?? "");
-    setPdfPassword("");
+  function formPayload() {
+    const windowDays = reminderWindowDays.trim()
+      ? Number(reminderWindowDays)
+      : null;
+    return {
+      issuer,
+      last4,
+      label: label || undefined,
+      fullPan: fullPan || undefined,
+      contactLine: contactLine || undefined,
+      gmailMonthOffset: Number(gmailMonthOffset) || 0,
+      reminderWindowDays: windowDays,
+      reminderIntervalMinutes,
+      notes: notes || undefined,
+    };
+  }
+
+  function openEdit(cardId: string) {
+    setEditingId(cardId);
     setEditOpen(true);
   }
 
@@ -103,13 +181,12 @@ export function CreditCardsPage() {
     <div className="space-y-8">
       <DashboardPageHeader
         title="Credit cards"
-        description="Manage bank cards, PDF passwords, and Gmail month offsets for SOA fetching."
         actions={
           <Dialog open={addOpen} onOpenChange={setAddOpen}>
             <DialogTrigger asChild>
               <Button>Add card</Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Add credit card</DialogTitle>
               </DialogHeader>
@@ -120,15 +197,22 @@ export function CreditCardsPage() {
                 setLast4={setLast4}
                 label={label}
                 setLabel={setLabel}
+                fullPan={fullPan}
+                setFullPan={setFullPan}
+                contactLine={contactLine}
+                setContactLine={setContactLine}
                 pdfPassword={pdfPassword}
                 setPdfPassword={setPdfPassword}
+                gmailMonthOffset={gmailMonthOffset}
+                setGmailMonthOffset={setGmailMonthOffset}
+                reminderWindowDays={reminderWindowDays}
+                setReminderWindowDays={setReminderWindowDays}
+                reminderIntervalMinutes={reminderIntervalMinutes}
+                setReminderIntervalMinutes={setReminderIntervalMinutes}
+                notes={notes}
+                setNotes={setNotes}
                 onSubmit={() =>
-                  create.mutate({
-                    issuer,
-                    last4,
-                    label: label || undefined,
-                    pdfPassword,
-                  })
+                  create.mutate({ ...formPayload(), pdfPassword })
                 }
                 pending={create.isPending}
                 submitLabel="Add card"
@@ -145,73 +229,181 @@ export function CreditCardsPage() {
           message="Add your first credit card to start running SOA and due reminders."
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {cards.map((card) => (
-            <Card key={card.id} className="group">
-              <CardHeader className="flex flex-row items-start justify-between pb-2">
-                <div>
-                  <CardTitle className="text-base capitalize">
-                    {card.label ?? card.issuer}
-                  </CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    •••• {card.last4}
-                  </p>
-                </div>
-                <StatusBadge
-                  label={card.isActive ? "Active" : "Inactive"}
-                  variant={card.isActive ? "success" : "muted"}
-                />
-              </CardHeader>
-              <CardContent className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => openEdit(card)}
+        <>
+          <ListViewToolbar
+            total={pagination.total}
+            itemLabel="cards"
+            page={pagination.page}
+            pageCount={pagination.pageCount}
+            rangeStart={pagination.rangeStart}
+            rangeEnd={pagination.rangeEnd}
+            hasMultiplePages={pagination.hasMultiplePages}
+            onPageChange={pagination.setPage}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+          />
+          {viewMode === "table" ? (
+            <CreditCardsTable
+              cards={pagination.items}
+              onEdit={(card) => openEdit(card.id)}
+              onDelete={setDeleteId}
+            />
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {pagination.items.map((card) => (
+                <Card
+                  key={card.id}
+                  className="group overflow-hidden border-border/80 shadow-card transition-all hover:shadow-card-hover"
                 >
-                  <Pencil className="mr-1 h-3 w-3" />
-                  Edit
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setDeleteId(card.id)}
-                >
-                  <Trash2 className="h-3 w-3 text-destructive" />
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                  <div className="h-1 bg-gradient-to-r from-primary via-[hsl(var(--chart-2))] to-primary/40" />
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 space-y-1">
+                        <CardTitle className="font-display text-lg leading-tight">
+                          {card.label ?? formatBankIssuer(card.issuer)}
+                        </CardTitle>
+                        <p className="text-sm text-muted-foreground tabular-nums">
+                          •••• {card.last4}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          <StatusBadge
+                            label={formatBankIssuer(card.issuer)}
+                            variant="muted"
+                          />
+                          <StatusBadge
+                            label={card.isActive ? "Active" : "Inactive"}
+                            variant={card.isActive ? "success" : "muted"}
+                          />
+                        </div>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            aria-label="Card actions"
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openEdit(card.id)}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => setDeleteId(card.id)}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Remove
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                          Reminder window
+                        </p>
+                        <p className="font-medium">
+                          {formatReminderSummary(
+                            card.reminderWindowDays,
+                            card.reminderIntervalMinutes,
+                          )}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                          Interval
+                        </p>
+                        <p className="font-medium">
+                          {REMINDER_INTERVALS.find(
+                            (i) => i.value === card.reminderIntervalMinutes,
+                          )?.label ?? "Once per day"}
+                        </p>
+                      </div>
+                    </div>
+                    {(card.gmailMonthOffset ?? 0) !== 0 && (
+                      <StatusBadge
+                        label={`Statement month +${card.gmailMonthOffset}`}
+                        variant="muted"
+                      />
+                    )}
+                    <Button
+                      className="w-full"
+                      variant="outline"
+                      onClick={() => openEdit(card.id)}
+                    >
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Edit card
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent>
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          setEditOpen(open);
+          if (!open) {
+            setEditingId(null);
+            resetForm();
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit card</DialogTitle>
           </DialogHeader>
-          {editingId && (
-            <CardForm
-              issuer={issuer}
-              setIssuer={setIssuer}
-              last4={last4}
-              setLast4={setLast4}
-              label={label}
-              setLabel={setLabel}
-              pdfPassword={pdfPassword}
-              setPdfPassword={setPdfPassword}
-              passwordOptional
-              onSubmit={() =>
-                update.mutate({
-                  id: editingId,
-                  issuer,
-                  last4,
-                  label: label || undefined,
-                  ...(pdfPassword ? { pdfPassword } : {}),
-                })
-              }
-              pending={update.isPending}
-              submitLabel="Save changes"
-            />
+          {isLoadingEdit ? (
+            <div className="flex justify-center py-8">
+              <LoadingSpinner />
+            </div>
+          ) : (
+            editingId && (
+              <CardForm
+                key={editingId}
+                issuer={issuer}
+                setIssuer={setIssuer}
+                last4={last4}
+                setLast4={setLast4}
+                label={label}
+                setLabel={setLabel}
+                fullPan={fullPan}
+                setFullPan={setFullPan}
+                contactLine={contactLine}
+                setContactLine={setContactLine}
+                pdfPassword={pdfPassword}
+                setPdfPassword={setPdfPassword}
+                gmailMonthOffset={gmailMonthOffset}
+                setGmailMonthOffset={setGmailMonthOffset}
+                reminderWindowDays={reminderWindowDays}
+                setReminderWindowDays={setReminderWindowDays}
+                reminderIntervalMinutes={reminderIntervalMinutes}
+                setReminderIntervalMinutes={setReminderIntervalMinutes}
+                notes={notes}
+                setNotes={setNotes}
+                passwordOptional
+                onSubmit={() =>
+                  update.mutate({
+                    id: editingId,
+                    ...formPayload(),
+                    ...(pdfPassword ? { pdfPassword } : {}),
+                  })
+                }
+                pending={update.isPending}
+                submitLabel="Save changes"
+              />
+            )
           )}
         </DialogContent>
       </Dialog>
@@ -239,21 +431,45 @@ function CardForm({
   setLast4,
   label,
   setLabel,
+  fullPan,
+  setFullPan,
+  contactLine,
+  setContactLine,
   pdfPassword,
   setPdfPassword,
+  gmailMonthOffset,
+  setGmailMonthOffset,
+  reminderWindowDays,
+  setReminderWindowDays,
+  reminderIntervalMinutes,
+  setReminderIntervalMinutes,
+  notes,
+  setNotes,
   passwordOptional,
   onSubmit,
   pending,
   submitLabel,
 }: {
-  issuer: Issuer;
-  setIssuer: (v: Issuer) => void;
+  issuer: BankIssuer;
+  setIssuer: (v: BankIssuer) => void;
   last4: string;
   setLast4: (v: string) => void;
   label: string;
   setLabel: (v: string) => void;
+  fullPan: string;
+  setFullPan: (v: string) => void;
+  contactLine: string;
+  setContactLine: (v: string) => void;
   pdfPassword: string;
   setPdfPassword: (v: string) => void;
+  gmailMonthOffset: string;
+  setGmailMonthOffset: (v: string) => void;
+  reminderWindowDays: string;
+  setReminderWindowDays: (v: string) => void;
+  reminderIntervalMinutes: ReminderIntervalMinutes;
+  setReminderIntervalMinutes: (v: ReminderIntervalMinutes) => void;
+  notes: string;
+  setNotes: (v: string) => void;
   passwordOptional?: boolean;
   onSubmit: () => void;
   pending: boolean;
@@ -269,38 +485,109 @@ function CardForm({
     >
       <div className="space-y-2">
         <Label>Bank</Label>
-        <Select value={issuer} onValueChange={(v) => setIssuer(v as Issuer)}>
+        <Select
+          key={issuer}
+          value={issuer}
+          onValueChange={(v) => setIssuer(normalizeBankIssuer(v))}
+        >
           <SelectTrigger>
-            <SelectValue />
+            <SelectValue placeholder="Select bank">
+              {formatBankIssuer(issuer)}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            {ISSUERS.map((i) => (
+            {BANK_ISSUERS.map((i) => (
               <SelectItem key={i} value={i}>
-                {i}
+                {formatBankIssuer(i)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
-      <div className="space-y-2">
-        <Label>Last 4 digits</Label>
-        <Input
-          value={last4}
-          onChange={(e) => setLast4(e.target.value)}
-          maxLength={4}
-          required
-        />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label>Last 4 digits</Label>
+          <Input
+            value={last4}
+            onChange={(e) => setLast4(e.target.value)}
+            maxLength={4}
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Statement month shift</Label>
+          <Input
+            type="number"
+            value={gmailMonthOffset}
+            onChange={(e) => setGmailMonthOffset(e.target.value)}
+          />
+        </div>
       </div>
       <div className="space-y-2">
-        <Label>Label (optional)</Label>
+        <Label>Label</Label>
         <Input value={label} onChange={(e) => setLabel(e.target.value)} />
       </div>
       <div className="space-y-2">
-        <Label>
-          PDF password {passwordOptional && "(leave blank to keep)"}
-        </Label>
+        <Label>Full card number</Label>
         <Input
-          type="password"
+          value={fullPan}
+          onChange={(e) => setFullPan(e.target.value)}
+          placeholder="4188 9849 0606 0018"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label>Contact line</Label>
+        <Textarea
+          value={contactLine}
+          onChange={(e) => setContactLine(e.target.value)}
+          rows={2}
+          placeholder="02-889-10000"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label>Days before due</Label>
+          <Input
+            type="number"
+            min={0}
+            max={60}
+            value={reminderWindowDays}
+            onChange={(e) => setReminderWindowDays(e.target.value)}
+            placeholder={`Default (${DEFAULT_WINDOW})`}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>How often</Label>
+          <Select
+            value={String(reminderIntervalMinutes)}
+            onValueChange={(v) =>
+              setReminderIntervalMinutes(Number(v) as ReminderIntervalMinutes)
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {REMINDER_INTERVALS.map((i) => (
+                <SelectItem key={i.value} value={String(i.value)}>
+                  {i.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label>Notes</Label>
+        <Textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label>PDF password</Label>
+        <PasswordInput
           value={pdfPassword}
           onChange={(e) => setPdfPassword(e.target.value)}
           required={!passwordOptional}

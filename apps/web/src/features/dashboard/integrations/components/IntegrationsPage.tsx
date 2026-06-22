@@ -1,31 +1,31 @@
 "use client";
 
-import { useState } from "react";
-import { MessageCircle, Slack, Mail, Calendar } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Mail, MessageCircle, Slack } from "lucide-react";
+import { signIn } from "next-auth/react";
 import { toast } from "sonner";
 
 import { DashboardPageHeader } from "@/components/shared/DashboardPageHeader";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
+import { ROUTES } from "@/config/routes";
 import { api } from "@/lib/api/client";
 
 export function IntegrationsPage() {
   const utils = api.useUtils();
   const { data: integrations, isLoading } = api.integrations.list.useQuery();
+  const { data: formConfigs, isLoading: isLoadingConfigs } =
+    api.integrations.getFormConfigs.useQuery();
   const upsert = api.integrations.upsert.useMutation({
     onSuccess: () => {
       toast.success("Integration saved — applied on next SOA/reminder run");
       void utils.integrations.list.invalidate();
+      void utils.integrations.getFormConfigs.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -34,10 +34,24 @@ export function IntegrationsPage() {
   const [telegramChat, setTelegramChat] = useState("");
   const [telegramWebLink, setTelegramWebLink] = useState("");
   const [slackWebhook, setSlackWebhook] = useState("");
+  const [reconnectingGoogle, setReconnectingGoogle] = useState(false);
+
+  useEffect(() => {
+    if (!formConfigs) return;
+    if (formConfigs.telegram) {
+      setTelegramToken(formConfigs.telegram.botToken ?? "");
+      setTelegramChat(formConfigs.telegram.chatId ?? "");
+      setTelegramWebLink(formConfigs.telegram.webLink ?? "");
+    }
+    if (formConfigs.slack) {
+      setSlackWebhook(formConfigs.slack.webhookUrl ?? "");
+    }
+  }, [formConfigs]);
 
   const connected = new Set(integrations?.map((i) => i.provider) ?? []);
+  const gmailConnected = connected.has("gmail");
 
-  if (isLoading) {
+  if (isLoading || isLoadingConfigs) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
         <LoadingSpinner size="lg" />
@@ -45,14 +59,43 @@ export function IntegrationsPage() {
     );
   }
 
+  async function reconnectGoogle() {
+    setReconnectingGoogle(true);
+    await signIn("google", {
+      callbackUrl: ROUTES.dashboard.integrations,
+    });
+  }
+
   return (
     <div className="space-y-8">
-      <DashboardPageHeader
-        title="Integrations"
-        description="Connect notification channels. Secrets are encrypted and applied when you run SOA or reminders."
-      />
+      <DashboardPageHeader title="Integrations" />
 
       <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Mail className="h-5 w-5 text-primary" />
+                <CardTitle className="text-base">
+                  Gmail & Google Calendar
+                </CardTitle>
+              </div>
+              {gmailConnected && (
+                <StatusBadge label="Connected" variant="success" />
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Button
+              variant={gmailConnected ? "outline" : "default"}
+              onClick={reconnectGoogle}
+              disabled={reconnectingGoogle}
+            >
+              {gmailConnected ? "Reconnect Google" : "Connect Google"}
+            </Button>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -64,15 +107,11 @@ export function IntegrationsPage() {
                 <StatusBadge label="Connected" variant="success" />
               )}
             </div>
-            <CardDescription>
-              Bot token + chat ID for PDF summaries and reminders.
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="space-y-2">
               <Label>Bot token</Label>
-              <Input
-                type="password"
+              <PasswordInput
                 value={telegramToken}
                 onChange={(e) => setTelegramToken(e.target.value)}
                 placeholder="From @BotFather"
@@ -123,15 +162,11 @@ export function IntegrationsPage() {
                 <StatusBadge label="Connected" variant="success" />
               )}
             </div>
-            <CardDescription>
-              Incoming webhook for text notifications.
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="space-y-2">
               <Label>Webhook URL</Label>
-              <Input
-                type="password"
+              <PasswordInput
                 value={slackWebhook}
                 onChange={(e) => setSlackWebhook(e.target.value)}
                 placeholder="https://hooks.slack.com/..."
@@ -148,31 +183,6 @@ export function IntegrationsPage() {
             >
               Save Slack
             </Button>
-          </CardContent>
-        </Card>
-
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Mail className="h-5 w-5 text-muted-foreground" />
-              <CardTitle className="text-base">
-                Gmail & Google Calendar
-              </CardTitle>
-            </div>
-            <CardDescription>
-              OAuth credentials live in{" "}
-              <code className="text-xs">configs/credentials.json</code> and{" "}
-              <code className="text-xs">configs/token.json</code> (legacy CLI
-              layout). Run <code className="text-xs">gmail-auth</code> from the
-              legacy repo once, then copy configs into your server environment.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-3">
-            <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              Calendar events on SOA run when{" "}
-              <code>GOOGLE_CALENDAR_AUTO=1</code>
-            </div>
           </CardContent>
         </Card>
       </div>
