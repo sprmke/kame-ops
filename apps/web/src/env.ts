@@ -10,8 +10,8 @@ export const env = createEnv({
     DIRECT_URL: z.string().url().optional(),
     AUTH_SECRET: z.string().min(32),
     AUTH_URL: z.string().url().optional(),
-    GOOGLE_CLIENT_ID: z.string().optional(),
-    GOOGLE_CLIENT_SECRET: z.string().optional(),
+    GOOGLE_CLIENT_ID: isProd ? z.string().min(1) : z.string().optional(),
+    GOOGLE_CLIENT_SECRET: isProd ? z.string().min(1) : z.string().optional(),
     SUPABASE_URL: isProd ? z.string().url() : z.string().url().optional(),
     SUPABASE_ANON_KEY: z.string().optional(),
     SUPABASE_SERVICE_ROLE_KEY: isProd

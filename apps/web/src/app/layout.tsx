@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import { Providers } from "@/components/providers";
+import { LOCAL_DEV_APP_URL } from "@/lib/constants/dev-url";
 import { fontDisplay, fontSans } from "@/lib/fonts";
 
 import "@/env";
@@ -10,9 +11,7 @@ export const metadata: Metadata = {
   title: { default: "KameOps", template: "%s | KameOps" },
   description:
     "Business automation platform for credit cards, reminders, and workflows.",
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3005",
-  ),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? LOCAL_DEV_APP_URL),
 };
 
 export const viewport: Viewport = {

@@ -11,7 +11,7 @@ import {
 
 interface AuthPageShellProps {
   title: string;
-  description: string;
+  description?: string;
   children: ReactNode;
   footer?: ReactNode;
 }
@@ -34,7 +34,9 @@ export function AuthPageShell({
           </div>
           <div className="space-y-1">
             <CardTitle className="font-display text-2xl">{title}</CardTitle>
-            <CardDescription>{description}</CardDescription>
+            {description ? (
+              <CardDescription>{description}</CardDescription>
+            ) : null}
           </div>
         </CardHeader>
         <CardContent>

@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { LayoutGrid, List, Kanban } from 'lucide-react';
+import * as React from "react";
+import { LayoutGrid, List, Kanban } from "lucide-react";
 
-import { cn } from '@/lib/utils/cn';
+import { cn } from "@/lib/utils/cn";
 
-export type ViewMode = 'grid' | 'table' | 'kanban';
+export type ViewMode = "grid" | "table" | "kanban";
 
 interface ViewOption {
   value: ViewMode;
@@ -14,9 +14,9 @@ interface ViewOption {
 }
 
 const VIEW_OPTIONS: ViewOption[] = [
-  { value: 'grid', label: 'Grid', icon: LayoutGrid },
-  { value: 'table', label: 'Table', icon: List },
-  { value: 'kanban', label: 'Kanban', icon: Kanban },
+  { value: "table", label: "Table", icon: List },
+  { value: "grid", label: "Cards", icon: LayoutGrid },
+  { value: "kanban", label: "Kanban", icon: Kanban },
 ];
 
 interface ViewToggleProps {
@@ -30,15 +30,17 @@ export function ViewToggle({
   value,
   onChange,
   className,
-  options = ['grid', 'table', 'kanban'],
+  options = ["table", "grid", "kanban"],
 }: ViewToggleProps) {
-  const filteredOptions = VIEW_OPTIONS.filter((opt) => options.includes(opt.value));
+  const filteredOptions = options
+    .map((value) => VIEW_OPTIONS.find((opt) => opt.value === value))
+    .filter((opt): opt is ViewOption => opt != null);
 
   return (
     <div
       className={cn(
-        'inline-flex items-center rounded-lg border bg-muted p-1',
-        className
+        "inline-flex items-center rounded-lg border bg-muted p-1",
+        className,
       )}
     >
       {filteredOptions.map((option) => {
@@ -51,10 +53,10 @@ export function ViewToggle({
             type="button"
             onClick={() => onChange(option.value)}
             className={cn(
-              'inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-200',
+              "inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-200",
               isActive
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
             )}
             aria-label={`${option.label} view`}
             aria-pressed={isActive}

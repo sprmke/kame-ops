@@ -26,7 +26,7 @@ const FEATURES = [
     icon: Bell,
     title: "Smart reminders",
     description:
-      "Daily D-4 through D-0 due-date pings via Telegram and Slack — idempotent, so you never get spammed twice.",
+      "Daily due-date reminders via Telegram and Slack — starting days before your due date through payment day.",
   },
   {
     icon: Zap,
@@ -44,7 +44,7 @@ const FEATURES = [
 
 const STATS = [
   { label: "PH banks supported", value: "4" },
-  { label: "Reminder window", value: "D-4 → D-0" },
+  { label: "Reminder window", value: "4 days before due" },
   { label: "Channels", value: "Telegram · Slack" },
 ] as const;
 
@@ -61,7 +61,7 @@ export default async function HomePage() {
             <Link href={ROUTES.login}>Sign in</Link>
           </Button>
           <Button asChild className="shadow-glow">
-            <Link href={ROUTES.register}>Get started</Link>
+            <Link href={ROUTES.login}>Get started with Google</Link>
           </Button>
         </div>
       </header>
@@ -83,8 +83,8 @@ export default async function HomePage() {
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             <Button size="lg" asChild className="shadow-glow">
-              <Link href={ROUTES.register}>
-                Start free
+              <Link href={ROUTES.login}>
+                Start with Google
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
@@ -133,7 +133,7 @@ export default async function HomePage() {
             Connect Gmail, add your cards, and run your first SOA in minutes.
           </p>
           <Button size="lg" className="mt-8 shadow-glow" asChild>
-            <Link href={ROUTES.register}>
+            <Link href={ROUTES.login}>
               Create free account
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>

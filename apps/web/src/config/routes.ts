@@ -8,11 +8,13 @@ export const ROUTES = {
     creditCards: "/dashboard/credit-cards",
     creditCardDetail: (id: string) => `/dashboard/credit-cards/${id}` as const,
     soa: "/dashboard/soa",
+    soaPeriod: (id: string) => `/dashboard/soa/${id}` as const,
+    soaStatement: (periodId: string, statementId: string) =>
+      `/dashboard/soa/${periodId}/${statementId}` as const,
     reminders: "/dashboard/reminders",
     automations: "/dashboard/automations",
     integrations: "/dashboard/integrations",
     receipts: "/dashboard/receipts",
-    analytics: "/dashboard/analytics",
     settings: "/dashboard/settings",
   },
 } as const;
@@ -33,6 +35,5 @@ export const DASHBOARD_NAV = [
   { title: "Automations", href: ROUTES.dashboard.automations, icon: "Zap" },
   { title: "Integrations", href: ROUTES.dashboard.integrations, icon: "Plug" },
   { title: "Receipts", href: ROUTES.dashboard.receipts, icon: "Receipt" },
-  { title: "Analytics", href: ROUTES.dashboard.analytics, icon: "BarChart3" },
   { title: "Settings", href: ROUTES.dashboard.settings, icon: "Settings" },
 ] as const;

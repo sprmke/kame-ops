@@ -1,26 +1,36 @@
-'use client';
+"use client";
 
-import { useTheme } from 'next-themes';
-import { Toaster as Sonner, type ToasterProps } from 'sonner';
+import { useTheme } from "next-themes";
+import { Toaster as Sonner, type ToasterProps } from "sonner";
 
-type ToasterComponentProps = ToasterProps;
-
-const Toaster = ({ ...props }: ToasterComponentProps) => {
-  const { theme = 'system' } = useTheme();
+const Toaster = ({ ...props }: ToasterProps) => {
+  const { theme = "system" } = useTheme();
 
   return (
     <Sonner
-      theme={theme as ToasterProps['theme']}
+      theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      position="top-right"
+      closeButton
+      visibleToasts={4}
+      expand={false}
+      gap={12}
+      offset={16}
       toastOptions={{
         classNames: {
           toast:
-            'group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg',
-          description: 'group-[.toast]:text-muted-foreground',
+            "group toast kame-toast !bg-card !text-card-foreground !border !border-border/80 shadow-elevated !rounded-xl !px-4 !py-3.5",
+          title: "!text-sm !font-medium !leading-snug",
+          description: "!text-sm !text-muted-foreground !leading-snug",
           actionButton:
-            'group-[.toast]:bg-primary group-[.toast]:text-primary-foreground',
+            "!bg-primary !text-primary-foreground !text-xs !font-medium !rounded-md !px-3 !py-1.5",
           cancelButton:
-            'group-[.toast]:bg-muted group-[.toast]:text-muted-foreground',
+            "!bg-muted !text-muted-foreground !text-xs !font-medium !rounded-md !px-3 !py-1.5",
+          closeButton: "kame-toast-close",
+          success: "kame-toast-success",
+          error: "kame-toast-error",
+          warning: "kame-toast-warning",
+          info: "kame-toast-info",
         },
       }}
       {...props}
@@ -29,5 +39,3 @@ const Toaster = ({ ...props }: ToasterComponentProps) => {
 };
 
 export { Toaster };
-
-
