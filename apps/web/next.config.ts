@@ -14,6 +14,30 @@ const nextConfig: NextConfig = {
   experimental: {
     serverActions: { bodySizeLimit: "10mb" },
   },
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.experiments = {
+        ...config.experiments,
+        asyncWebAssembly: true,
+      };
+      const externals = config.externals;
+      config.externals = [
+        ...(Array.isArray(externals) ? externals : [externals]),
+        "@neslinesli93/qpdf-wasm",
+        (
+          { request }: { request?: string },
+          callback: (err?: Error | null, result?: string) => void,
+        ) => {
+          if (request?.endsWith(".wasm")) {
+            callback(null, `commonjs ${request}`);
+            return;
+          }
+          callback();
+        },
+      ];
+    }
+    return config;
+  },
   async headers() {
     return [
       {

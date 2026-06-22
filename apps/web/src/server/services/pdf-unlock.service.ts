@@ -1,9 +1,8 @@
 import "server-only";
 
 import { createRequire } from "module";
+import { dirname, join } from "path";
 import { readFile } from "fs/promises";
-
-import createModule from "@neslinesli93/qpdf-wasm";
 
 import type { CardCredential } from "@/server/legacy/pay-credit-cards/types";
 
@@ -20,15 +19,27 @@ let qpdfModulePromise: Promise<QpdfModule> | null = null;
 
 function qpdfWasmPath(): string {
   const require = createRequire(import.meta.url);
-  return require.resolve("@neslinesli93/qpdf-wasm/dist/qpdf.wasm");
+  const pkgJson = require.resolve("@neslinesli93/qpdf-wasm/package.json");
+  return join(dirname(pkgJson), "dist", "qpdf.wasm");
+}
+
+type QpdfFactory = (opts: {
+  locateFile: (path: string) => string;
+  noInitialRun: boolean;
+}) => Promise<QpdfModule>;
+
+function loadQpdfFactory(): QpdfFactory {
+  const require = createRequire(import.meta.url);
+  return require("@neslinesli93/qpdf-wasm") as QpdfFactory;
 }
 
 async function getQpdfModule(): Promise<QpdfModule> {
   if (!qpdfModulePromise) {
+    const createModule = loadQpdfFactory();
     qpdfModulePromise = createModule({
       locateFile: () => qpdfWasmPath(),
       noInitialRun: true,
-    } as Parameters<typeof createModule>[0]) as unknown as Promise<QpdfModule>;
+    });
   }
   return qpdfModulePromise;
 }
