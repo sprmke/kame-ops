@@ -32,7 +32,6 @@ import { api } from "@/lib/api/client";
 const JOB_TYPES = [
   { value: "run_soa_pipeline", label: "Run SOA pipeline" },
   { value: "send_due_reminders", label: "Send due reminders" },
-  { value: "poll_soa_gmail", label: "Poll Gmail SOA" },
 ] as const;
 
 export function AutomationsPage() {
@@ -73,7 +72,7 @@ export function AutomationsPage() {
     <div className="space-y-8">
       <DashboardPageHeader
         title="Automations"
-        description="Schedule SOA runs, Gmail polls, and daily reminders. Wire cron to /api/cron/* with your CRON_SECRET."
+        description="Schedule SOA runs and daily reminders. Wire cron to /api/cron/* with your CRON_SECRET."
         actions={
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>

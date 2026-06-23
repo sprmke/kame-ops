@@ -72,10 +72,6 @@ export const soaRouter = router({
       soaService.runSoaPipeline(ctx.user.id, input),
     ),
 
-  pollGmail: protectedProcedure.mutation(({ ctx }) =>
-    soaService.pollNewSoaFromGmail(ctx.user.id),
-  ),
-
   dedupe: protectedProcedure.mutation(({ ctx }) =>
     soaService.dedupeStatements(ctx.user.id),
   ),

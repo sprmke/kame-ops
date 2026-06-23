@@ -291,9 +291,7 @@ export async function runSendReminders(
   );
 
   if (state.dues.length === 0) {
-    log.warn(
-      "No due dates in state yet. Run `npm run start` (or `poll-new-soa`) first.",
-    );
+    log.warn("No due dates in state yet. Run SOA first.");
     return { sent: 0, skipped: 0, failed: 0 };
   }
 

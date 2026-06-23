@@ -116,7 +116,7 @@ bun run dev
 
 1. Open http://localhost:3005/login → **Continue with Google**
 2. **Dashboard → Integrations** — Gmail connected
-3. **Dashboard → SOA** — run poll (uses Gmail + Supabase-backed app DB)
+3. **Dashboard → SOA** — Run SOA (uses Gmail + Supabase-backed app DB)
 4. **Dashboard → Receipts** — upload a test image (uses Supabase Storage when configured)
 
 ### Check data in Supabase

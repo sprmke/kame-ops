@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import { CheckCircle2, Circle, FileText, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, FileText, Loader2, XCircle } from 'lucide-react';
 
-import { cn } from "@/lib/utils/cn";
+import { cn } from '@/lib/utils/cn';
 
-import type { RunSoaProgressStep } from "../lib/run-soa-progress";
+import type { RunSoaProgressStep } from '../lib/run-soa-progress';
 
 type RunSoaProgressPanelProps = {
   steps: RunSoaProgressStep[];
@@ -20,8 +20,8 @@ function RunProgressBar({ value }: { value: number }) {
     <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-primary/20">
       <div
         className={cn(
-          "h-full rounded-full transition-all duration-300 ease-out",
-          value >= 100 ? "bg-[hsl(var(--success))]" : "bg-primary",
+          'h-full rounded-full transition-all duration-300 ease-out',
+          value >= 100 ? 'bg-[hsl(var(--success))]' : 'bg-primary',
         )}
         style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
       />
@@ -52,15 +52,15 @@ export function RunSoaProgressPanel({
               />
               <span
                 className="absolute inset-1 animate-spin rounded-full border-2 border-primary/30"
-                style={{ animationDuration: "3s" }}
+                style={{ animationDuration: '3s' }}
                 aria-hidden
               />
             </>
           )}
           <div
             className={cn(
-              "relative flex h-11 w-11 items-center justify-center rounded-full",
-              failed ? "bg-destructive/10" : "bg-primary/10",
+              'relative flex h-11 w-11 items-center justify-center rounded-full',
+              failed ? 'bg-destructive/10' : 'bg-primary/10',
             )}
           >
             {done ? (
@@ -75,13 +75,14 @@ export function RunSoaProgressPanel({
 
         <div className="space-y-1">
           <p className="font-display text-base font-semibold">
-            {done ? "All done" : failed ? "Run failed" : current?.label}
+            {done ? 'All done' : failed ? 'Run failed' : current?.label}
           </p>
           {failed && errorMessage ? (
             <p className="text-sm text-destructive">{errorMessage}</p>
           ) : !finished ? (
             <p className="text-sm text-muted-foreground">
-              This usually takes 1–2 minutes. Please keep this open.
+              This usually takes 1–2 minutes. Please wait for the run to
+              complete.
             </p>
           ) : null}
         </div>
@@ -106,10 +107,10 @@ export function RunSoaProgressPanel({
             <li
               key={step.id}
               className={cn(
-                "flex items-center gap-3 text-sm transition-colors",
-                isComplete && "text-muted-foreground",
-                isCurrent && "font-medium text-foreground",
-                !isComplete && !isCurrent && "text-muted-foreground/45",
+                'flex items-center gap-3 text-sm transition-colors',
+                isComplete && 'text-muted-foreground',
+                isCurrent && 'font-medium text-foreground',
+                !isComplete && !isCurrent && 'text-muted-foreground/45',
               )}
             >
               {isComplete ? (

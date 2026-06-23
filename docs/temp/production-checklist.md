@@ -76,7 +76,6 @@ See **`docs/temp/supabase-setup.md`** for the full walkthrough.
 | Route                 | Schedule (UTC) | Local (Asia/Manila) |
 | --------------------- | -------------- | ------------------- |
 | `/api/cron/reminders` | `0 4 * * *`    | Daily 12:00 PM      |
-| `/api/cron/soa-poll`  | `*/10 * * * *` | Every 10 minutes    |
 
 Cron requests must include: `Authorization: Bearer <CRON_SECRET>` (Vercel Cron adds this automatically when configured).
 

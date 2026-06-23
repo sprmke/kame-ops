@@ -28,14 +28,14 @@
 
 ## tRPC API
 
-| Router                  | Procedures                                                                                                           | Status                                                                   |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `creditCards`           | list, get, create, update, delete                                                                                    | Implemented                                                              |
-| `soa`                   | listPeriods, getPeriod, getStatement, updatePeriod, deletePeriod, list, runPipeline, pollGmail, dedupe, clearHistory | Implemented — period detail has Overview / Transactions / Analytics tabs |
-| `transactionCategories` | listOptions, listRules, createRule, updateRule, deleteRule, updateTransactionCategory                                | Implemented — keyword rules + learned corrections                        |
-| `reminders`             | listDue, status, sendNow (force optional), markPaid, markUnpaid                                                      | Implemented                                                              |
-| `automations`           | list, create, run                                                                                                    | Implemented                                                              |
-| `integrations`          | list, upsert                                                                                                         | Implemented                                                              |
+| Router                  | Procedures                                                                                                | Status                                                                   |
+| ----------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `creditCards`           | list, get, create, update, delete                                                                         | Implemented                                                              |
+| `soa`                   | listPeriods, getPeriod, getStatement, updatePeriod, deletePeriod, list, runPipeline, dedupe, clearHistory | Implemented — period detail has Overview / Transactions / Analytics tabs |
+| `transactionCategories` | listOptions, listRules, createRule, updateRule, deleteRule, updateTransactionCategory                     | Implemented — keyword rules + learned corrections                        |
+| `reminders`             | listDue, status, sendNow (force optional), markPaid, markUnpaid                                           | Implemented                                                              |
+| `automations`           | list, create, run                                                                                         | Implemented                                                              |
+| `integrations`          | list, upsert                                                                                              | Implemented                                                              |
 
 ## REST / webhooks
 
@@ -43,7 +43,6 @@
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------- |
 | `POST /api/auth/register`     | Removed — use Google sign-in                                                                                            | —           |
 | `GET /api/cron/reminders`     | Cron: send due reminders (Bearer)                                                                                       | Implemented |
-| `GET /api/cron/soa-poll`      | Cron: SOA poll per user (Bearer)                                                                                        | Implemented |
 | `GET /api/soa/pdf`            | Stream SOA source or period summary PDF (auth); resolves `pdfStoragePath` / `summaryPdfStoragePath` or legacy work dirs | Implemented |
 | `POST /api/webhooks/telegram` | Telegram updates (text + receipt photos)                                                                                | Implemented |
 | `POST /api/receipts/upload`   | Receipt file upload (Supabase or local)                                                                                 | Implemented |
@@ -61,7 +60,6 @@
 | `reminders`, `reminder_logs`         | Reminder config + send log                                                          |
 | `automation_jobs`, `automation_runs` | Scheduled jobs                                                                      |
 | `receipts`                           | Receipt OCR (schema ready)                                                          |
-| `gmail_poll_state`                   | Gmail history cursor                                                                |
 | `activity_logs`                      | Audit trail                                                                         |
 
 ## Services (server)

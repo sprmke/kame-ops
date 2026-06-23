@@ -25,13 +25,31 @@ import {
 import type { SoaStatement } from "../lib/soa-utils";
 
 const CHART_COLORS = [
-  "hsl(var(--primary))",
+  "hsl(var(--chart-1))",
   "hsl(var(--chart-2))",
-  "hsl(var(--chart-4))",
-  "hsl(var(--destructive))",
-  "hsl(var(--warning))",
   "hsl(var(--chart-3))",
+  "hsl(var(--chart-4))",
+  "hsl(var(--chart-5))",
+  "hsl(var(--primary))",
 ];
+
+function buildPieData(categoryRows: ReturnType<typeof aggregateCategorySpend>) {
+  const top = categoryRows.slice(0, 5);
+  const restTotal = categoryRows
+    .slice(5)
+    .reduce((sum, row) => sum + row.total, 0);
+
+  const slices = top.map((row) => ({
+    name: row.label,
+    value: row.total,
+  }));
+
+  if (restTotal > 0) {
+    slices.push({ name: "Other", value: restTotal });
+  }
+
+  return slices;
+}
 
 function flattenTransactions(statements: SoaStatement[]): CategorizedTx[] {
   return statements.flatMap((s) =>
@@ -61,10 +79,7 @@ export function SoaPeriodOverviewTab({
   const unanalyzed = countUnanalyzed(transactions);
   const spendTotal = categoryRows.reduce((s, r) => s + r.total, 0);
 
-  const pieData = categoryRows.slice(0, 6).map((r) => ({
-    name: r.label,
-    value: r.total,
-  }));
+  const pieData = buildPieData(categoryRows);
 
   return (
     <div className="space-y-6">
@@ -90,14 +105,17 @@ export function SoaPeriodOverviewTab({
                     nameKey="name"
                     cx="50%"
                     cy="50%"
-                    innerRadius={50}
-                    outerRadius={80}
-                    paddingAngle={3}
+                    innerRadius="52%"
+                    outerRadius="78%"
+                    paddingAngle={0}
+                    stroke="none"
+                    isAnimationActive={false}
                   >
-                    {pieData.map((_, i) => (
+                    {pieData.map((entry, i) => (
                       <Cell
-                        key={i}
+                        key={entry.name}
                         fill={CHART_COLORS[i % CHART_COLORS.length]}
+                        stroke="none"
                       />
                     ))}
                   </Pie>
@@ -106,8 +124,14 @@ export function SoaPeriodOverviewTab({
                       background: "hsl(var(--card))",
                       border: "1px solid hsl(var(--border))",
                       borderRadius: "8px",
+                      color: "hsl(var(--card-foreground))",
                     }}
-                    formatter={(value: number) => formatPhpAmount(value)}
+                    itemStyle={{ color: "hsl(var(--foreground))" }}
+                    labelStyle={{ color: "hsl(var(--foreground))" }}
+                    formatter={(value: number, name: string) => [
+                      formatPhpAmount(value),
+                      name,
+                    ]}
                   />
                 </PieChart>
               </ResponsiveContainer>

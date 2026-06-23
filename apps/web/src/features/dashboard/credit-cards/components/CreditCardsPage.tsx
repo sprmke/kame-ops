@@ -41,8 +41,10 @@ import { api } from "@/lib/api/client";
 import { useListPagination } from "@/lib/hooks/use-list-pagination";
 import {
   BANK_ISSUERS,
+  DEFAULT_REMINDER_INTERVAL_MINUTES,
   formatBankIssuer,
   normalizeBankIssuer,
+  normalizeReminderIntervalMinutes,
   REMINDER_INTERVALS,
   type BankIssuer,
   type ReminderIntervalMinutes,
@@ -50,6 +52,7 @@ import {
 
 import {
   DEFAULT_REMINDER_WINDOW_DAYS,
+  formatReminderFrequency,
   formatReminderSummary,
 } from "../lib/reminder-labels";
 import { CreditCardsTable } from "./CreditCardsTable";
@@ -106,7 +109,7 @@ export function CreditCardsPage() {
   const [gmailMonthOffset, setGmailMonthOffset] = useState("0");
   const [reminderWindowDays, setReminderWindowDays] = useState("");
   const [reminderIntervalMinutes, setReminderIntervalMinutes] =
-    useState<ReminderIntervalMinutes>(1440);
+    useState<ReminderIntervalMinutes>(DEFAULT_REMINDER_INTERVAL_MINUTES);
   const [notes, setNotes] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -131,7 +134,7 @@ export function CreditCardsPage() {
         : "",
     );
     setReminderIntervalMinutes(
-      (editingCard.reminderIntervalMinutes as ReminderIntervalMinutes) ?? 1440,
+      normalizeReminderIntervalMinutes(editingCard.reminderIntervalMinutes),
     );
     setNotes(editingCard.notes ?? "");
     if (editingCard.secretsUnavailable) {
@@ -148,7 +151,7 @@ export function CreditCardsPage() {
     setPdfPassword("");
     setGmailMonthOffset("0");
     setReminderWindowDays("");
-    setReminderIntervalMinutes(1440);
+    setReminderIntervalMinutes(DEFAULT_REMINDER_INTERVAL_MINUTES);
     setNotes("");
   }
 
@@ -187,7 +190,13 @@ export function CreditCardsPage() {
       <DashboardPageHeader
         title="Credit cards"
         actions={
-          <Dialog open={addOpen} onOpenChange={setAddOpen}>
+          <Dialog
+            open={addOpen}
+            onOpenChange={(open) => {
+              setAddOpen(open);
+              if (open) resetForm();
+            }}
+          >
             <DialogTrigger asChild>
               <Button>Add card</Button>
             </DialogTrigger>
@@ -537,7 +546,7 @@ function CardForm({
         <Input
           value={fullPan}
           onChange={(e) => setFullPan(e.target.value)}
-          placeholder="4111 XXXX XXXX 1111"
+          placeholder="4532 XXXX XXXX 9012"
         />
       </div>
       <div className="space-y-2">
@@ -570,7 +579,9 @@ function CardForm({
             }
           >
             <SelectTrigger>
-              <SelectValue />
+              <SelectValue placeholder="Once per day">
+                {formatReminderFrequency(reminderIntervalMinutes)}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {REMINDER_INTERVALS.map((i) => (

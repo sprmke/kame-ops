@@ -9,7 +9,6 @@ Temporary reference for porting the CLI at `automated-tasks/pay-credit-cards/`.
 | `CARDS_JSON` env                    | `credit_cards`                                 |
 | `due-reminders-state.json` → `dues` | `due_entries`                                  |
 | `due-reminders-state.json` → `sent` | `reminder_logs`                                |
-| `soa-gmail-watch-state.json`        | `gmail_poll_state` or automation metadata      |
 | `telegram-bot-state.json`           | Not needed (webhook replaces long-poll offset) |
 | `data/downloads/`, `data/output/`   | Supabase Storage                               |
 | `data/receipts/`                    | Supabase Storage + `receipts` table            |
@@ -17,7 +16,6 @@ Temporary reference for porting the CLI at `automated-tasks/pay-credit-cards/`.
 ## Behavior parity checklist
 
 - [ ] SOA single month + range PDF
-- [ ] Gmail poller + catch-up days
 - [ ] Daily reminders D-4…D-0, idempotent fingerprints
 - [ ] Telegram PDF + Slack text
 - [ ] Google Calendar D-4…D-0 + mark paid/unpaid
@@ -27,11 +25,11 @@ Temporary reference for porting the CLI at `automated-tasks/pay-credit-cards/`.
 
 ## Scheduling
 
-| Legacy                   | KameOps                                    |
-| ------------------------ | ------------------------------------------ |
-| launchd `poll-new-soa`   | Supabase Cron → `/api/cron/soa-poll`       |
-| launchd `send-reminders` | Supabase Cron → `/api/cron/send-reminders` |
-| launchd `telegram-bot`   | Telegram webhook                           |
+| Legacy                   | KameOps                                         |
+| ------------------------ | ----------------------------------------------- |
+| launchd `poll-new-soa`   | **Run SOA** UI or `run_soa_pipeline` automation |
+| launchd `send-reminders` | Supabase Cron → `/api/cron/reminders`           |
+| launchd `telegram-bot`   | Telegram webhook                                |
 
 ## Source file map
 

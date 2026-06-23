@@ -29,6 +29,17 @@ export const REMINDER_INTERVALS = [
 export type ReminderIntervalMinutes =
   (typeof REMINDER_INTERVALS)[number]["value"];
 
+export const DEFAULT_REMINDER_INTERVAL_MINUTES: ReminderIntervalMinutes = 1440;
+
+export function normalizeReminderIntervalMinutes(
+  value: number | null | undefined,
+): ReminderIntervalMinutes {
+  return (
+    REMINDER_INTERVALS.find((i) => i.value === value)?.value ??
+    DEFAULT_REMINDER_INTERVAL_MINUTES
+  );
+}
+
 export const BANK_ISSUER_LABELS: Record<BankIssuer, string> = {
   metrobank: "Metrobank",
   rcbc: "RCBC",

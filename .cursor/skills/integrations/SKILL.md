@@ -9,10 +9,8 @@ description: Third-party integrations for KameOps — Gmail, Google Calendar, Te
 
 ### Gmail
 
-- Scopes: `gmail.readonly` (SOA download, history poll)
-- OAuth: per-user refresh token on `integrations` row
-- History API for poller; catch-up search `newer_than:Nd has:attachment filename:pdf`
-- Handle 404 on expired history — reset cursor
+- Scopes: `gmail.readonly` (SOA download on **Run SOA**)
+- OAuth: per-user refresh token on `accounts` / Google sign-in
 
 ### Google Calendar
 
@@ -52,11 +50,10 @@ async function getTelegramConfig(
 
 ## Webhook Routes
 
-| Route                           | Purpose                     |
-| ------------------------------- | --------------------------- |
-| `POST /api/webhooks/telegram`   | Bot updates (paid, receipt) |
-| `POST /api/cron/soa-poll`       | Gmail poller (cron secret)  |
-| `POST /api/cron/send-reminders` | Daily reminders             |
+| Route                         | Purpose                     |
+| ----------------------------- | --------------------------- |
+| `POST /api/webhooks/telegram` | Bot updates (paid, receipt) |
+| `GET /api/cron/reminders`     | Daily due reminders         |
 
 Validate secrets on every cron/webhook request.
 

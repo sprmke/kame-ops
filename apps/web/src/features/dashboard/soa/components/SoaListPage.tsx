@@ -6,7 +6,6 @@ import {
   CalendarDays,
   CreditCard,
   FileText,
-  Mail,
   PhilippinePeso,
   Play,
 } from "lucide-react";
@@ -73,14 +72,6 @@ export function SoaListPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const pollGmail = api.soa.pollGmail.useMutation({
-    onSuccess: () => {
-      toast.success("Gmail poll finished");
-      void utils.soa.listPeriods.invalidate();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
   function openRerun(period: SoaPeriodRow) {
     openRun(periodToRunInitial(period));
   }
@@ -90,20 +81,10 @@ export function SoaListPage() {
       <DashboardPageHeader
         title="Statement of account"
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button className="shadow-glow" onClick={() => openRun()}>
-              <Play className="mr-2 h-4 w-4" />
-              Run SOA
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => pollGmail.mutate()}
-              disabled={pollGmail.isPending}
-            >
-              <Mail className="mr-2 h-4 w-4" />
-              Poll Gmail
-            </Button>
-          </div>
+          <Button className="shadow-glow" onClick={() => openRun()}>
+            <Play className="mr-2 h-4 w-4" />
+            Run SOA
+          </Button>
         }
       />
 

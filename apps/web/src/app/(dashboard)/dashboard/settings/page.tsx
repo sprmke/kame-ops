@@ -89,7 +89,6 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-2 font-mono text-xs text-muted-foreground">
           <p>GET /api/cron/reminders</p>
-          <p>GET /api/cron/soa-poll</p>
           <p className="text-foreground">
             Header: Authorization: Bearer {"{CRON_SECRET}"}
           </p>

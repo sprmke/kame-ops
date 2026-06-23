@@ -15,6 +15,8 @@ interface SoaRunPipelineResult {
   ok: boolean;
   periodId?: string | null;
   message?: string;
+  warning?: string;
+  parsedCount?: number;
 }
 
 export interface UseSoaRunDialogOptions {
@@ -43,7 +45,13 @@ export function useSoaRunDialog(options: UseSoaRunDialogOptions = {}) {
 
       lastPeriodIdRef.current = result.periodId ?? null;
       setRunSettled("success");
-      toast.success("SOA run complete");
+      if (result.warning) {
+        toast.warning(result.warning);
+      } else if ((result.parsedCount ?? 1) === 0) {
+        toast.warning("SOA run finished with no parsed statements.");
+      } else {
+        toast.success("SOA run complete");
+      }
       await options.onRunSuccess?.(result);
     },
     onError: (error) => {

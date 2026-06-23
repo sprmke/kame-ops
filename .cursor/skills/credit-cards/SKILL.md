@@ -18,7 +18,7 @@ Port from `automated-tasks/pay-credit-cards/src/`:
 | `send-reminders.ts`                                             | `reminder.service.ts` + cron job                   |
 | `mark-paid.ts`, `receipt-ocr.ts`                                | `credit-card.service.ts`, `receipt-ocr.service.ts` |
 | `google-calendar.ts`                                            | `google-calendar.service.ts`                       |
-| `gmail.ts`, `gmail-poll-new-soa.ts`                             | `gmail.service.ts` + automation job                |
+| `gmail.ts`                                                      | `gmail.service.ts`                                 |
 
 ## Card Configuration
 

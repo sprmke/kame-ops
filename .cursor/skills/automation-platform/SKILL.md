@@ -14,7 +14,7 @@ KameOps is a **user-scoped automation platform**. Credit cards are one module; r
 | Entity                  | Purpose                                                      |
 | ----------------------- | ------------------------------------------------------------ |
 | `integrations`          | Gmail, Telegram, Slack, Google Calendar credentials per user |
-| `automation_jobs`       | Scheduled tasks (SOA poll, send reminders, custom)           |
+| `automation_jobs`       | Scheduled tasks (SOA pipeline, send reminders, custom)       |
 | `automation_runs`       | Execution log with status and errors                         |
 | `reminders`             | Generic due-date reminders (any `relatedEntityType`)         |
 | `reminder_logs`         | Sent fingerprints for idempotency                            |
@@ -43,8 +43,8 @@ const jobs = await db.query.automationJobs.findMany({
 
 ```typescript
 const AUTOMATION_JOB_TYPES = {
-  SOA_POLL: "soa_poll",
-  SEND_REMINDERS: "send_reminders",
+  RUN_SOA_PIPELINE: "run_soa_pipeline",
+  SEND_REMINDERS: "send_due_reminders",
   CUSTOM_WEBHOOK: "custom_webhook",
 } as const;
 ```

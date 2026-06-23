@@ -14,11 +14,7 @@ export const automationsRouter = router({
         name: z.string().min(1),
         description: z.string().optional(),
         schedule: z.string().min(1),
-        jobType: z.enum([
-          "poll_soa_gmail",
-          "send_due_reminders",
-          "run_soa_pipeline",
-        ]),
+        jobType: z.enum(["send_due_reminders", "run_soa_pipeline"]),
         config: z.record(z.unknown()).optional(),
         isActive: z.boolean().optional(),
       }),

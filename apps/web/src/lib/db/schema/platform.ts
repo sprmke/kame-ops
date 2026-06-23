@@ -159,22 +159,6 @@ export const receipts = pgTable(
   (table) => [index("receipts_user_idx").on(table.userId)],
 );
 
-export const gmailPollState = pgTable("gmail_poll_state", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" })
-    .unique(),
-  historyId: varchar("history_id", { length: 64 }).notNull(),
-  processedMessageIds: jsonb("processed_message_ids")
-    .$type<string[]>()
-    .default([]),
-  updatedAt: timestamp("updated_at")
-    .notNull()
-    .defaultNow()
-    .$onUpdate(() => new Date()),
-});
-
 export const activityLogs = pgTable(
   "activity_logs",
   {
@@ -229,8 +213,4 @@ export const automationRunsRelations = relations(automationRuns, ({ one }) => ({
 
 export const receiptsRelations = relations(receipts, ({ one }) => ({
   user: one(users, { fields: [receipts.userId], references: [users.id] }),
-}));
-
-export const gmailPollStateRelations = relations(gmailPollState, ({ one }) => ({
-  user: one(users, { fields: [gmailPollState.userId], references: [users.id] }),
 }));

@@ -13,7 +13,7 @@
     "src/app/api/webhooks/telegram/route.ts": {
       "maxDuration": 60
     },
-    "src/app/api/cron/soa-poll/route.ts": {
+    "src/app/api/trpc/[trpc]/route.ts": {
       "maxDuration": 300
     }
   }

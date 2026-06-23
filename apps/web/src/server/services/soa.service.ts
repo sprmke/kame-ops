@@ -322,6 +322,7 @@ export const soaService = {
 
     let saved = 0;
     let updated = 0;
+    let unavailable = 0;
     for (const monthResult of detailed.months) {
       const persisted = await soaPersistService.persistRows(
         userId,
@@ -330,6 +331,7 @@ export const soaService = {
       );
       saved += persisted.saved;
       updated += persisted.updated;
+      unavailable += persisted.unavailable;
     }
 
     await persistRunPdfs(userId, workDir, period.id, detailed);
@@ -340,38 +342,33 @@ export const soaService = {
       await soaPeriodService.pruneRedundantSinglePeriods(userId);
     }
 
+    const statementCount = saved + updated;
+    const parsedCount = detailed.allRows.filter(
+      (row) => !row.soaUnavailable && row.cardLast4 !== "—",
+    ).length;
+
+    let warning: string | undefined;
+    if (statementCount === 0 && parsedCount === 0) {
+      warning =
+        "No statement PDFs found in Gmail for this period. Try gmailMonthOffset −1 on cards if SOAs arrive early.";
+    } else if (parsedCount === 0 && unavailable > 0) {
+      warning =
+        "Gmail had no matching SOA PDFs for this period; cards marked unavailable.";
+    }
+
     return {
       ok: true as const,
       periodId: period.id,
       rowCount: detailed.allRows.length,
+      statementCount,
+      parsedCount,
+      unavailableCount: unavailable,
+      warning,
       sync,
-      persisted: { saved, updated },
+      persisted: { saved, updated, unavailable },
       calendar,
       notify,
     };
-  },
-
-  async pollNewSoaFromGmail(userId: string) {
-    const cards = await creditCardService.listForLegacy(userId);
-    if (!cards.length) {
-      return { ok: false, message: "No credit cards configured" };
-    }
-
-    const workDir = await prepareLegacyRuntime(userId);
-
-    const { pollNewSoaFromGmail } =
-      await import("@/server/legacy/pay-credit-cards/gmail-poll-new-soa");
-    await pollNewSoaFromGmail();
-
-    if (process.exitCode && process.exitCode !== 0) {
-      throw new Error(
-        "Gmail SOA poll failed while processing new messages. Reconnect Google on Integrations if the issue persists.",
-      );
-    }
-
-    const sync = await dueSyncService.syncFromLegacyFile(userId, workDir);
-    await soaPeriodService.pruneRedundantSinglePeriods(userId);
-    return { ok: true, sync };
   },
 
   async dedupeStatements(userId: string) {

@@ -7,11 +7,11 @@
 1. Sign up / sign in (Supabase Auth)
 2. Connect integrations (Telegram, Slack, Gmail, Calendar)
 3. Add credit cards (or import from migration script)
-4. Run first SOA or enable Gmail poller automation
+4. Run first SOA
 
 ## Monthly SOA cycle
 
-1. Bank emails SOA → poller or manual **Run SOA**
+1. Bank emails SOA → manual **Run SOA** (or scheduled `run_soa_pipeline` automation)
 2. View parsed statement, transactions, summary PDF
 3. Calendar events + reminder window start (D-4…D-0)
 4. Daily reminder pings until paid
@@ -20,9 +20,8 @@
 
 ## Automation management
 
-1. Open **Automations** → see jobs (SOA poll, reminders)
+1. Open **Automations** → see jobs (SOA pipeline, reminders)
 2. Toggle job, view run history, retry failed run
-3. Configure catch-up days for Gmail poller
 
 ## Receipt upload
 
