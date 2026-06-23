@@ -11,10 +11,13 @@ const nextConfig: NextConfig = {
     "pdf-to-img",
     "@neslinesli93/qpdf-wasm",
   ],
+  // Vendored copy only — never trace pdf.worker from node_modules (Bun symlinks break Vercel deploy).
   outputFileTracingIncludes: {
     "/api/trpc/[trpc]": [
       "./src/server/legacy/pay-credit-cards/vendor/pdf.worker.mjs",
-      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+    ],
+    "/api/soa/pdf": [
+      "./src/server/legacy/pay-credit-cards/vendor/pdf.worker.mjs",
     ],
   },
   experimental: {
