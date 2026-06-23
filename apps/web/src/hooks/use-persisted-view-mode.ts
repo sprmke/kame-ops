@@ -4,21 +4,19 @@ import { useEffect, useState } from "react";
 
 import type { ViewMode } from "@/components/shared/ViewToggle";
 
-const STORAGE_KEY = "kame-ops:soa-view-mode";
-
-export function useSoaViewMode() {
+export function usePersistedViewMode(storageKey: string) {
   const [viewMode, setViewModeState] = useState<ViewMode>("table");
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(storageKey);
     if (stored === "grid" || stored === "table") {
       setViewModeState(stored);
     }
-  }, []);
+  }, [storageKey]);
 
   function setViewMode(mode: ViewMode) {
     setViewModeState(mode);
-    localStorage.setItem(STORAGE_KEY, mode);
+    localStorage.setItem(storageKey, mode);
   }
 
   return { viewMode, setViewMode };

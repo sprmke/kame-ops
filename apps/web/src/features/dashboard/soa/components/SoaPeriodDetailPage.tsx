@@ -10,7 +10,6 @@ import {
   PhilippinePeso,
   Play,
 } from "lucide-react";
-import { toast } from "sonner";
 
 import { DashboardPageHeader } from "@/components/shared/DashboardPageHeader";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
@@ -23,11 +22,7 @@ import { api } from "@/lib/api/client";
 import { formatPhpAmount } from "@/lib/utils/format-money";
 import { cn } from "@/lib/utils/cn";
 
-import {
-  RunSoaDialog,
-  type RunSoaFormValues,
-  type RunSoaSettled,
-} from "./RunSoaDialog";
+import { RunSoaDialog } from "./RunSoaDialog";
 import { SoaPdfPreview } from "./SoaPdfPreview";
 import {
   SoaPeriodAnalyticsTab,
@@ -35,46 +30,41 @@ import {
 } from "./SoaPeriodAnalyticsTabs";
 import { SoaStatementCard } from "./SoaStatementCard";
 import { SoaStatementTable } from "./SoaStatementTable";
-import { useSoaViewMode } from "../hooks/use-soa-view-mode";
+import { usePersistedViewMode } from "@/hooks/use-persisted-view-mode";
 import {
   dueEntryKey,
   groupStatementsByPeriod,
   periodLabel,
   type SoaStatement,
 } from "../lib/soa-utils";
+import { periodToRunInitial } from "../lib/run-soa-progress";
+import { useSoaRunDialog } from "../hooks/use-soa-run-dialog";
 
 type PdfPreviewState =
   | { kind: "closed" }
   | { kind: "source"; statementId: string; title: string }
   | { kind: "summary"; periodId: string; title: string };
 
-function toRunInput(values: RunSoaFormValues) {
-  const isRolling = values.mode === "range" && values.rangeStyle === "rolling";
-  return {
-    mode: values.mode,
-    fromMonth: isRolling ? values.toMonth : values.fromMonth,
-    fromYear: isRolling ? values.toYear : values.fromYear,
-    toMonth: values.toMonth,
-    toYear: values.toYear,
-    monthCount: isRolling ? values.monthCount : undefined,
-    notifyTelegram: values.notifyTelegram,
-    notifySlack: values.notifySlack,
-    createCalendar: values.createCalendar,
-  };
-}
-
 export function SoaPeriodDetailPage({ periodId }: { periodId: string }) {
   const utils = api.useUtils();
   const { data: period, isLoading } = api.soa.getPeriod.useQuery({ periodId });
   const { data: dues } = api.reminders.listDue.useQuery({ unpaidOnly: false });
 
-  const [runOpen, setRunOpen] = useState(false);
-  const [runSettled, setRunSettled] = useState<RunSoaSettled>(null);
-  const [runErrorMessage, setRunErrorMessage] = useState<string | null>(null);
   const [pdfPreview, setPdfPreview] = useState<PdfPreviewState>({
     kind: "closed",
   });
-  const { viewMode, setViewMode } = useSoaViewMode();
+  const { viewMode, setViewMode } = usePersistedViewMode(
+    "kame-ops:soa-view-mode",
+  );
+
+  const { openRun, runPipeline, runDialogProps } = useSoaRunDialog({
+    initial: period ? periodToRunInitial(period) : undefined,
+    onRunSuccess: () => {
+      void utils.soa.getPeriod.invalidate({ periodId });
+      void utils.soa.listPeriods.invalidate();
+      void utils.reminders.listDue.invalidate();
+    },
+  });
 
   const statementGroups = useMemo(() => {
     if (!period?.statements) return [];
@@ -95,61 +85,12 @@ export function SoaPeriodDetailPage({ periodId }: { periodId: string }) {
     return statementGroups.flatMap((group) => group.statements);
   }, [statementGroups]);
 
-  const runPipeline = api.soa.runPipeline.useMutation({
-    onSuccess: (r) => {
-      if (!r.ok) {
-        setRunErrorMessage(r.message ?? "SOA run failed");
-        setRunSettled("error");
-        toast.error(r.message ?? "SOA run failed");
-        return;
-      }
-      setRunSettled("success");
-      toast.success("SOA run complete");
-      void utils.soa.getPeriod.invalidate({ periodId });
-      void utils.soa.listPeriods.invalidate();
-      void utils.reminders.listDue.invalidate();
-    },
-    onError: (e) => {
-      setRunErrorMessage(e.message);
-      setRunSettled("error");
-      toast.error(e.message);
-    },
-  });
-
-  function handleRunDialogOpenChange(open: boolean) {
-    setRunOpen(open);
-    if (!open) {
-      setRunSettled(null);
-      setRunErrorMessage(null);
-    }
-  }
-
-  function handleRunComplete() {
-    setRunOpen(false);
-    setRunSettled(null);
-    setRunErrorMessage(null);
-  }
-
   const pdfUrl =
     pdfPreview.kind === "source"
       ? `/api/soa/pdf?type=source&statementId=${pdfPreview.statementId}`
       : pdfPreview.kind === "summary"
         ? `/api/soa/pdf?type=summary&periodId=${pdfPreview.periodId}`
         : null;
-
-  const runInitial: Partial<RunSoaFormValues> | undefined = period
-    ? {
-        mode: period.mode as "single" | "range",
-        fromMonth: period.fromMonth,
-        fromYear: period.fromYear,
-        toMonth: period.toMonth,
-        toYear: period.toYear,
-        rangeStyle: "explicit",
-        notifyTelegram: period.notifyTelegram,
-        notifySlack: period.notifySlack,
-        createCalendar: period.createCalendar,
-      }
-    : undefined;
 
   if (isLoading) {
     return (
@@ -188,10 +129,7 @@ export function SoaPeriodDetailPage({ periodId }: { periodId: string }) {
         title={period.label}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              onClick={() => setRunOpen(true)}
-              disabled={runPipeline.isPending}
-            >
+            <Button onClick={() => openRun()} disabled={runPipeline.isPending}>
               <Play className="mr-2 h-4 w-4" />
               Re-run
             </Button>
@@ -212,20 +150,7 @@ export function SoaPeriodDetailPage({ periodId }: { periodId: string }) {
         }
       />
 
-      <RunSoaDialog
-        open={runOpen}
-        onOpenChange={handleRunDialogOpenChange}
-        initial={runInitial}
-        isPending={runPipeline.isPending}
-        settled={runSettled}
-        errorMessage={runErrorMessage}
-        onRunComplete={handleRunComplete}
-        onSubmit={(values) => {
-          setRunSettled(null);
-          setRunErrorMessage(null);
-          runPipeline.mutate(toRunInput(values));
-        }}
-      />
+      <RunSoaDialog {...runDialogProps} />
 
       <SoaPdfPreview
         open={pdfPreview.kind !== "closed"}

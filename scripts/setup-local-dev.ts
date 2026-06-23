@@ -11,9 +11,11 @@
  *   --skip-db   Skip db:push and db:seed (docker/env only)
  */
 
-import { copyFileSync, existsSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+
+import { commandExists, fail, log, parseEnvFile, run } from "./lib/setup-utils";
 
 const ROOT = join(import.meta.dir, "..");
 const WEB = join(ROOT, "apps/web");
@@ -24,52 +26,6 @@ const LOCAL_DEV_APP_URL = "http://localhost:3005";
 const args = new Set(process.argv.slice(2));
 const shouldStart = args.has("--start");
 const skipDb = args.has("--skip-db");
-
-function log(step: string, message: string) {
-  console.log(`\n▸ ${step}: ${message}`);
-}
-
-function fail(message: string): never {
-  console.error(`\n✗ ${message}`);
-  process.exit(1);
-}
-
-function run(command: string, commandArgs: string[], cwd = ROOT): void {
-  const result = spawnSync(command, commandArgs, {
-    cwd,
-    stdio: "inherit",
-    shell: false,
-  });
-  if (result.status !== 0) {
-    fail(`Command failed: ${command} ${commandArgs.join(" ")}`);
-  }
-}
-
-function commandExists(name: string): boolean {
-  const result = spawnSync("which", [name], { stdio: "pipe" });
-  return result.status === 0;
-}
-
-function parseEnvFile(path: string): Record<string, string> {
-  if (!existsSync(path)) return {};
-  const env: Record<string, string> = {};
-  for (const line of readFileSync(path, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let value = trimmed.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    env[key] = value;
-  }
-  return env;
-}
 
 function isLocalDatabaseUrl(url: string | undefined): boolean {
   if (!url) return true;

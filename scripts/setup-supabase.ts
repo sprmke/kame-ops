@@ -13,9 +13,10 @@
  *   bun run setup:supabase --check      # verify env + connectivity
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+
+import { fail, log, parseEnvFile, run } from "./lib/setup-utils";
 
 const ROOT = join(import.meta.dir, "..");
 const WEB = join(ROOT, "apps/web");
@@ -26,36 +27,6 @@ const storageOnly = args.has("--storage");
 const dbOnly = args.has("--db");
 const checkOnly = args.has("--check");
 const runAll = !storageOnly && !dbOnly && !checkOnly;
-
-function log(step: string, message: string) {
-  console.log(`\n▸ ${step}: ${message}`);
-}
-
-function fail(message: string): never {
-  console.error(`\n✗ ${message}`);
-  process.exit(1);
-}
-
-function parseEnvFile(path: string): Record<string, string> {
-  if (!existsSync(path)) return {};
-  const env: Record<string, string> = {};
-  for (const line of readFileSync(path, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let value = trimmed.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    env[key] = value;
-  }
-  return env;
-}
 
 function isSupabaseDatabase(url: string | undefined): boolean {
   if (!url) return false;
@@ -118,13 +89,7 @@ async function createBucket(
 
 function runDbPush(): void {
   log("database", "Applying Drizzle schema (db:push)…");
-  const result = spawnSync("bun", ["run", "db:push"], {
-    cwd: WEB,
-    stdio: "inherit",
-  });
-  if (result.status !== 0) {
-    fail("db:push failed. Use DIRECT_URL (port 5432) for Supabase migrations.");
-  }
+  run("bun", ["run", "db:push"], WEB);
   log("database", "Schema applied");
 }
 

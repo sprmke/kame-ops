@@ -1,20 +1,20 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { Mail, MessageCircle, Slack } from "lucide-react";
-import { signIn } from "next-auth/react";
-import { toast } from "sonner";
+import { useEffect, useState } from 'react';
+import { Mail, MessageCircle, Slack } from 'lucide-react';
+import { signIn } from 'next-auth/react';
+import { toast } from 'sonner';
 
-import { DashboardPageHeader } from "@/components/shared/DashboardPageHeader";
-import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
-import { StatusBadge } from "@/components/shared/StatusBadge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { PasswordInput } from "@/components/ui/password-input";
-import { ROUTES } from "@/config/routes";
-import { api } from "@/lib/api/client";
+import { DashboardPageHeader } from '@/components/shared/DashboardPageHeader';
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { StatusBadge } from '@/components/shared/StatusBadge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { PasswordInput } from '@/components/ui/password-input';
+import { ROUTES } from '@/config/routes';
+import { api } from '@/lib/api/client';
 
 export function IntegrationsPage() {
   const utils = api.useUtils();
@@ -23,43 +23,43 @@ export function IntegrationsPage() {
     api.integrations.getFormConfigs.useQuery();
   const upsert = api.integrations.upsert.useMutation({
     onSuccess: () => {
-      toast.success("Integration saved — applied on next SOA/reminder run");
+      toast.success('Integration saved — applied on next SOA/reminder run');
       void utils.integrations.list.invalidate();
       void utils.integrations.getFormConfigs.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const [telegramToken, setTelegramToken] = useState("");
-  const [telegramChat, setTelegramChat] = useState("");
-  const [telegramWebLink, setTelegramWebLink] = useState("");
-  const [slackWebhook, setSlackWebhook] = useState("");
+  const [telegramToken, setTelegramToken] = useState('');
+  const [telegramChat, setTelegramChat] = useState('');
+  const [telegramWebLink, setTelegramWebLink] = useState('');
+  const [slackWebhook, setSlackWebhook] = useState('');
   const [reconnectingGoogle, setReconnectingGoogle] = useState(false);
 
   useEffect(() => {
     if (!formConfigs) return;
     if (formConfigs.telegram) {
-      setTelegramToken(formConfigs.telegram.botToken ?? "");
-      setTelegramChat(formConfigs.telegram.chatId ?? "");
-      setTelegramWebLink(formConfigs.telegram.webLink ?? "");
+      setTelegramToken(formConfigs.telegram.botToken ?? '');
+      setTelegramChat(formConfigs.telegram.chatId ?? '');
+      setTelegramWebLink(formConfigs.telegram.webLink ?? '');
     }
     if (formConfigs.slack) {
-      setSlackWebhook(formConfigs.slack.webhookUrl ?? "");
+      setSlackWebhook(formConfigs.slack.webhookUrl ?? '');
     }
     if (formConfigs.secretsUnavailable.telegram) {
       toast.error(
-        "Telegram settings could not be decrypted. Re-enter them and save, or sync ENCRYPTION_KEY.",
+        'Telegram settings could not be decrypted. Re-enter them and save',
       );
     }
     if (formConfigs.secretsUnavailable.slack) {
       toast.error(
-        "Slack webhook could not be decrypted. Re-enter it and save, or sync ENCRYPTION_KEY.",
+        'Slack webhook could not be decrypted. Re-enter it and save.',
       );
     }
   }, [formConfigs]);
 
   const connected = new Set(integrations?.map((i) => i.provider) ?? []);
-  const gmailConnected = connected.has("gmail");
+  const gmailConnected = connected.has('gmail');
 
   if (isLoading || isLoadingConfigs) {
     return (
@@ -71,7 +71,7 @@ export function IntegrationsPage() {
 
   async function reconnectGoogle() {
     setReconnectingGoogle(true);
-    await signIn("google", {
+    await signIn('google', {
       callbackUrl: ROUTES.dashboard.integrations,
     });
   }
@@ -97,11 +97,11 @@ export function IntegrationsPage() {
           </CardHeader>
           <CardContent>
             <Button
-              variant={gmailConnected ? "outline" : "default"}
+              variant={gmailConnected ? 'outline' : 'default'}
               onClick={reconnectGoogle}
               disabled={reconnectingGoogle}
             >
-              {gmailConnected ? "Reconnect Google" : "Connect Google"}
+              {gmailConnected ? 'Reconnect Google' : 'Connect Google'}
             </Button>
           </CardContent>
         </Card>
@@ -113,7 +113,7 @@ export function IntegrationsPage() {
                 <MessageCircle className="h-5 w-5 text-primary" />
                 <CardTitle className="text-base">Telegram</CardTitle>
               </div>
-              {connected.has("telegram") && (
+              {connected.has('telegram') && (
                 <StatusBadge label="Connected" variant="success" />
               )}
             </div>
@@ -147,7 +147,7 @@ export function IntegrationsPage() {
               className="w-full"
               onClick={() =>
                 upsert.mutate({
-                  provider: "telegram",
+                  provider: 'telegram',
                   config: {
                     botToken: telegramToken,
                     chatId: telegramChat,
@@ -168,7 +168,7 @@ export function IntegrationsPage() {
                 <Slack className="h-5 w-5 text-primary" />
                 <CardTitle className="text-base">Slack</CardTitle>
               </div>
-              {connected.has("slack") && (
+              {connected.has('slack') && (
                 <StatusBadge label="Connected" variant="success" />
               )}
             </div>
@@ -186,7 +186,7 @@ export function IntegrationsPage() {
               className="w-full"
               onClick={() =>
                 upsert.mutate({
-                  provider: "slack",
+                  provider: 'slack',
                   config: { webhookUrl: slackWebhook },
                 })
               }

@@ -40,21 +40,5 @@
     ".next/types/**/*.ts",
     "src/env.ts"
   ],
-  "exclude": [
-    "node_modules",
-    "src/server/legacy/**/*",
-    "src/components/shared/DateRangeSelector.tsx",
-    "src/components/shared/PropertyPageHeader.tsx",
-    "src/components/shared/KameFormBrandHeader.tsx",
-    "src/components/shared/rich-text-editor/**/*",
-    "src/components/shared/ConfirmDialog.tsx",
-    "src/components/ui/calendar.tsx",
-    "src/components/ui/checkbox.tsx",
-    "src/components/ui/collapsible.tsx",
-    "src/components/ui/date-picker.tsx",
-    "src/components/ui/popover.tsx",
-    "src/components/ui/progress.tsx",
-    "src/components/ui/radio-group.tsx",
-    "src/components/ui/scroll-area.tsx"
-  ]
+  "exclude": ["node_modules", "src/server/legacy/**/*"]
 }

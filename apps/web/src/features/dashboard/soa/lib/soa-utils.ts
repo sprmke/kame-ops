@@ -180,3 +180,39 @@ export function formatDisplayAmount(raw: string | null | undefined): string {
   if (parsed > 0) return formatPhpAmount(parsed);
   return raw;
 }
+
+export type SoaListPeriodSummary = {
+  statementCount: number;
+  lastRunAt: Date | string | null;
+  totalDue: number;
+  nextDueYmd: string | null;
+};
+
+export function computeSoaListStats(periods: SoaListPeriodSummary[]) {
+  if (!periods.length) return null;
+
+  let lastRunAt: Date | null = null;
+  let totalStatements = 0;
+
+  for (const period of periods) {
+    totalStatements += period.statementCount;
+    if (period.lastRunAt) {
+      const runAt = new Date(period.lastRunAt);
+      if (!lastRunAt || runAt > lastRunAt) lastRunAt = runAt;
+    }
+  }
+
+  const latestByRun = [...periods].sort((a, b) => {
+    const aTime = a.lastRunAt ? new Date(a.lastRunAt).getTime() : 0;
+    const bTime = b.lastRunAt ? new Date(b.lastRunAt).getTime() : 0;
+    return bTime - aTime;
+  })[0];
+
+  return {
+    runs: periods.length,
+    statements: totalStatements,
+    totalDue: latestByRun?.totalDue ?? 0,
+    nextDueYmd: latestByRun?.nextDueYmd ?? null,
+    lastRunAt,
+  };
+}

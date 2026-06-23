@@ -1,18 +1,6 @@
 "use client";
 
-import {
-  Bell,
-  CreditCard,
-  FileText,
-  LayoutDashboard,
-  Menu,
-  Plug,
-  Receipt,
-  Settings,
-  Zap,
-} from "lucide-react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { Menu } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { useState } from "react";
 
@@ -26,19 +14,9 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { DASHBOARD_NAV, ROUTES } from "@/config/routes";
-import { cn } from "@/lib/utils/cn";
+import { ROUTES } from "@/config/routes";
 
-const ICONS = {
-  LayoutDashboard,
-  CreditCard,
-  FileText,
-  Bell,
-  Zap,
-  Plug,
-  Receipt,
-  Settings,
-} as const;
+import { DashboardNavLinks } from "./DashboardNavLinks";
 
 interface MobileDashboardNavProps {
   user: {
@@ -49,7 +27,6 @@ interface MobileDashboardNavProps {
 
 export function MobileDashboardNav({ user }: MobileDashboardNavProps) {
   const [open, setOpen] = useState(false);
-  const pathname = usePathname();
 
   return (
     <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-card/95 px-4 backdrop-blur-md md:hidden">
@@ -72,31 +49,10 @@ export function MobileDashboardNav({ user }: MobileDashboardNavProps) {
               <BrandLogo size="sm" showTagline />
             </SheetHeader>
             <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
-              {DASHBOARD_NAV.map((item) => {
-                const Icon = ICONS[item.icon as keyof typeof ICONS];
-                const active =
-                  pathname === item.href ||
-                  (item.href !== ROUTES.dashboard.root &&
-                    pathname.startsWith(`${item.href}/`)) ||
-                  (item.href === ROUTES.dashboard.root &&
-                    pathname === ROUTES.dashboard.root);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setOpen(false)}
-                    className={cn(
-                      "flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                      active
-                        ? "bg-primary text-primary-foreground shadow-sm"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                    )}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" aria-hidden />
-                    {item.title}
-                  </Link>
-                );
-              })}
+              <DashboardNavLinks
+                variant="mobile"
+                onNavigate={() => setOpen(false)}
+              />
             </nav>
             <div className="border-t border-border p-3">
               <Button
