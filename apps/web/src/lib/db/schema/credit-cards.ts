@@ -34,8 +34,10 @@ export const DEFAULT_REMINDER_INTERVAL_MINUTES: ReminderIntervalMinutes = 1440;
 export function normalizeReminderIntervalMinutes(
   value: number | null | undefined,
 ): ReminderIntervalMinutes {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes)) return DEFAULT_REMINDER_INTERVAL_MINUTES;
   return (
-    REMINDER_INTERVALS.find((i) => i.value === value)?.value ??
+    REMINDER_INTERVALS.find((i) => i.value === minutes)?.value ??
     DEFAULT_REMINDER_INTERVAL_MINUTES
   );
 }

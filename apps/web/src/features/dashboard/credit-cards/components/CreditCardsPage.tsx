@@ -57,7 +57,6 @@ import {
 
 import {
   DEFAULT_REMINDER_WINDOW_DAYS,
-  formatReminderFrequency,
   formatReminderSummary,
 } from "../lib/reminder-labels";
 import { CreditCardsTable } from "./CreditCardsTable";
@@ -88,9 +87,10 @@ export function CreditCardsPage() {
   });
 
   const update = api.creditCards.update.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       toast.success("Card updated");
       void utils.creditCards.list.invalidate();
+      void utils.creditCards.get.invalidate({ id: variables.id });
       setEditOpen(false);
     },
     onError: (e) => toast.error(e.message),
@@ -122,15 +122,28 @@ export function CreditCardsPage() {
   const [soaSubject, setSoaSubject] = useState(defaultSoaSubject("bpi"));
   const [color, setColor] = useState(DEFAULT_CARD_COLORS.bpi);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [formPopulatedForId, setFormPopulatedForId] = useState<string | null>(
+    null,
+  );
 
   const { data: editingCard, isLoading: isLoadingEdit } =
     api.creditCards.get.useQuery(
       { id: editingId! },
-      { enabled: !!editingId && editOpen },
+      {
+        enabled: !!editingId && editOpen,
+        staleTime: 0,
+      },
     );
 
+  const editFormReady =
+    !!editingId &&
+    !!editingCard &&
+    editingCard.id === editingId &&
+    !isLoadingEdit &&
+    formPopulatedForId === editingId;
+
   useEffect(() => {
-    if (!editingCard) return;
+    if (!editingCard || editingCard.id !== editingId) return;
     setIssuer(normalizeBankIssuer(editingCard.issuer));
     setLast4(editingCard.last4);
     setLabel(editingCard.label ?? "");
@@ -162,7 +175,8 @@ export function CreditCardsPage() {
     if (editingCard.secretsUnavailable) {
       toast.error("PDF password could not be decrypted. Re-enter it and save.");
     }
-  }, [editingCard]);
+    setFormPopulatedForId(editingId);
+  }, [editingCard, editingId]);
 
   function resetForm() {
     setIssuer("bpi");
@@ -199,6 +213,7 @@ export function CreditCardsPage() {
   }
 
   function openEdit(cardId: string) {
+    setFormPopulatedForId(null);
     setEditingId(cardId);
     setEditOpen(true);
   }
@@ -406,6 +421,7 @@ export function CreditCardsPage() {
           setEditOpen(open);
           if (!open) {
             setEditingId(null);
+            setFormPopulatedForId(null);
             resetForm();
           }
         }}
@@ -414,14 +430,10 @@ export function CreditCardsPage() {
           <DialogHeader>
             <DialogTitle>Edit card</DialogTitle>
           </DialogHeader>
-          {isLoadingEdit ? (
-            <div className="flex justify-center py-8">
-              <LoadingSpinner />
-            </div>
-          ) : (
+          {editFormReady ? (
             editingId && (
               <CardForm
-                key={editingId}
+                key={`${editingId}-${String(editingCard.updatedAt)}`}
                 issuer={issuer}
                 setIssuer={setIssuer}
                 last4={last4}
@@ -458,6 +470,10 @@ export function CreditCardsPage() {
                 submitLabel="Save changes"
               />
             )
+          ) : (
+            <div className="flex justify-center py-8">
+              <LoadingSpinner />
+            </div>
           )}
         </DialogContent>
       </Dialog>
@@ -632,9 +648,7 @@ function CardForm({
             }
           >
             <SelectTrigger>
-              <SelectValue placeholder="Once per day">
-                {formatReminderFrequency(reminderIntervalMinutes)}
-              </SelectValue>
+              <SelectValue placeholder="Once per day" />
             </SelectTrigger>
             <SelectContent>
               {REMINDER_INTERVALS.map((i) => (

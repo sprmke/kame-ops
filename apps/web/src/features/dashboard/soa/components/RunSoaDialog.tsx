@@ -105,17 +105,17 @@ export function RunSoaDialog({
     [progressValues],
   );
   const span = monthSpan(progressValues);
-  const { activeStepIndex, progress, finished } = useRunSoaProgress(
+  const runFailed = settled === "error";
+  const runSucceeded = settled === "success";
+  const { activeStepIndex, progress, pastEstimate } = useRunSoaProgress(
     !!isPending,
     progressSteps,
     span,
+    !isPending && !runFailed,
   );
 
-  const runFailed = settled === "error";
-  const runSucceeded = settled === "success";
-  const showCompletion = showProgress && !isPending && (finished || runFailed);
-  const progressFinished = showCompletion && runSucceeded && finished;
-  const progressFailed = showCompletion && runFailed;
+  const progressFailed = !isPending && runFailed;
+  const progressFinished = !isPending && !runFailed && showProgress;
 
   useEffect(() => {
     if (!open) return;
@@ -194,6 +194,7 @@ export function RunSoaDialog({
               finished={progressFinished || progressFailed}
               failed={progressFailed}
               errorMessage={errorMessage}
+              pastEstimate={pastEstimate}
             />
             {progressFailed && (
               <DialogFooter>

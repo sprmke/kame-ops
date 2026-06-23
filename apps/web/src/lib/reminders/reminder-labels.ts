@@ -28,9 +28,9 @@ export function formatReminderWindowSpan(
 }
 
 export function formatReminderFrequency(intervalMinutes: number): string {
+  const minutes = Number(intervalMinutes);
   return (
-    REMINDER_INTERVALS.find((i) => i.value === intervalMinutes)?.label ??
-    "Once per day"
+    REMINDER_INTERVALS.find((i) => i.value === minutes)?.label ?? "Once per day"
   );
 }
 
