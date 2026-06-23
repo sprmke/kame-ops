@@ -62,6 +62,54 @@ export function normalizeBankIssuer(issuer: string): BankIssuer {
   return "bpi";
 }
 
+/** Default Gmail SOA subject line per bank (form default + SOA search). */
+export const DEFAULT_SOA_SUBJECTS: Record<BankIssuer, string> = {
+  metrobank: "Metrobank Credit Card MSOA Statement of Account",
+  rcbc: "FLEX VISA eStatement",
+  bpi: "BPI Credit Card Electronic Statement of Account",
+  unionbank: "REWARDS VISA PLATINUM Credit Card e-Statement",
+};
+
+/** @deprecated Use DEFAULT_SOA_SUBJECTS */
+export const DEFAULT_SOA_SUBJECT_EXAMPLES = DEFAULT_SOA_SUBJECTS;
+
+export function defaultSoaSubject(issuer: BankIssuer): string {
+  return DEFAULT_SOA_SUBJECTS[issuer];
+}
+
+export function normalizeSoaSubject(
+  value: string | null | undefined,
+  issuer: BankIssuer,
+): string {
+  const trimmed = value?.trim();
+  return trimmed || DEFAULT_SOA_SUBJECTS[issuer];
+}
+
+/** Default accent colors for new cards (hex). */
+export const DEFAULT_CARD_COLORS: Record<BankIssuer, string> = {
+  metrobank: "#00156D",
+  rcbc: "#3884D9",
+  bpi: "#B11116",
+  unionbank: "#F7931E",
+};
+
+const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+
+export function isValidCardColor(
+  value: string | null | undefined,
+): value is string {
+  return !!value && HEX_COLOR_RE.test(value);
+}
+
+export function normalizeCardColor(
+  value: string | null | undefined,
+  issuer?: BankIssuer,
+): string | null {
+  if (isValidCardColor(value)) return value.toUpperCase();
+  if (issuer) return DEFAULT_CARD_COLORS[issuer];
+  return null;
+}
+
 export const creditCards = pgTable(
   "credit_cards",
   {
@@ -76,6 +124,10 @@ export const creditCards = pgTable(
     contactLine: text("contact_line"),
     pdfPasswordEncrypted: text("pdf_password_encrypted").notNull(),
     gmailMonthOffset: integer("gmail_month_offset").default(0),
+    /** Gmail subject line hint for SOA search (null = bank default query). */
+    soaSubject: text("soa_subject"),
+    /** Hex accent color (#RRGGBB) for SOA and card UI. */
+    color: varchar("color", { length: 7 }),
     /** Days before due date to start reminders (null = use global default). */
     reminderWindowDays: integer("reminder_window_days"),
     /** Minutes between pings while in window (default once per day). */

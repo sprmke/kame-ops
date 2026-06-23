@@ -3,6 +3,8 @@ import type { Account } from "next-auth";
 import { google } from "googleapis";
 
 import { env } from "@/env";
+import { googleOAuthRedirectUri } from "@/lib/auth/google-oauth-uri";
+import { GOOGLE_OAUTH_SCOPES } from "@/lib/auth/google-scopes";
 import { db } from "@/lib/db";
 import { accounts } from "@/lib/db/schema";
 import { formatGoogleAuthError } from "@/server/legacy/pay-credit-cards/google-oauth";
@@ -139,7 +141,7 @@ export const gmailService = {
       );
     }
 
-    const redirectUri = `${env.NEXT_PUBLIC_APP_URL}/api/auth/callback/google`;
+    const redirectUri = googleOAuthRedirectUri();
 
     if (tokens.refresh_token) {
       const oauth2 = new google.auth.OAuth2(
@@ -169,5 +171,50 @@ export const gmailService = {
     process.env.GMAIL_OAUTH_CLIENT_ID = env.GOOGLE_CLIENT_ID;
     process.env.GMAIL_OAUTH_CLIENT_SECRET = env.GOOGLE_CLIENT_SECRET;
     process.env.GMAIL_OAUTH_REDIRECT_URI = redirectUri;
+  },
+
+  /** Which Gmail mailbox the active OAuth token reads (after applyTokensToEnv). */
+  async getActiveMailboxProfile(): Promise<{
+    email: string | null;
+    scope: string | null;
+    hasRefreshToken: boolean;
+    hasGmailReadScope: boolean;
+    redirectUri: string;
+  }> {
+    const redirectUri = googleOAuthRedirectUri();
+    const tokenJson = process.env.GMAIL_TOKEN_JSON;
+    let scope: string | null = null;
+    let hasRefreshToken = false;
+    if (tokenJson) {
+      try {
+        const parsed = JSON.parse(tokenJson) as {
+          scope?: string;
+          refresh_token?: string;
+        };
+        scope = parsed.scope ?? null;
+        hasRefreshToken = !!parsed.refresh_token;
+      } catch {
+        // ignore
+      }
+    }
+
+    const hasGmailReadScope =
+      !!scope?.includes("gmail.readonly") ||
+      GOOGLE_OAUTH_SCOPES.some(
+        (s) => s.includes("gmail") && scope?.includes(s),
+      );
+
+    const { getGmailClient } =
+      await import("@/server/legacy/pay-credit-cards/gmail");
+    const gmail = await getGmailClient();
+    const profile = await gmail.users.getProfile({ userId: "me" });
+
+    return {
+      email: profile.data.emailAddress ?? null,
+      scope,
+      hasRefreshToken,
+      hasGmailReadScope,
+      redirectUri,
+    };
   },
 };

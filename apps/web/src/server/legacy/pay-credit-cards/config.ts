@@ -91,6 +91,9 @@ export function loadCardCredentials(): CardCredential[] {
         ) {
           card.reminderIntervalMinutes = Math.trunc(c.reminderIntervalMinutes);
         }
+        if (typeof c.soaSubject === "string" && c.soaSubject.trim()) {
+          card.soaSubject = c.soaSubject.trim();
+        }
         return card;
       })
       .filter((c): c is CardCredential => c !== null);
@@ -197,8 +200,7 @@ export const banks: BankDefinition[] = [
     label: "Metrobank",
     buildQuery: (ctx: GmailMonthContext) =>
       [
-        "(Metrobank Credit Card MSOA OR MSOA)",
-        '("Statement of Account" OR SOA)',
+        'subject:"Metrobank Credit Card MSOA Statement of Account"',
         `(${ctx.monthNum2} OR "${ctx.monthLong}" OR "${ctx.monthShort}")`,
         `"${ctx.year}"`,
       ].join(" "),
@@ -208,7 +210,7 @@ export const banks: BankDefinition[] = [
     label: "RCBC",
     buildQuery: (ctx) =>
       [
-        'subject:("FLEX VISA eStatement" OR "FLEX VISA")',
+        'subject:"FLEX VISA eStatement"',
         `("${ctx.monthShort} ${ctx.year}" OR "${ctx.monthLong} ${ctx.year}")`,
       ].join(" "),
   },
@@ -217,7 +219,7 @@ export const banks: BankDefinition[] = [
     label: "BPI",
     buildQuery: (ctx) =>
       [
-        'subject:("BPI Credit Card Electronic Statement" OR "Electronic Statement of Account")',
+        'subject:"BPI Credit Card Electronic Statement of Account"',
         `("${ctx.monthShort} ${ctx.year}" OR "${ctx.monthLong} ${ctx.year}")`,
       ].join(" "),
   },
@@ -226,7 +228,7 @@ export const banks: BankDefinition[] = [
     label: "Unionbank",
     buildQuery: (ctx) =>
       [
-        'subject:("REWARDS VISA PLATINUM" OR "REWARDS VISA")',
+        'subject:"REWARDS VISA PLATINUM Credit Card e-Statement"',
         "2600",
         `("${ctx.monthLong} ${ctx.year}" OR "${ctx.monthShort} ${ctx.year}")`,
       ].join(" "),
@@ -238,5 +240,27 @@ export function buildGmailQuery(
   ctx: GmailMonthContext,
 ): string {
   const core = bank.buildQuery(ctx);
+  return `(${core}) after:${ctx.afterYMD} before:${ctx.beforeYMD}`;
+}
+
+/** Card-specific subject search — still scoped to the statement month window. */
+export function buildGmailQueryWithSubject(
+  bank: BankDefinition,
+  ctx: GmailMonthContext,
+  subject: string,
+): string {
+  const escaped = subject.trim().replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  let monthPart: string;
+  switch (bank.id) {
+    case "metrobank":
+      monthPart = `(${ctx.monthNum2} OR "${ctx.monthLong}" OR "${ctx.monthShort}") "${ctx.year}"`;
+      break;
+    case "unionbank":
+      monthPart = `"${ctx.monthLong} ${ctx.year}" OR "${ctx.monthShort} ${ctx.year}"`;
+      break;
+    default:
+      monthPart = `"${ctx.monthShort} ${ctx.year}" OR "${ctx.monthLong} ${ctx.year}"`;
+  }
+  const core = [`subject:"${escaped}"`, monthPart].join(" ");
   return `(${core}) after:${ctx.afterYMD} before:${ctx.beforeYMD}`;
 }

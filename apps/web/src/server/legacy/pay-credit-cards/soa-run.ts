@@ -4,13 +4,18 @@ import path from "node:path";
 import {
   banks,
   buildGmailQuery,
+  buildGmailQueryWithSubject,
   ensureDirs,
   isNotifyConfigured,
   loadCardCredentials,
 } from "./config";
 import { notifySummaryPdf } from "./notify";
 import { upsertDuesFromSoaRows } from "./due-reminders-state";
-import { getGmailClient, searchAndDownloadPdfs } from "./gmail";
+import {
+  getGmailClient,
+  searchAndDownloadPdfs,
+  type DownloadedPdf,
+} from "./gmail";
 import { log, logBanner } from "./logger";
 import {
   buildMonthContext,
@@ -207,18 +212,22 @@ function enrichSoaRowFromCredentials(
   if (c.contactLine?.trim()) row.contactLine = c.contactLine.trim();
 }
 
-/** Distinct Gmail month offsets configured for this issuer (always includes 0 if no cards). */
-function gmailOffsetsForIssuer(
+/** Distinct Gmail search configs for this issuer (offset + optional subject). */
+function gmailSearchConfigsForIssuer(
   issuerId: string,
   cards: CardCredential[],
-): number[] {
-  const set = new Set<number>();
+): { offset: number; soaSubject?: string }[] {
+  const map = new Map<string, { offset: number; soaSubject?: string }>();
   for (const c of cards) {
     if (c.issuer.toLowerCase() !== issuerId.toLowerCase()) continue;
-    set.add(typeof c.gmailMonthOffset === "number" ? c.gmailMonthOffset : 0);
+    const offset =
+      typeof c.gmailMonthOffset === "number" ? c.gmailMonthOffset : 0;
+    const subject = c.soaSubject?.trim() || undefined;
+    const key = `${offset}\0${subject ?? ""}`;
+    if (!map.has(key)) map.set(key, { offset, soaSubject: subject });
   }
-  if (set.size === 0) set.add(0);
-  return [...set].sort((a, b) => a - b);
+  if (map.size === 0) map.set("0\0", { offset: 0 });
+  return [...map.values()].sort((a, b) => a.offset - b.offset);
 }
 
 function unavailableRow(
@@ -244,6 +253,15 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+export type SoaGmailSearchLog = {
+  bankId: string;
+  bankLabel: string;
+  query: string;
+  messageCount: number;
+  pdfCount: number;
+  monthOffset: number;
+};
+
 export type SoaSingleMonthResult = {
   ctx: GmailMonthContext;
   rows: SoaRow[];
@@ -253,6 +271,7 @@ export type SoaSingleMonthResult = {
   summaryPath: string;
   parseWarnings: number;
   parseFailures: number;
+  gmailSearches: SoaGmailSearchLog[];
 };
 
 /**
@@ -296,33 +315,47 @@ export async function runSoaSingleMonth(options: {
   const gmail = await getGmailClient();
   log.success("Gmail API client ready");
 
-  const downloaded: Awaited<ReturnType<typeof searchAndDownloadPdfs>> = [];
+  const downloaded: DownloadedPdf[] = [];
   const seenMessage = new Set<string>();
+  const gmailSearches: SoaGmailSearchLog[] = [];
 
   for (const bank of banks) {
-    const offsets = gmailOffsetsForIssuer(bank.id, cards);
+    const searchConfigs = gmailSearchConfigsForIssuer(bank.id, cards);
     log.info(`${bank.label}`);
-    if (offsets.length > 1) {
+    if (searchConfigs.length > 1) {
       log.detail(
-        `Multiple gmailMonthOffset values — running ${offsets.length} Gmail search(es)`,
+        `Multiple Gmail search configs — running ${searchConfigs.length} search(es)`,
       );
     }
 
-    for (const off of offsets) {
-      const gctx = shiftMonthContext(ctx, off);
-      const q = buildGmailQuery(bank, gctx);
-      if (off !== 0) {
+    for (const config of searchConfigs) {
+      const gctx = shiftMonthContext(ctx, config.offset);
+      const q = config.soaSubject
+        ? buildGmailQueryWithSubject(bank, gctx, config.soaSubject)
+        : buildGmailQuery(bank, gctx);
+      if (config.offset !== 0) {
         log.detail(
-          `Gmail window ${gctx.monthLong} ${gctx.year} (gmailMonthOffset ${off}; run period ${ctx.monthLong} ${ctx.year})`,
+          `Gmail window ${gctx.monthLong} ${gctx.year} (gmailMonthOffset ${config.offset}; run period ${ctx.monthLong} ${ctx.year})`,
         );
       }
+      if (config.soaSubject) {
+        log.detail(`SOA subject: ${config.soaSubject}`);
+      }
       log.detail(`Query: ${q}`);
-      const pdfs = await searchAndDownloadPdfs({
+      const { pdfs, messageCount } = await searchAndDownloadPdfs({
         gmail,
         query: q,
         bankId: bank.id,
         bankLabel: bank.label,
         downloadsDir: monthDownloadsDir,
+      });
+      gmailSearches.push({
+        bankId: bank.id,
+        bankLabel: bank.label,
+        query: q,
+        messageCount,
+        pdfCount: pdfs.length,
+        monthOffset: config.offset,
       });
       for (const p of pdfs) {
         const key = `${p.bankId}\0${p.messageId}`;
@@ -332,13 +365,13 @@ export async function runSoaSingleMonth(options: {
       }
       if (pdfs.length === 0) {
         log.warn(
-          offsets.length > 1
-            ? `No PDFs for ${bank.label} at offset ${off}.`
+          searchConfigs.length > 1
+            ? `No PDFs for ${bank.label} (offset ${config.offset}${config.soaSubject ? `, subject "${config.soaSubject}"` : ""}).`
             : `No PDF attachments found for ${bank.label}.`,
         );
       } else {
         log.success(
-          `${pdfs.length} PDF file(s) saved${off !== 0 ? ` (offset ${off})` : ""}`,
+          `${pdfs.length} PDF file(s) saved${config.offset !== 0 ? ` (offset ${config.offset})` : ""}`,
         );
         for (const p of pdfs) {
           log.detail(p.fileName);
@@ -574,6 +607,7 @@ export async function runSoaSingleMonth(options: {
     summaryPath,
     parseWarnings,
     parseFailures,
+    gmailSearches,
   };
 }
 

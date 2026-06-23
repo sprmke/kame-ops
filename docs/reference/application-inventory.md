@@ -52,7 +52,7 @@
 | Table                                | Purpose                                                                             |
 | ------------------------------------ | ----------------------------------------------------------------------------------- |
 | `users`, auth tables                 | NextAuth users                                                                      |
-| `credit_cards`                       | Card credentials (encrypted PDF password)                                           |
+| `credit_cards`                       | Card credentials (encrypted PDF password, `soa_subject`, `color`)                   |
 | `soa_periods`                        | SOA run periods (date range + notify/calendar settings; `summary_pdf_storage_path`) |
 | `soa_statements`, `soa_transactions` | SOA history                                                                         |
 | `due_entries`                        | Due dates / paid state                                                              |

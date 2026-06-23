@@ -1,9 +1,21 @@
-import type { BankIssuer } from "@/lib/db/schema/credit-cards";
+import {
+  ISSUER_ACCENTS,
+  issuerAccent,
+  resolveCardAccent,
+  type ResolvedCardAccent,
+} from "@/lib/credit-cards/card-accent";
 import {
   computeStatementMonthTotals,
   dueEntryKey,
 } from "@/lib/soa/outstanding";
 import { formatPhpAmount, parsePhpAmount } from "@/lib/utils/format-money";
+
+export {
+  ISSUER_ACCENTS,
+  issuerAccent,
+  resolveCardAccent,
+  type ResolvedCardAccent,
+};
 
 export { dueEntryKey };
 
@@ -14,6 +26,7 @@ export type SoaStatement = {
   bankLabel: string;
   issuerId: string;
   cardLast4: string;
+  cardColor?: string | null;
   minimumDue: string | null;
   totalDue: string | null;
   statementDate: string | null;
@@ -70,35 +83,6 @@ export const STATEMENT_MONTHS = MONTH_NAMES.map((label, index) => ({
 export function formatStatementMonth(month: number): string {
   return MONTH_NAMES[month - 1] ?? String(month);
 }
-
-export const ISSUER_ACCENTS: Record<
-  BankIssuer,
-  { dot: string; badge: string; border: string }
-> = {
-  metrobank: {
-    dot: "bg-[hsl(var(--chart-1))]",
-    badge:
-      "bg-[hsl(var(--chart-1)/0.12)] text-[hsl(var(--chart-1))] border-[hsl(var(--chart-1)/0.25)]",
-    border: "border-l-[hsl(var(--chart-1))]",
-  },
-  rcbc: {
-    dot: "bg-[hsl(var(--chart-4))]",
-    badge:
-      "bg-[hsl(var(--chart-4)/0.12)] text-[hsl(var(--chart-4))] border-[hsl(var(--chart-4)/0.25)]",
-    border: "border-l-[hsl(var(--chart-4))]",
-  },
-  bpi: {
-    dot: "bg-primary",
-    badge: "bg-primary/10 text-primary border-primary/25",
-    border: "border-l-primary",
-  },
-  unionbank: {
-    dot: "bg-[hsl(var(--destructive))]",
-    badge:
-      "bg-[hsl(var(--destructive)/0.12)] text-[hsl(var(--destructive))] border-[hsl(var(--destructive)/0.25)]",
-    border: "border-l-[hsl(var(--destructive))]",
-  },
-};
 
 export function periodLabel(month: number, year: number): string {
   const name = MONTH_NAMES[month - 1];
@@ -165,13 +149,6 @@ export function groupStatementsByPeriod(
       };
     })
     .sort((a, b) => b.year - a.year || b.month - a.month);
-}
-
-export function issuerAccent(issuerId: string) {
-  if (issuerId in ISSUER_ACCENTS) {
-    return ISSUER_ACCENTS[issuerId as BankIssuer];
-  }
-  return ISSUER_ACCENTS.bpi;
 }
 
 export function formatDisplayAmount(raw: string | null | undefined): string {

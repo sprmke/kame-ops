@@ -51,3 +51,4 @@ uploads/
 src/server/legacy/data/downloads/
 src/server/legacy/data/output/
 src/server/legacy/data/*.json
+.vercel

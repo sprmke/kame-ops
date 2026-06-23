@@ -19,11 +19,13 @@ import {
 import { ROUTES } from "@/config/routes";
 import { cn } from "@/lib/utils/cn";
 
+import { CardBankLabel } from "@/lib/credit-cards/CardBankLabel";
+import { resolveCardAccent } from "@/lib/credit-cards/card-accent";
+
 import {
   daysUntilDue,
   dueCountdownLabel,
   formatDisplayAmount,
-  issuerAccent,
   periodLabel,
   type SoaStatement,
 } from "../lib/soa-utils";
@@ -75,7 +77,10 @@ export function SoaStatementTable({
             );
             const days = daysUntilDue(statement.dueDateYmd);
             const countdown = dueCountdownLabel(days);
-            const accent = issuerAccent(statement.issuerId);
+            const accent = resolveCardAccent(
+              statement.issuerId,
+              statement.cardColor,
+            );
             const hasPdf =
               !!statement.pdfFileName &&
               statement.pdfFileName !== "—" &&
@@ -98,7 +103,7 @@ export function SoaStatementTable({
               <ClickableTableRow
                 key={statement.id}
                 href={detailHref}
-                className={cn("border-l-4", accent.border)}
+                style={accent.stripeStyle}
               >
                 {showPeriodColumn && (
                   <TableCell className="text-muted-foreground">
@@ -109,17 +114,12 @@ export function SoaStatementTable({
                   </TableCell>
                 )}
                 <TableCell>
-                  <span
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium",
-                      accent.badge,
-                    )}
-                  >
-                    <span
-                      className={cn("h-1.5 w-1.5 rounded-full", accent.dot)}
-                    />
-                    {statement.bankLabel}
-                  </span>
+                  <CardBankLabel
+                    issuerId={statement.issuerId}
+                    color={statement.cardColor}
+                    label={statement.bankLabel}
+                    showSwatch={false}
+                  />
                 </TableCell>
                 <TableCell className="font-medium tabular-nums">
                   ···· {statement.cardLast4}

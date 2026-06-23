@@ -5,7 +5,7 @@
 ## Core tables (planned)
 
 - `users` — profile extension for Supabase Auth users
-- `credit_cards` — card credentials (encrypted PDF password)
+- `credit_cards` — card credentials (encrypted PDF password), optional `soa_subject` (Gmail SOA search), `color` (#RRGGBB accent)
 - `soa_statements`, `soa_transactions` — parsed SOA data
 - `due_entries` — payment due tracking
 - `receipts` — uploaded receipt images + OCR/AI fields

@@ -53,7 +53,7 @@ export async function searchAndDownloadPdfs(options: {
   bankLabel: string;
   downloadsDir: string;
   maxResults?: number;
-}): Promise<DownloadedPdf[]> {
+}): Promise<{ pdfs: DownloadedPdf[]; messageCount: number }> {
   const { gmail, query, bankId, bankLabel, downloadsDir } = options;
   const maxResults = options.maxResults ?? 15;
   const list = await gmail.users.messages.list({
@@ -107,5 +107,5 @@ export async function searchAndDownloadPdfs(options: {
     }
   }
 
-  return results;
+  return { pdfs: results, messageCount: ids.length };
 }

@@ -9,6 +9,37 @@ import {
 } from "@/lib/soa/outstanding";
 
 import { transactionCategoryService } from "./transaction-category.service";
+import { creditCardService } from "./credit-card.service";
+
+type CardColorLookup = Map<string, string | null>;
+
+async function loadCardColorLookup(userId: string): Promise<CardColorLookup> {
+  const cards = await creditCardService.list(userId);
+  const byId = new Map(cards.map((c) => [c.id, c.color ?? null]));
+  const byKey = new Map(
+    cards.map((c) => [`${c.issuer.toLowerCase()}:${c.last4}`, c.color ?? null]),
+  );
+
+  return new Map([...byId.entries(), ...byKey.entries()]);
+}
+
+function cardColorForStatement(
+  lookup: CardColorLookup,
+  statement: {
+    creditCardId: string | null;
+    issuerId: string;
+    cardLast4: string;
+  },
+): string | null {
+  if (statement.creditCardId) {
+    const byId = lookup.get(statement.creditCardId);
+    if (byId !== undefined) return byId;
+  }
+  return (
+    lookup.get(`${statement.issuerId.toLowerCase()}:${statement.cardLast4}`) ??
+    null
+  );
+}
 
 export type SoaPeriodMode = "single" | "range";
 
@@ -260,13 +291,18 @@ export const soaPeriodService = {
       userId,
       statement.transactions,
     );
+    const cardColors = await loadCardColorLookup(userId);
 
     return {
       period: {
         ...period,
         label: formatSoaPeriodRange(period),
       },
-      statement: { ...statement, transactions },
+      statement: {
+        ...statement,
+        transactions,
+        cardColor: cardColorForStatement(cardColors, statement),
+      },
     };
   },
 
@@ -294,10 +330,12 @@ export const soaPeriodService = {
     );
 
     const stats = await aggregatePeriodStats(userId, period);
+    const cardColors = await loadCardColorLookup(userId);
 
     const enrichedStatements = await Promise.all(
       inRange.map(async (statement) => ({
         ...statement,
+        cardColor: cardColorForStatement(cardColors, statement),
         transactions: await transactionCategoryService.enrichTransactions(
           userId,
           statement.transactions,

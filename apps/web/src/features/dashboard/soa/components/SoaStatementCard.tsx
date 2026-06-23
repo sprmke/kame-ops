@@ -7,13 +7,14 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ROUTES } from "@/config/routes";
-import { cn } from "@/lib/utils/cn";
+
+import { CardBankLabel } from "@/lib/credit-cards/CardBankLabel";
+import { resolveCardAccent } from "@/lib/credit-cards/card-accent";
 
 import {
   daysUntilDue,
   dueCountdownLabel,
   formatDisplayAmount,
-  issuerAccent,
   type SoaStatement,
 } from "../lib/soa-utils";
 
@@ -30,7 +31,7 @@ export function SoaStatementCard({
   paid,
   onPreviewSource,
 }: SoaStatementCardProps) {
-  const accent = issuerAccent(statement.issuerId);
+  const accent = resolveCardAccent(statement.issuerId, statement.cardColor);
   const days = daysUntilDue(statement.dueDateYmd);
   const countdown = dueCountdownLabel(days);
   const hasPdf =
@@ -51,25 +52,18 @@ export function SoaStatementCard({
 
   return (
     <Card
-      className={cn(
-        "group overflow-hidden border-border/80 shadow-card transition-all hover:shadow-card-hover",
-        "border-l-4",
-        accent.border,
-      )}
+      className="group overflow-hidden border-border/80 shadow-card transition-all hover:shadow-card-hover"
+      style={accent.stripeStyle}
     >
       <CardHeader className="space-y-4 pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium",
-                  accent.badge,
-                )}
-              >
-                <span className={cn("h-1.5 w-1.5 rounded-full", accent.dot)} />
-                {statement.bankLabel}
-              </span>
+              <CardBankLabel
+                issuerId={statement.issuerId}
+                color={statement.cardColor}
+                label={statement.bankLabel}
+              />
               {paid && <StatusBadge label="Paid" variant="success" />}
               {countdown && !paid && (
                 <StatusBadge label={countdown} variant={urgencyVariant} />

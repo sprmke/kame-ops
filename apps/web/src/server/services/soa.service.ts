@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 import { soaPeriods, soaStatements } from "@/lib/db/schema";
 import { creditCardService } from "./credit-card.service";
 import { dueSyncService } from "./due-sync.service";
+import { gmailService } from "./gmail.service";
+import { integrationService } from "./integration.service";
 import { prepareLegacyRuntime } from "./legacy-runtime.service";
 import {
   soaPeriodService,
@@ -52,6 +54,15 @@ export function defaultRunSoaInput(): RunSoaPipelineInput {
   };
 }
 
+type SoaGmailSearchLog = {
+  bankId: string;
+  bankLabel: string;
+  query: string;
+  messageCount: number;
+  pdfCount: number;
+  monthOffset: number;
+};
+
 type SoaMonthResult = {
   month: number;
   year: number;
@@ -61,12 +72,66 @@ type SoaMonthResult = {
     >
   >["rows"];
   summaryPath: string;
+  gmailSearches: SoaGmailSearchLog[];
 };
+
+function buildSoaGmailWarning(options: {
+  parsedCount: number;
+  unavailable: number;
+  gmailSearches: SoaGmailSearchLog[];
+  mailboxEmail: string | null;
+  connectedEmail: string | null;
+  hasGmailReadScope: boolean;
+}): string | undefined {
+  const {
+    parsedCount,
+    unavailable,
+    gmailSearches,
+    mailboxEmail,
+    connectedEmail,
+    hasGmailReadScope,
+  } = options;
+
+  if (parsedCount > 0) return undefined;
+
+  const totalMessages = gmailSearches.reduce((n, s) => n + s.messageCount, 0);
+  const totalPdfs = gmailSearches.reduce((n, s) => n + s.pdfCount, 0);
+  const mailbox = mailboxEmail ?? "unknown mailbox";
+
+  if (!hasGmailReadScope) {
+    return `Gmail token for ${mailbox} is missing gmail.readonly scope. Sign out and sign in again with Google on this environment.`;
+  }
+
+  if (
+    connectedEmail &&
+    mailboxEmail &&
+    connectedEmail.toLowerCase() !== mailboxEmail.toLowerCase()
+  ) {
+    return `Gmail OAuth reads ${mailbox} but Integrations shows ${connectedEmail}. Sign in again on this site to reconnect the correct account.`;
+  }
+
+  if (totalMessages === 0) {
+    const sample = gmailSearches[0]?.query;
+    const queryHint = sample ? ` Sample query: ${sample}` : "";
+    return `Gmail (${mailbox}) returned 0 messages for this period.${queryHint} If SOAs exist in another inbox, reconnect Google here.`;
+  }
+
+  if (totalPdfs === 0) {
+    return `Gmail (${mailbox}) found ${totalMessages} message(s) but no PDF attachments for this period.`;
+  }
+
+  if (unavailable > 0) {
+    return `Gmail had PDFs but none parsed for this period; ${unavailable} card(s) marked unavailable. Check card passwords in Credit Cards.`;
+  }
+
+  return "No statement PDFs found in Gmail for this period. Try gmailMonthOffset −1 on cards if SOAs arrive early.";
+}
 
 async function runSoaDetailedInService(input: RunSoaPipelineInput): Promise<{
   months: SoaMonthResult[];
   allRows: SoaMonthResult["rows"];
   notifyPdfPath: string;
+  gmailSearches: SoaGmailSearchLog[];
 }> {
   const { runSoaSingleMonth } =
     await import("@/server/legacy/pay-credit-cards/soa-run");
@@ -95,10 +160,12 @@ async function runSoaDetailedInService(input: RunSoaPipelineInput): Promise<{
           year: input.fromYear,
           rows: r.rows,
           summaryPath: r.summaryPath,
+          gmailSearches: r.gmailSearches,
         },
       ],
       allRows: r.rows,
       notifyPdfPath: r.summaryPath,
+      gmailSearches: r.gmailSearches,
     };
   }
 
@@ -137,6 +204,7 @@ async function runSoaDetailedInService(input: RunSoaPipelineInput): Promise<{
       year: g.year,
       rows: r.rows,
       summaryPath: r.summaryPath,
+      gmailSearches: r.gmailSearches,
     });
     rangeParts.push({
       periodLabel: title,
@@ -163,7 +231,9 @@ async function runSoaDetailedInService(input: RunSoaPipelineInput): Promise<{
   const allRows = months.flatMap((m) => m.rows);
   upsertDuesFromSoaRows(allRows);
 
-  return { months, allRows, notifyPdfPath: rangePdfPath };
+  const gmailSearches = months.flatMap((m) => m.gmailSearches);
+
+  return { months, allRows, notifyPdfPath: rangePdfPath, gmailSearches };
 }
 
 async function persistRunPdfs(
@@ -253,6 +323,19 @@ export const soaService = {
     }
 
     const workDir = await prepareLegacyRuntime(userId);
+
+    let gmailMailbox: Awaited<
+      ReturnType<typeof gmailService.getActiveMailboxProfile>
+    > | null = null;
+    try {
+      gmailMailbox = await gmailService.getActiveMailboxProfile();
+    } catch {
+      // Gmail profile is optional diagnostics only
+    }
+
+    const gmailIntegration = await integrationService.getConfig<{
+      email?: string;
+    }>(userId, "gmail");
 
     const period = await soaPeriodService.upsertPeriod(userId, {
       mode: input.mode,
@@ -347,14 +430,14 @@ export const soaService = {
       (row) => !row.soaUnavailable && row.cardLast4 !== "—",
     ).length;
 
-    let warning: string | undefined;
-    if (statementCount === 0 && parsedCount === 0) {
-      warning =
-        "No statement PDFs found in Gmail for this period. Try gmailMonthOffset −1 on cards if SOAs arrive early.";
-    } else if (parsedCount === 0 && unavailable > 0) {
-      warning =
-        "Gmail had no matching SOA PDFs for this period; cards marked unavailable.";
-    }
+    const warning = buildSoaGmailWarning({
+      parsedCount,
+      unavailable,
+      gmailSearches: detailed.gmailSearches,
+      mailboxEmail: gmailMailbox?.email ?? null,
+      connectedEmail: gmailIntegration?.email ?? null,
+      hasGmailReadScope: gmailMailbox?.hasGmailReadScope ?? true,
+    });
 
     return {
       ok: true as const,
@@ -364,6 +447,15 @@ export const soaService = {
       parsedCount,
       unavailableCount: unavailable,
       warning,
+      gmailMailbox: gmailMailbox
+        ? {
+            email: gmailMailbox.email,
+            connectedEmail: gmailIntegration?.email ?? null,
+            hasGmailReadScope: gmailMailbox.hasGmailReadScope,
+            redirectUri: gmailMailbox.redirectUri,
+          }
+        : null,
+      gmailSearches: detailed.gmailSearches,
       sync,
       persisted: { saved, updated, unavailable },
       calendar,

@@ -19,6 +19,8 @@ export type CardCredential = {
   reminderWindowDays?: number;
   /** Minutes between pings while in the due window (default 1440 = once per day). */
   reminderIntervalMinutes?: number;
+  /** Gmail subject line for SOA search (overrides bank default when set). */
+  soaSubject?: string;
 };
 
 export type TransactionLine = {

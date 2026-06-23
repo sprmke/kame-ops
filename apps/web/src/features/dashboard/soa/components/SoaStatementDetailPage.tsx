@@ -25,11 +25,13 @@ import { cn } from "@/lib/utils/cn";
 
 import { SoaPdfPreview } from "./SoaPdfPreview";
 import { SoaTransactionList } from "./SoaTransactionList";
+import { CardBankLabel } from "@/lib/credit-cards/CardBankLabel";
+import { resolveCardAccent } from "@/lib/credit-cards/card-accent";
+
 import {
   daysUntilDue,
   dueCountdownLabel,
   formatDisplayAmount,
-  issuerAccent,
   periodLabel,
 } from "../lib/soa-utils";
 import {
@@ -106,7 +108,7 @@ export function SoaStatementDetailPage({
   }
 
   const { period, statement } = data;
-  const accent = issuerAccent(statement.issuerId);
+  const accent = resolveCardAccent(statement.issuerId, statement.cardColor);
   const days = daysUntilDue(statement.dueDateYmd);
   const countdown = dueCountdownLabel(days);
   const hasPdf =
@@ -171,23 +173,16 @@ export function SoaStatementDetailPage({
       />
 
       <Card
-        className={cn(
-          "overflow-hidden border-border/80 shadow-card",
-          "border-l-4",
-          accent.border,
-        )}
+        className="overflow-hidden border-border/80 shadow-card"
+        style={accent.stripeStyle}
       >
         <CardHeader className="space-y-4 pb-4">
           <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium",
-                accent.badge,
-              )}
-            >
-              <span className={cn("h-1.5 w-1.5 rounded-full", accent.dot)} />
-              {statement.bankLabel}
-            </span>
+            <CardBankLabel
+              issuerId={statement.issuerId}
+              color={statement.cardColor}
+              label={statement.bankLabel}
+            />
             <span className="text-xs text-muted-foreground">
               {stmtMonthLabel}
             </span>

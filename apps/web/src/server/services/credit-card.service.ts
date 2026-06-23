@@ -2,7 +2,13 @@ import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { BANK_ISSUERS, creditCards } from "@/lib/db/schema";
+import {
+  BANK_ISSUERS,
+  creditCards,
+  normalizeCardColor,
+  normalizeSoaSubject,
+  type BankIssuer,
+} from "@/lib/db/schema";
 import { encryptSecret, tryDecryptSecret } from "@/lib/utils/encryption";
 
 function stripEncryptedPassword<T extends { pdfPasswordEncrypted: string }>(
@@ -20,6 +26,12 @@ const createCardSchema = z.object({
   contactLine: z.string().optional(),
   pdfPassword: z.string().min(1),
   gmailMonthOffset: z.number().int().optional(),
+  soaSubject: z.string().max(512).optional().nullable(),
+  color: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/, "Color must be a hex value like #E8720C")
+    .optional()
+    .nullable(),
   reminderWindowDays: z.number().int().min(0).max(60).optional().nullable(),
   reminderIntervalMinutes: z.number().int().min(60).max(1440).optional(),
   notes: z.string().optional(),
@@ -77,6 +89,8 @@ export const creditCardService = {
         contactLine: data.contactLine,
         pdfPasswordEncrypted: encryptSecret(data.pdfPassword),
         gmailMonthOffset: data.gmailMonthOffset ?? 0,
+        soaSubject: normalizeSoaSubject(data.soaSubject, data.issuer),
+        color: normalizeCardColor(data.color, data.issuer),
         reminderWindowDays: data.reminderWindowDays ?? null,
         reminderIntervalMinutes: data.reminderIntervalMinutes ?? 1440,
         notes: data.notes,
@@ -109,6 +123,20 @@ export const creditCardService = {
         fullPan: input.fullPan,
         contactLine: input.contactLine,
         gmailMonthOffset: input.gmailMonthOffset,
+        soaSubject:
+          input.soaSubject !== undefined
+            ? normalizeSoaSubject(
+                input.soaSubject,
+                (input.issuer ?? existing.issuer) as BankIssuer,
+              )
+            : undefined,
+        color:
+          input.color !== undefined
+            ? normalizeCardColor(
+                input.color,
+                (input.issuer ?? existing.issuer) as BankIssuer,
+              )
+            : undefined,
         reminderWindowDays: input.reminderWindowDays,
         reminderIntervalMinutes: input.reminderIntervalMinutes,
         notes: input.notes,
@@ -156,6 +184,8 @@ export const creditCardService = {
       contactLine: c.contactLine ?? undefined,
       password: this.getPdfPassword(c),
       gmailMonthOffset: c.gmailMonthOffset ?? 0,
+      soaSubject: c.soaSubject ?? undefined,
+      color: c.color ?? undefined,
       reminderWindowDays: c.reminderWindowDays ?? undefined,
       reminderIntervalMinutes: c.reminderIntervalMinutes ?? 1440,
     }));
