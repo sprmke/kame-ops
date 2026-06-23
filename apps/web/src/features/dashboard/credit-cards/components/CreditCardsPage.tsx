@@ -132,6 +132,11 @@ export function CreditCardsPage() {
       (editingCard.reminderIntervalMinutes as ReminderIntervalMinutes) ?? 1440,
     );
     setNotes(editingCard.notes ?? "");
+    if (editingCard.secretsUnavailable) {
+      toast.error(
+        "PDF password could not be decrypted. Re-enter it and save, or sync ENCRYPTION_KEY with the environment that created this card.",
+      );
+    }
   }, [editingCard]);
 
   function resetForm() {

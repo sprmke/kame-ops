@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { integrations } from "@/lib/db/schema";
-import { decryptSecret, encryptSecret } from "@/lib/utils/encryption";
+import { encryptSecret, tryDecryptSecret } from "@/lib/utils/encryption";
 
 const upsertSchema = z.object({
   provider: z.enum(["gmail", "google_calendar", "telegram", "slack"]),
@@ -27,17 +27,23 @@ export const integrationService = {
   },
 
   async getFormConfigs(userId: string) {
-    const telegram = await this.getConfig<{
+    const telegramResult = await this.getConfigWithDecryptStatus<{
       botToken?: string;
       chatId?: string;
       webLink?: string;
     }>(userId, "telegram");
-    const slack = await this.getConfig<{ webhookUrl?: string }>(
-      userId,
-      "slack",
-    );
+    const slackResult = await this.getConfigWithDecryptStatus<{
+      webhookUrl?: string;
+    }>(userId, "slack");
 
-    return { telegram, slack };
+    return {
+      telegram: telegramResult.config,
+      slack: slackResult.config,
+      secretsUnavailable: {
+        telegram: telegramResult.secretsUnavailable,
+        slack: slackResult.secretsUnavailable,
+      },
+    };
   },
 
   async upsert(userId: string, input: z.infer<typeof upsertSchema>) {
@@ -79,6 +85,14 @@ export const integrationService = {
     userId: string,
     provider: string,
   ): Promise<T | null> {
+    const result = await this.getConfigWithDecryptStatus<T>(userId, provider);
+    return result.config;
+  },
+
+  async getConfigWithDecryptStatus<T extends Record<string, string>>(
+    userId: string,
+    provider: string,
+  ): Promise<{ config: T | null; secretsUnavailable: boolean }> {
     const row = await db.query.integrations.findFirst({
       where: and(
         eq(integrations.userId, userId),
@@ -86,8 +100,21 @@ export const integrationService = {
         eq(integrations.isActive, true),
       ),
     });
-    if (!row) return null;
-    return JSON.parse(decryptSecret(row.configEncrypted)) as T;
+    if (!row) return { config: null, secretsUnavailable: false };
+
+    const plain = tryDecryptSecret(row.configEncrypted);
+    if (plain === null) {
+      return { config: null, secretsUnavailable: true };
+    }
+
+    try {
+      return {
+        config: JSON.parse(plain) as T,
+        secretsUnavailable: false,
+      };
+    } catch {
+      return { config: null, secretsUnavailable: true };
+    }
   },
 
   /** Resolve user from Telegram chat ID stored in integration config. */
@@ -100,9 +127,9 @@ export const integrationService = {
     });
 
     for (const row of rows) {
-      const config = JSON.parse(decryptSecret(row.configEncrypted)) as {
-        chatId?: string;
-      };
+      const plain = tryDecryptSecret(row.configEncrypted);
+      if (!plain) continue;
+      const config = JSON.parse(plain) as { chatId?: string };
       if (config.chatId && String(config.chatId) === String(chatId)) {
         return row.userId;
       }

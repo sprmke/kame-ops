@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { BANK_ISSUERS, creditCards } from "@/lib/db/schema";
-import { decryptSecret, encryptSecret } from "@/lib/utils/encryption";
+import { encryptSecret, tryDecryptSecret } from "@/lib/utils/encryption";
 
 function stripEncryptedPassword<T extends { pdfPasswordEncrypted: string }>(
   card: T,
@@ -56,9 +56,11 @@ export const creditCardService = {
     if (!card) return null;
 
     const { pdfPasswordEncrypted, ...rest } = card;
+    const pdfPassword = tryDecryptSecret(pdfPasswordEncrypted);
     return {
       ...rest,
-      pdfPassword: this.getPdfPassword({ pdfPasswordEncrypted }),
+      pdfPassword: pdfPassword ?? "",
+      secretsUnavailable: pdfPassword === null,
     };
   },
 
@@ -131,7 +133,13 @@ export const creditCardService = {
   },
 
   getPdfPassword(card: { pdfPasswordEncrypted: string }) {
-    return decryptSecret(card.pdfPasswordEncrypted);
+    const plain = tryDecryptSecret(card.pdfPasswordEncrypted);
+    if (plain === null) {
+      throw new Error(
+        `Cannot decrypt PDF password for card. Set the same ENCRYPTION_KEY used when the card was saved, or re-enter the password in the dashboard.`,
+      );
+    }
+    return plain;
   },
 
   /** Cards formatted for legacy SOA runner */

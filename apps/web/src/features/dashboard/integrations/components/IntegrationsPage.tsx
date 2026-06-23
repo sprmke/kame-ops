@@ -46,6 +46,16 @@ export function IntegrationsPage() {
     if (formConfigs.slack) {
       setSlackWebhook(formConfigs.slack.webhookUrl ?? "");
     }
+    if (formConfigs.secretsUnavailable.telegram) {
+      toast.error(
+        "Telegram settings could not be decrypted. Re-enter them and save, or sync ENCRYPTION_KEY.",
+      );
+    }
+    if (formConfigs.secretsUnavailable.slack) {
+      toast.error(
+        "Slack webhook could not be decrypted. Re-enter it and save, or sync ENCRYPTION_KEY.",
+      );
+    }
   }, [formConfigs]);
 
   const connected = new Set(integrations?.map((i) => i.provider) ?? []);
