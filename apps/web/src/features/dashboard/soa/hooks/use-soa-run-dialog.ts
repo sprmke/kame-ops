@@ -17,6 +17,39 @@ interface SoaRunPipelineResult {
   message?: string;
   warning?: string;
   parsedCount?: number;
+  diagnostics?: {
+    preflight: {
+      issuer: string;
+      last4: string;
+      decryptOk: boolean;
+      passwordLength: number;
+    }[];
+    runtime: {
+      encryptionKeyFingerprint: string;
+      encryptionKeyConfigured: boolean;
+      vercel: boolean;
+      bpiOcrEnabled: boolean;
+    };
+    parseErrors?: {
+      bankLabel: string;
+      fileName: string;
+      error: string;
+      passwordsTried: number;
+      issuerCardLast4s: string[];
+    }[];
+    parsedCount?: number;
+    downloadedPdfCount?: number;
+    parseFailures?: number;
+  };
+}
+
+function logSoaDiagnostics(result: SoaRunPipelineResult) {
+  if (!result.diagnostics) return;
+  console.info("[SOA diagnostics]", result.diagnostics);
+  const fp = result.diagnostics.runtime.encryptionKeyFingerprint;
+  console.info(
+    `[SOA] ENCRYPTION_KEY fingerprint on this server: ${fp} — compare with local devtools after a local run.`,
+  );
 }
 
 export interface UseSoaRunDialogOptions {
@@ -39,16 +72,20 @@ export function useSoaRunDialog(options: UseSoaRunDialogOptions = {}) {
       if (!result.ok) {
         setRunErrorMessage(result.message ?? "SOA run failed");
         setRunSettled("error");
-        toast.error(result.message ?? "SOA run failed");
+        logSoaDiagnostics(result);
+        toast.error(result.message ?? "SOA run failed", { duration: 15000 });
         return;
       }
 
       lastPeriodIdRef.current = result.periodId ?? null;
       setRunSettled("success");
+      logSoaDiagnostics(result);
       if (result.warning) {
-        toast.warning(result.warning);
+        toast.warning(result.warning, { duration: 20000 });
       } else if ((result.parsedCount ?? 1) === 0) {
-        toast.warning("SOA run finished with no parsed statements.");
+        toast.warning("SOA run finished with no parsed statements.", {
+          duration: 12000,
+        });
       } else {
         toast.success("SOA run complete");
       }

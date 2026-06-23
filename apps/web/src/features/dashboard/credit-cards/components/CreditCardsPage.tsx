@@ -1,44 +1,44 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { CreditCard, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
-import { toast } from "sonner";
+import { useEffect, useState } from 'react';
+import { CreditCard, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 
-import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
-import { DashboardPageHeader } from "@/components/shared/DashboardPageHeader";
-import { EmptyState } from "@/components/shared/EmptyState";
-import { ListViewToolbar } from "@/components/shared/ListViewToolbar";
-import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
-import { StatusBadge } from "@/components/shared/StatusBadge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { DashboardPageHeader } from '@/components/shared/DashboardPageHeader';
+import { EmptyState } from '@/components/shared/EmptyState';
+import { ListViewToolbar } from '@/components/shared/ListViewToolbar';
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { StatusBadge } from '@/components/shared/StatusBadge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { PasswordInput } from "@/components/ui/password-input";
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { PasswordInput } from '@/components/ui/password-input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { api } from "@/lib/api/client";
-import { useListPagination } from "@/lib/hooks/use-list-pagination";
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { api } from '@/lib/api/client';
+import { useListPagination } from '@/lib/hooks/use-list-pagination';
 import {
   BANK_ISSUERS,
   DEFAULT_CARD_COLORS,
@@ -53,17 +53,17 @@ import {
   REMINDER_INTERVALS,
   type BankIssuer,
   type ReminderIntervalMinutes,
-} from "@/lib/db/schema/credit-cards";
+} from '@/lib/db/schema/credit-cards';
 
 import {
   DEFAULT_REMINDER_WINDOW_DAYS,
   formatReminderSummary,
-} from "../lib/reminder-labels";
-import { CreditCardsTable } from "./CreditCardsTable";
-import { CardColorPicker } from "./CardColorPicker";
-import { usePersistedViewMode } from "@/hooks/use-persisted-view-mode";
-import { CardBankLabel } from "@/lib/credit-cards/CardBankLabel";
-import { resolveCardAccent } from "@/lib/credit-cards/card-accent";
+} from '../lib/reminder-labels';
+import { CreditCardsTable } from './CreditCardsTable';
+import { CardColorPicker } from './CardColorPicker';
+import { usePersistedViewMode } from '@/hooks/use-persisted-view-mode';
+import { CardBankLabel } from '@/lib/credit-cards/CardBankLabel';
+import { resolveCardAccent } from '@/lib/credit-cards/card-accent';
 
 const DEFAULT_WINDOW = DEFAULT_REMINDER_WINDOW_DAYS;
 
@@ -71,13 +71,13 @@ export function CreditCardsPage() {
   const utils = api.useUtils();
   const { data: cards, isLoading } = api.creditCards.list.useQuery();
   const { viewMode, setViewMode } = usePersistedViewMode(
-    "kame-ops:credit-cards-view-mode",
+    'kame-ops:credit-cards-view-mode',
   );
   const pagination = useListPagination(cards ?? [], 7);
 
   const create = api.creditCards.create.useMutation({
     onSuccess: () => {
-      toast.success("Card added");
+      toast.success('Card added');
       void utils.creditCards.list.invalidate();
       void utils.overview.stats.invalidate();
       setAddOpen(false);
@@ -88,7 +88,7 @@ export function CreditCardsPage() {
 
   const update = api.creditCards.update.useMutation({
     onSuccess: (_data, variables) => {
-      toast.success("Card updated");
+      toast.success('Card updated');
       void utils.creditCards.list.invalidate();
       void utils.creditCards.get.invalidate({ id: variables.id });
       setEditOpen(false);
@@ -98,7 +98,7 @@ export function CreditCardsPage() {
 
   const remove = api.creditCards.delete.useMutation({
     onSuccess: () => {
-      toast.success("Card removed");
+      toast.success('Card removed');
       void utils.creditCards.list.invalidate();
       void utils.overview.stats.invalidate();
     },
@@ -108,18 +108,18 @@ export function CreditCardsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [issuer, setIssuer] = useState<BankIssuer>("bpi");
-  const [last4, setLast4] = useState("");
-  const [label, setLabel] = useState("");
-  const [fullPan, setFullPan] = useState("");
-  const [contactLine, setContactLine] = useState("");
-  const [pdfPassword, setPdfPassword] = useState("");
-  const [gmailMonthOffset, setGmailMonthOffset] = useState("0");
-  const [reminderWindowDays, setReminderWindowDays] = useState("");
+  const [issuer, setIssuer] = useState<BankIssuer>('bpi');
+  const [last4, setLast4] = useState('');
+  const [label, setLabel] = useState('');
+  const [fullPan, setFullPan] = useState('');
+  const [contactLine, setContactLine] = useState('');
+  const [pdfPassword, setPdfPassword] = useState('');
+  const [gmailMonthOffset, setGmailMonthOffset] = useState('0');
+  const [reminderWindowDays, setReminderWindowDays] = useState('');
   const [reminderIntervalMinutes, setReminderIntervalMinutes] =
     useState<ReminderIntervalMinutes>(DEFAULT_REMINDER_INTERVAL_MINUTES);
-  const [notes, setNotes] = useState("");
-  const [soaSubject, setSoaSubject] = useState(defaultSoaSubject("bpi"));
+  const [notes, setNotes] = useState('');
+  const [soaSubject, setSoaSubject] = useState(defaultSoaSubject('bpi'));
   const [color, setColor] = useState(DEFAULT_CARD_COLORS.bpi);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [formPopulatedForId, setFormPopulatedForId] = useState<string | null>(
@@ -146,20 +146,20 @@ export function CreditCardsPage() {
     if (!editingCard || editingCard.id !== editingId) return;
     setIssuer(normalizeBankIssuer(editingCard.issuer));
     setLast4(editingCard.last4);
-    setLabel(editingCard.label ?? "");
-    setFullPan(editingCard.fullPan ?? "");
-    setContactLine(editingCard.contactLine ?? "");
+    setLabel(editingCard.label ?? '');
+    setFullPan(editingCard.fullPan ?? '');
+    setContactLine(editingCard.contactLine ?? '');
     setPdfPassword(editingCard.pdfPassword);
     setGmailMonthOffset(String(editingCard.gmailMonthOffset ?? 0));
     setReminderWindowDays(
       editingCard.reminderWindowDays != null
         ? String(editingCard.reminderWindowDays)
-        : "",
+        : '',
     );
     setReminderIntervalMinutes(
       normalizeReminderIntervalMinutes(editingCard.reminderIntervalMinutes),
     );
-    setNotes(editingCard.notes ?? "");
+    setNotes(editingCard.notes ?? '');
     setSoaSubject(
       normalizeSoaSubject(
         editingCard.soaSubject,
@@ -173,23 +173,23 @@ export function CreditCardsPage() {
       ) ?? DEFAULT_CARD_COLORS.bpi,
     );
     if (editingCard.secretsUnavailable) {
-      toast.error("PDF password could not be decrypted. Re-enter it and save.");
+      toast.error('PDF password could not be decrypted. Re-enter it and save.');
     }
     setFormPopulatedForId(editingId);
   }, [editingCard, editingId]);
 
   function resetForm() {
-    setIssuer("bpi");
-    setLast4("");
-    setLabel("");
-    setFullPan("");
-    setContactLine("");
-    setPdfPassword("");
-    setGmailMonthOffset("0");
-    setReminderWindowDays("");
+    setIssuer('bpi');
+    setLast4('');
+    setLabel('');
+    setFullPan('');
+    setContactLine('');
+    setPdfPassword('');
+    setGmailMonthOffset('0');
+    setReminderWindowDays('');
     setReminderIntervalMinutes(DEFAULT_REMINDER_INTERVAL_MINUTES);
-    setNotes("");
-    setSoaSubject(defaultSoaSubject("bpi"));
+    setNotes('');
+    setSoaSubject(defaultSoaSubject('bpi'));
     setColor(DEFAULT_CARD_COLORS.bpi);
   }
 
@@ -301,7 +301,7 @@ export function CreditCardsPage() {
             viewMode={viewMode}
             onViewModeChange={setViewMode}
           />
-          {viewMode === "table" ? (
+          {viewMode === 'table' ? (
             <CreditCardsTable
               cards={pagination.items}
               onEdit={(card) => openEdit(card.id)}
@@ -335,8 +335,8 @@ export function CreditCardsPage() {
                               color={card.color}
                             />
                             <StatusBadge
-                              label={card.isActive ? "Active" : "Inactive"}
-                              variant={card.isActive ? "success" : "muted"}
+                              label={card.isActive ? 'Active' : 'Inactive'}
+                              variant={card.isActive ? 'success' : 'muted'}
                             />
                           </div>
                         </div>
@@ -388,7 +388,7 @@ export function CreditCardsPage() {
                           <p className="font-medium">
                             {REMINDER_INTERVALS.find(
                               (i) => i.value === card.reminderIntervalMinutes,
-                            )?.label ?? "Once per day"}
+                            )?.label ?? 'Once per day'}
                           </p>
                         </div>
                       </div>

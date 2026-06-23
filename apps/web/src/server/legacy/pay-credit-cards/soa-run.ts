@@ -267,6 +267,8 @@ export type SoaParseError = {
   bankLabel: string;
   fileName: string;
   error: string;
+  passwordsTried: number;
+  issuerCardLast4s: string[];
 };
 
 export type SoaSingleMonthResult = {
@@ -550,14 +552,27 @@ export async function runSoaSingleMonth(options: {
     } catch (e) {
       parseFailures++;
       const message = errMsg(e);
-      parseErrors.push({
+      const detail: SoaParseError = {
         bankId: item.bankId,
         bankLabel: item.bankLabel,
         fileName: item.fileName,
         error: message,
-      });
+        passwordsTried: pws.length,
+        issuerCardLast4s: pws.map((c) => c.last4),
+      };
+      parseErrors.push(detail);
+      try {
+        const { soaDiagnosticsService } =
+          await import("@/server/services/soa-diagnostics.service");
+        soaDiagnosticsService.logPdfUnlockFailed(detail);
+      } catch {
+        /* ignore logging import errors */
+      }
       log.error(`Failed to open / read PDF`);
       log.detail(message);
+      log.detail(
+        `Tried ${pws.length} password(s) for ${item.bankLabel} (•••• ${pws.map((c) => c.last4).join(", •••• ")})`,
+      );
     }
   }
 

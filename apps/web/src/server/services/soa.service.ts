@@ -1,30 +1,34 @@
-import { desc, eq, inArray, and } from 'drizzle-orm';
-import { access, readFile } from 'fs/promises';
-import { basename } from 'path';
+import { desc, eq, inArray, and } from "drizzle-orm";
+import { access, readFile } from "fs/promises";
+import { basename } from "path";
 
-import { db } from '@/lib/db';
-import { soaPeriods, soaStatements } from '@/lib/db/schema';
-import { creditCardService } from './credit-card.service';
-import { dueSyncService } from './due-sync.service';
-import { gmailService } from './gmail.service';
-import { integrationService } from './integration.service';
-import { prepareLegacyRuntime } from './legacy-runtime.service';
+import { db } from "@/lib/db";
+import { soaPeriods, soaStatements } from "@/lib/db/schema";
+import { creditCardService } from "./credit-card.service";
+import { dueSyncService } from "./due-sync.service";
+import { gmailService } from "./gmail.service";
+import { integrationService } from "./integration.service";
+import { prepareLegacyRuntime } from "./legacy-runtime.service";
 import {
   soaPeriodService,
   isMultiMonthPeriod,
   type SoaPeriodMode,
-} from './soa-period.service';
-import { soaPersistService } from './soa-persist.service';
+} from "./soa-period.service";
+import { soaPersistService } from "./soa-persist.service";
 import {
   resolveDownloadedPdfPath,
   resolveMonthlySummaryPdfPath,
   resolveRangeSummaryPdfPath,
-} from './soa-pdf-path';
+} from "./soa-pdf-path";
 import {
   decryptPdfWithCredentials,
   UNLOCKED_PDF_PREFIX,
-} from './pdf-unlock.service';
-import { storageService } from './storage.service';
+} from "./pdf-unlock.service";
+import { storageService } from "./storage.service";
+import {
+  soaDiagnosticsService,
+  type SoaParseFailureDetail,
+} from "./soa-diagnostics.service";
 
 export type RunSoaPipelineInput = {
   mode: SoaPeriodMode;
@@ -43,7 +47,7 @@ export function defaultRunSoaInput(): RunSoaPipelineInput {
   const month = now.getMonth() + 1;
   const year = now.getFullYear();
   return {
-    mode: 'single',
+    mode: "single",
     fromMonth: month,
     fromYear: year,
     toMonth: month,
@@ -68,9 +72,9 @@ type SoaMonthResult = {
   year: number;
   rows: Awaited<
     ReturnType<
-      typeof import('@/server/legacy/pay-credit-cards/soa-run').runSoaSingleMonth
+      typeof import("@/server/legacy/pay-credit-cards/soa-run").runSoaSingleMonth
     >
-  >['rows'];
+  >["rows"];
   summaryPath: string;
   gmailSearches: SoaGmailSearchLog[];
 };
@@ -81,7 +85,7 @@ function buildSoaGmailWarning(options: {
   parseFailures: number;
   downloadedPdfCount: number;
   gmailSearches: SoaGmailSearchLog[];
-  parseErrors: { bankLabel: string; fileName: string; error: string }[];
+  parseErrors: SoaParseFailureDetail[];
   mailboxEmail: string | null;
   connectedEmail: string | null;
   hasGmailReadScope: boolean;
@@ -98,11 +102,20 @@ function buildSoaGmailWarning(options: {
     hasGmailReadScope,
   } = options;
 
-  if (parsedCount > 0) return undefined;
+  const parseWarning = soaDiagnosticsService.formatParseFailureWarning({
+    parsedCount,
+    downloadedPdfCount,
+    parseFailures,
+    parseErrors,
+  });
+
+  if (parsedCount > 0) {
+    return parseWarning;
+  }
 
   const totalMessages = gmailSearches.reduce((n, s) => n + s.messageCount, 0);
   const totalPdfs = gmailSearches.reduce((n, s) => n + s.pdfCount, 0);
-  const mailbox = mailboxEmail ?? 'unknown mailbox';
+  const mailbox = mailboxEmail ?? "unknown mailbox";
 
   if (!hasGmailReadScope) {
     return `Gmail token for ${mailbox} is missing gmail.readonly scope. Sign out and sign in again with Google on this environment.`;
@@ -116,18 +129,12 @@ function buildSoaGmailWarning(options: {
     return `Gmail OAuth reads ${mailbox} but Integrations shows ${connectedEmail}. Sign in again on this site to reconnect the correct account.`;
   }
 
+  if (parseWarning) return parseWarning;
+
   if (totalMessages === 0) {
     const sample = gmailSearches[0]?.query;
-    const queryHint = sample ? ` Sample query: ${sample}` : '';
+    const queryHint = sample ? ` Sample query: ${sample}` : "";
     return `Gmail (${mailbox}) returned 0 messages for your cards this period.${queryHint} If SOAs exist in another inbox, reconnect Google here.`;
-  }
-
-  if (downloadedPdfCount > 0 && parseFailures > 0) {
-    const detail = parseErrors[0];
-    const suffix = detail
-      ? ` (${detail.bankLabel}: ${detail.error.slice(0, 120)})`
-      : '';
-    return `Downloaded ${downloadedPdfCount} SOA PDF(s) but could not unlock or parse any.${suffix} Re-enter PDF passwords in Credit Cards.`;
   }
 
   if (totalPdfs === 0 && unavailable > 0) {
@@ -142,32 +149,32 @@ function buildSoaGmailWarning(options: {
     return `Gmail (${mailbox}) found ${totalMessages} message(s) but no PDF attachments for your cards this period.`;
   }
 
-  return 'No statement PDFs parsed for this period. Try Gmail month offset −1 on cards if SOAs arrive early.';
+  return "No statement PDFs parsed for this period. Try Gmail month offset −1 on cards if SOAs arrive early.";
 }
 
 async function runSoaDetailedInService(input: RunSoaPipelineInput): Promise<{
   months: SoaMonthResult[];
-  allRows: SoaMonthResult['rows'];
+  allRows: SoaMonthResult["rows"];
   notifyPdfPath: string;
   gmailSearches: SoaGmailSearchLog[];
   parseFailures: number;
   downloadedPdfCount: number;
-  parseErrors: { bankLabel: string; fileName: string; error: string }[];
+  parseErrors: SoaParseFailureDetail[];
 }> {
   const { runSoaSingleMonth } =
-    await import('@/server/legacy/pay-credit-cards/soa-run');
+    await import("@/server/legacy/pay-credit-cards/soa-run");
   const { writeSummaryPdf, writeRangeSummaryPdf } =
-    await import('@/server/legacy/pay-credit-cards/summary-pdf');
+    await import("@/server/legacy/pay-credit-cards/summary-pdf");
   const { enumerateMonthsInclusive, lastNMonthsEndingAt } =
-    await import('@/server/legacy/pay-credit-cards/month');
+    await import("@/server/legacy/pay-credit-cards/month");
   const { upsertDuesFromSoaRows } =
-    await import('@/server/legacy/pay-credit-cards/due-reminders-state');
+    await import("@/server/legacy/pay-credit-cards/due-reminders-state");
   const { ensureDirs } =
-    await import('@/server/legacy/pay-credit-cards/config');
-  const path = await import('node:path');
-  const fs = await import('node:fs');
+    await import("@/server/legacy/pay-credit-cards/config");
+  const path = await import("node:path");
+  const fs = await import("node:fs");
 
-  if (input.mode === 'single') {
+  if (input.mode === "single") {
     const month = String(input.fromMonth);
     const year = String(input.fromYear);
     const r = await runSoaSingleMonth({ month, year, skipBanner: true });
@@ -214,12 +221,11 @@ async function runSoaDetailedInService(input: RunSoaPipelineInput): Promise<{
   const rangeParts: {
     periodLabel: string;
     periodKey: string;
-    rows: SoaMonthResult['rows'];
+    rows: SoaMonthResult["rows"];
   }[] = [];
   let parseFailures = 0;
   let downloadedPdfCount = 0;
-  const parseErrors: { bankLabel: string; fileName: string; error: string }[] =
-    [];
+  const parseErrors: SoaParseFailureDetail[] = [];
 
   for (const g of contexts) {
     const month = String(g.monthIndex0 + 1);
@@ -286,7 +292,7 @@ async function persistRunPdfs(
 ) {
   for (const monthResult of detailed.months) {
     for (const row of monthResult.rows) {
-      if (!row.pdfFileName || row.pdfFileName === '—' || row.soaUnavailable) {
+      if (!row.pdfFileName || row.pdfFileName === "—" || row.soaUnavailable) {
         continue;
       }
 
@@ -304,8 +310,8 @@ async function persistRunPdfs(
         userId,
         diskName,
         buffer,
-        'application/pdf',
-        'soa',
+        "application/pdf",
+        "soa",
       );
 
       await db
@@ -333,8 +339,8 @@ async function persistRunPdfs(
       userId,
       basename(detailed.notifyPdfPath),
       buffer,
-      'application/pdf',
-      'soa',
+      "application/pdf",
+      "soa",
     );
     await db
       .update(soaPeriods)
@@ -356,10 +362,33 @@ export const soaService = {
   },
 
   async runSoaPipeline(userId: string, input: RunSoaPipelineInput) {
-    const cards = await creditCardService.listForLegacy(userId);
-    if (!cards.length) {
-      return { ok: false as const, message: 'No credit cards configured' };
+    const preflight = await soaDiagnosticsService.checkCards(userId);
+    if (!preflight.length) {
+      return { ok: false as const, message: "No credit cards configured" };
     }
+
+    const preflightError =
+      soaDiagnosticsService.formatPreflightFailure(preflight);
+    const runtimeHints = soaDiagnosticsService.runtimeHints();
+    if (preflightError) {
+      soaDiagnosticsService.logRunBlocked(userId, preflightError, preflight);
+      return {
+        ok: false as const,
+        message: preflightError,
+        diagnostics: { preflight, runtime: runtimeHints },
+      };
+    }
+
+    const periodLabel =
+      input.mode === "single"
+        ? `${input.fromMonth}/${input.fromYear}`
+        : `${input.fromMonth}/${input.fromYear}–${input.toMonth}/${input.toYear}`;
+    soaDiagnosticsService.logRunStart(
+      userId,
+      periodLabel,
+      preflight,
+      runtimeHints,
+    );
 
     const workDir = await prepareLegacyRuntime(userId);
 
@@ -374,7 +403,7 @@ export const soaService = {
 
     const gmailIntegration = await integrationService.getConfig<{
       email?: string;
-    }>(userId, 'gmail');
+    }>(userId, "gmail");
 
     const period = await soaPeriodService.upsertPeriod(userId, {
       mode: input.mode,
@@ -394,13 +423,13 @@ export const soaService = {
     if (input.notifyTelegram || input.notifySlack) {
       try {
         const { notifySummaryPdf } =
-          await import('@/server/legacy/pay-credit-cards/notify');
+          await import("@/server/legacy/pay-credit-cards/notify");
         const { isNotifyConfigured } =
-          await import('@/server/legacy/pay-credit-cards/config');
+          await import("@/server/legacy/pay-credit-cards/config");
         if (isNotifyConfigured()) {
           const result = await notifySummaryPdf(
             detailed.notifyPdfPath,
-            'SOA summary (automated)',
+            "SOA summary (automated)",
             {
               telegram: input.notifyTelegram,
               slack: input.notifySlack,
@@ -422,9 +451,9 @@ export const soaService = {
     if (input.createCalendar) {
       try {
         const { createDueDateCalendarEvents } =
-          await import('@/server/legacy/pay-credit-cards/google-calendar');
+          await import("@/server/legacy/pay-credit-cards/google-calendar");
         const { calendarConfig } =
-          await import('@/server/legacy/pay-credit-cards/config');
+          await import("@/server/legacy/pay-credit-cards/config");
         const calResult = await createDueDateCalendarEvents(
           detailed.allRows,
           calendarConfig.calendarId,
@@ -466,7 +495,7 @@ export const soaService = {
 
     const statementCount = saved + updated;
     const parsedCount = detailed.allRows.filter(
-      (row) => !row.soaUnavailable && row.cardLast4 !== '—',
+      (row) => !row.soaUnavailable && row.cardLast4 !== "—",
     ).length;
 
     const warning = buildSoaGmailWarning({
@@ -481,6 +510,30 @@ export const soaService = {
       hasGmailReadScope: gmailMailbox?.hasGmailReadScope ?? true,
     });
 
+    const diagnostics = {
+      preflight,
+      runtime: runtimeHints,
+      parsedCount,
+      downloadedPdfCount: detailed.downloadedPdfCount,
+      parseFailures: detailed.parseFailures,
+      parseErrors: detailed.parseErrors.map((e) => ({
+        bankLabel: e.bankLabel,
+        fileName: e.fileName,
+        error: e.error,
+        passwordsTried: e.passwordsTried,
+        issuerCardLast4s: e.issuerCardLast4s,
+      })),
+      unavailableCount: unavailable,
+      statementCount,
+    };
+
+    soaDiagnosticsService.logRunEnd({
+      userId,
+      periodId: period.id,
+      ...diagnostics,
+      warning: warning ?? null,
+    });
+
     return {
       ok: true as const,
       periodId: period.id,
@@ -489,6 +542,7 @@ export const soaService = {
       parsedCount,
       unavailableCount: unavailable,
       warning,
+      diagnostics,
       gmailMailbox: gmailMailbox
         ? {
             email: gmailMailbox.email,
@@ -553,7 +607,7 @@ export const soaService = {
         eq(soaStatements.id, statementId),
       ),
     });
-    if (!stmt?.pdfFileName || stmt.pdfFileName === '—') return null;
+    if (!stmt?.pdfFileName || stmt.pdfFileName === "—") return null;
 
     const filePath = await this.resolveStatementPdfPath(userId, statementId);
     if (!filePath) return null;
@@ -600,7 +654,7 @@ export const soaService = {
         eq(soaStatements.id, statementId),
       ),
     });
-    if (!stmt?.pdfFileName || stmt.pdfFileName === '—') return null;
+    if (!stmt?.pdfFileName || stmt.pdfFileName === "—") return null;
 
     if (stmt.pdfStoragePath) {
       try {
@@ -631,7 +685,7 @@ export const soaService = {
     },
   ): Promise<string | null> {
     if (
-      period?.mode === 'range' &&
+      period?.mode === "range" &&
       (period.fromMonth !== period.toMonth || period.fromYear !== period.toYear)
     ) {
       const rangePath = await resolveRangeSummaryPdfPath(
