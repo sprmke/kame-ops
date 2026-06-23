@@ -11,6 +11,12 @@ const nextConfig: NextConfig = {
     "pdf-to-img",
     "@neslinesli93/qpdf-wasm",
   ],
+  outputFileTracingIncludes: {
+    "/api/trpc/[trpc]": [
+      "./src/server/legacy/pay-credit-cards/vendor/pdf.worker.mjs",
+      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+    ],
+  },
   experimental: {
     serverActions: { bodySizeLimit: "10mb" },
   },

@@ -56,11 +56,16 @@ export function sanitizeSoaParseError(error: string): string {
 }
 
 function formatFailureLine(f: SoaParseFailureDetail): string {
+  const sanitized = sanitizeSoaParseError(f.error);
+  const isWorkerError = /pdf\.worker|fake worker failed/i.test(f.error);
   const cards =
     f.issuerCardLast4s.length > 0
       ? ` (tried •••• ${f.issuerCardLast4s.join(", •••• ")})`
       : "";
-  return `${f.bankLabel} · ${f.fileName}: ${sanitizeSoaParseError(f.error)}${cards}`;
+  if (isWorkerError) {
+    return `${f.bankLabel} · ${f.fileName}: PDF engine failed to start on server (pdf.worker missing). Redeploy after latest fix — not a password issue.${cards}`;
+  }
+  return `${f.bankLabel} · ${f.fileName}: ${sanitized}${cards}`;
 }
 
 export const soaDiagnosticsService = {

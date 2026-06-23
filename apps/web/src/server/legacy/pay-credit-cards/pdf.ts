@@ -2,7 +2,10 @@
 import fs from "node:fs";
 import "./pdf-node-polyfill";
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
+import { configurePdfJsWorker } from "./pdf-worker-setup";
 import type { CardCredential } from "./types";
+
+configurePdfJsWorker(pdfjs);
 
 export type UnlockResult = {
   password: string;
