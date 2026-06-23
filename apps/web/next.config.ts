@@ -15,9 +15,12 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/trpc/[trpc]": [
       "./src/server/legacy/pay-credit-cards/vendor/pdf.worker.mjs",
+      "./src/server/legacy/pay-credit-cards/vendor/qpdf.wasm",
+      "./node_modules/@napi-rs/canvas-linux-x64-gnu/**/*",
     ],
     "/api/soa/pdf": [
       "./src/server/legacy/pay-credit-cards/vendor/pdf.worker.mjs",
+      "./src/server/legacy/pay-credit-cards/vendor/qpdf.wasm",
     ],
   },
   experimental: {
