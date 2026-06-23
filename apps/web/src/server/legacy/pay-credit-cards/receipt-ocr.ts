@@ -210,11 +210,11 @@ function tryPickCardLast4InExcerpt(
 ): string | undefined {
   // ── 1) Label-based: find a card-number label then grab the 16 digits after it.
   //       Covers:
-  //         "16 Digit Acct No. / Card No.   5464985181357732"  (GCash → Metrobank)
-  //         "Credit Card Number   4311701734677015"             (GCash → RCBC)
-  //         "Customer Number / Card Number  418898490606060018" (GCash → BPI)
-  //         "Card No. 5464985181357732"                         (generic)
-  //         "Acct. No.: 4157640049092600"                       (MariBank instaPay → UB / P2P)
+  //         "16 Digit Acct No. / Card No.   4111111111111111"  (GCash → Metrobank)
+  //         "Credit Card Number   4012888888881881"             (GCash → RCBC)
+  //         "Customer Number / Card Number  4222222222222222" (GCash → BPI)
+  //         "Card No. 4111111111111111"                         (generic)
+  //         "Acct. No.: 4333333333333333"                       (MariBank instaPay → UB / P2P)
   //       "acct(?:ount)?\\.?" allows "Acct." before "No."
   const LABEL_RE =
     /\b(?:16[\s-]*digit\s+acct(?:ount)?\s*(?:no\.?|number)?\s*(?:[/\\]\s*card\s*(?:no\.?|number)?)?|customer\s+(?:no\.?|number|#)?\s*\/?\s*card\s*(?:no\.?|number)?|credit\s+card\s*(?:no\.?|number)?|card\s*(?:no\.?|number|#)?|acct(?:ount)?\.?\s*(?:no\.?|number|#)?)\s*:?\s*([\d][\d\s-]{13,21}[\d])/i;
@@ -226,8 +226,8 @@ function tryPickCardLast4InExcerpt(
 
   // ── 2) Unlabeled full card number: any contiguous span (digits + spaces/dashes)
   //       that strips to exactly 16 digits.
-  //       Catches "4157640049092600", "5464 9851 8135 7732",
-  //       and split OCR like "415764004909 2600".
+  //       Catches "4333333333333333", "4111 1111 1111 1111",
+  //       and split OCR like "411111111111 1111".
   const SPAN_RE = /\b\d[\d\s-]{13,20}\d\b/g;
   for (const m of excerpt.matchAll(SPAN_RE)) {
     const digits = m[0].replace(/\D/g, "");

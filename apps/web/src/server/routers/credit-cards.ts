@@ -7,6 +7,12 @@ import { creditCardService } from "@/server/services/credit-card.service";
 
 const bankIssuerSchema = z.enum(["metrobank", "rcbc", "bpi", "unionbank"]);
 
+const reminderFieldsSchema = {
+  reminderWindowDays: z.number().int().min(0).max(60).optional().nullable(),
+  reminderIntervalMinutes: z.number().int().min(60).max(1440).optional(),
+  notes: z.string().optional(),
+};
+
 export const creditCardsRouter = router({
   list: protectedProcedure.query(({ ctx }) =>
     creditCardService.list(ctx.user.id),
@@ -32,6 +38,7 @@ export const creditCardsRouter = router({
         contactLine: z.string().optional(),
         pdfPassword: z.string().min(1),
         gmailMonthOffset: z.number().int().optional(),
+        ...reminderFieldsSchema,
       }),
     )
     .mutation(({ ctx, input }) => creditCardService.create(ctx.user.id, input)),
@@ -48,6 +55,7 @@ export const creditCardsRouter = router({
         pdfPassword: z.string().min(1).optional(),
         gmailMonthOffset: z.number().int().optional(),
         isActive: z.boolean().optional(),
+        ...reminderFieldsSchema,
       }),
     )
     .mutation(({ ctx, input }) => {

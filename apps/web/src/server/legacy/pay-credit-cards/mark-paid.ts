@@ -162,7 +162,7 @@ export type MarkPaidResult =
 /**
  * Mark the specified card+month as paid and run the side-effect workflow.
  *
- * @param cardLast4 Last 4 digits of the credit card (e.g. "0018")
+ * @param cardLast4 Last 4 digits of the credit card (e.g. "1234")
  * @param monthYM   Due-date month in YYYY-MM format (e.g. "2026-04")
  * @param skipCalendar Set true to skip Google Calendar updates (e.g. no credentials)
  */
@@ -622,7 +622,7 @@ export type MarkUnpaidResult =
 /**
  * Reverse a mark-as-paid for the specified card + month.
  *
- * @param cardLast4   Last 4 digits of the credit card (e.g. "0018")
+ * @param cardLast4   Last 4 digits of the credit card (e.g. "1234")
  * @param monthYM     Due-date month in YYYY-MM format (e.g. "2026-04")
  * @param skipCalendar Set true to skip Google Calendar updates
  */
