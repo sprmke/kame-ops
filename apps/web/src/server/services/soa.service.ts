@@ -370,6 +370,16 @@ export const soaService = {
     const preflightError =
       soaDiagnosticsService.formatPreflightFailure(preflight);
     const runtimeHints = soaDiagnosticsService.runtimeHints();
+    const pdfWorkerError =
+      soaDiagnosticsService.formatPdfWorkerFailure(runtimeHints);
+    if (pdfWorkerError) {
+      soaDiagnosticsService.logRunBlocked(userId, pdfWorkerError, preflight);
+      return {
+        ok: false as const,
+        message: pdfWorkerError,
+        diagnostics: { preflight, runtime: runtimeHints },
+      };
+    }
     if (preflightError) {
       soaDiagnosticsService.logRunBlocked(userId, preflightError, preflight);
       return {

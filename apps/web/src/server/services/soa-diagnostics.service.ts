@@ -8,6 +8,7 @@ import { env } from "@/env";
 import { db } from "@/lib/db";
 import { creditCards } from "@/lib/db/schema";
 import { tryDecryptSecret } from "@/lib/utils/encryption";
+import { getPdfWorkerDiagnostics } from "@/server/legacy/pay-credit-cards/pdf-worker-setup";
 
 export type SoaCardPreflight = {
   issuer: string;
@@ -28,6 +29,8 @@ export type SoaRuntimeHints = {
   authUrl: string | null;
   appUrl: string;
   authUrlMatchesApp: boolean;
+  pdfWorkerOk: boolean;
+  pdfWorkerPath: string | null;
 };
 
 export type SoaParseFailureDetail = {
@@ -92,6 +95,7 @@ export const soaDiagnosticsService = {
   runtimeHints(): SoaRuntimeHints {
     const appUrl = env.NEXT_PUBLIC_APP_URL;
     const authUrl = env.AUTH_URL ?? null;
+    const pdfWorker = getPdfWorkerDiagnostics();
     return {
       nodeEnv: env.NODE_ENV,
       vercel: !!process.env.VERCEL,
@@ -102,6 +106,8 @@ export const soaDiagnosticsService = {
       appUrl,
       authUrlMatchesApp:
         !authUrl || authUrl.replace(/\/$/, "") === appUrl.replace(/\/$/, ""),
+      pdfWorkerOk: pdfWorker.ok,
+      pdfWorkerPath: pdfWorker.ok ? pdfWorker.workerPath : null,
     };
   },
 
@@ -111,6 +117,11 @@ export const soaDiagnosticsService = {
 
     const list = bad.map((c) => `${c.issuer} •••• ${c.last4}`).join(", ");
     return `Cannot decrypt PDF password for: ${list}. ENCRYPTION_KEY on this server must match when passwords were saved. Fix ENCRYPTION_KEY in Vercel (or re-enter each PDF password in Credit Cards). Key fingerprint: ${encryptionKeyFingerprint()}.`;
+  },
+
+  formatPdfWorkerFailure(hints: SoaRuntimeHints): string | null {
+    if (hints.pdfWorkerOk) return null;
+    return `PDF engine not available on server (pdf.worker.mjs missing from deployment). Redeploy latest build; check Vercel log for "Copied pdf.worker.mjs". cwd=${process.cwd()}`;
   },
 
   formatParseFailureWarning(options: {
@@ -129,12 +140,17 @@ export const soaDiagnosticsService = {
       parseErrors.length > 4
         ? ` (+${parseErrors.length - 4} more — see Vercel function logs [soa])`
         : "";
+    const allWorkerErrors = parseErrors.every((e) =>
+      /pdf\.worker|fake worker failed/i.test(e.error),
+    );
 
     if (parsedCount === 0) {
       return [
         `Downloaded ${downloadedPdfCount} SOA PDF(s) but unlocked 0.`,
         ...lines,
-        "Re-enter PDF passwords in Credit Cards (Edit → Save). Compare ENCRYPTION_KEY fingerprint in Vercel logs with local.",
+        allWorkerErrors
+          ? "PDF engine misconfigured on server — redeploy latest build (not a password issue)."
+          : "Re-enter PDF passwords in Credit Cards (Edit → Save). Compare ENCRYPTION_KEY fingerprint in Vercel logs with local.",
         more,
       ]
         .filter(Boolean)
