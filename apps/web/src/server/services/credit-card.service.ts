@@ -6,7 +6,8 @@ import {
   BANK_ISSUERS,
   creditCards,
   normalizeCardColor,
-  normalizeSoaSubject,
+  soaSubjectForStorage,
+  effectiveSoaSubject,
   type BankIssuer,
 } from "@/lib/db/schema";
 import { encryptSecret, tryDecryptSecret } from "@/lib/utils/encryption";
@@ -89,7 +90,7 @@ export const creditCardService = {
         contactLine: data.contactLine,
         pdfPasswordEncrypted: encryptSecret(data.pdfPassword),
         gmailMonthOffset: data.gmailMonthOffset ?? 0,
-        soaSubject: normalizeSoaSubject(data.soaSubject, data.issuer),
+        soaSubject: soaSubjectForStorage(data.soaSubject, data.issuer),
         color: normalizeCardColor(data.color, data.issuer),
         reminderWindowDays: data.reminderWindowDays ?? null,
         reminderIntervalMinutes: data.reminderIntervalMinutes ?? 1440,
@@ -125,7 +126,7 @@ export const creditCardService = {
         gmailMonthOffset: input.gmailMonthOffset,
         soaSubject:
           input.soaSubject !== undefined
-            ? normalizeSoaSubject(
+            ? soaSubjectForStorage(
                 input.soaSubject,
                 (input.issuer ?? existing.issuer) as BankIssuer,
               )
@@ -184,7 +185,7 @@ export const creditCardService = {
       contactLine: c.contactLine ?? undefined,
       password: this.getPdfPassword(c),
       gmailMonthOffset: c.gmailMonthOffset ?? 0,
-      soaSubject: c.soaSubject ?? undefined,
+      soaSubject: effectiveSoaSubject(c.soaSubject, c.issuer as BankIssuer),
       color: c.color ?? undefined,
       reminderWindowDays: c.reminderWindowDays ?? undefined,
       reminderIntervalMinutes: c.reminderIntervalMinutes ?? 1440,

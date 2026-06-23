@@ -78,7 +78,10 @@ type SoaMonthResult = {
 function buildSoaGmailWarning(options: {
   parsedCount: number;
   unavailable: number;
+  parseFailures: number;
+  downloadedPdfCount: number;
   gmailSearches: SoaGmailSearchLog[];
+  parseErrors: { bankLabel: string; fileName: string; error: string }[];
   mailboxEmail: string | null;
   connectedEmail: string | null;
   hasGmailReadScope: boolean;
@@ -86,7 +89,10 @@ function buildSoaGmailWarning(options: {
   const {
     parsedCount,
     unavailable,
+    parseFailures,
+    downloadedPdfCount,
     gmailSearches,
+    parseErrors,
     mailboxEmail,
     connectedEmail,
     hasGmailReadScope,
@@ -113,18 +119,30 @@ function buildSoaGmailWarning(options: {
   if (totalMessages === 0) {
     const sample = gmailSearches[0]?.query;
     const queryHint = sample ? ` Sample query: ${sample}` : "";
-    return `Gmail (${mailbox}) returned 0 messages for this period.${queryHint} If SOAs exist in another inbox, reconnect Google here.`;
+    return `Gmail (${mailbox}) returned 0 messages for your cards this period.${queryHint} If SOAs exist in another inbox, reconnect Google here.`;
   }
 
-  if (totalPdfs === 0) {
-    return `Gmail (${mailbox}) found ${totalMessages} message(s) but no PDF attachments for this period.`;
+  if (downloadedPdfCount > 0 && parseFailures > 0) {
+    const detail = parseErrors[0];
+    const suffix = detail
+      ? ` (${detail.bankLabel}: ${detail.error.slice(0, 120)})`
+      : "";
+    return `Downloaded ${downloadedPdfCount} SOA PDF(s) but could not unlock or parse any.${suffix} Re-enter PDF passwords in Credit Cards.`;
+  }
+
+  if (totalPdfs === 0 && unavailable > 0) {
+    return `No SOA emails found for your cards this period; ${unavailable} card(s) marked unavailable. Check SOA subject and Gmail month offset on each card.`;
   }
 
   if (unavailable > 0) {
-    return `Gmail had PDFs but none parsed for this period; ${unavailable} card(s) marked unavailable. Check card passwords in Credit Cards.`;
+    return `${unavailable} card(s) marked unavailable — no matching SOA email in Gmail for this period. Try Gmail month offset −1 or set a custom SOA subject on the card.`;
   }
 
-  return "No statement PDFs found in Gmail for this period. Try gmailMonthOffset −1 on cards if SOAs arrive early.";
+  if (totalPdfs === 0) {
+    return `Gmail (${mailbox}) found ${totalMessages} message(s) but no PDF attachments for your cards this period.`;
+  }
+
+  return "No statement PDFs parsed for this period. Try Gmail month offset −1 on cards if SOAs arrive early.";
 }
 
 async function runSoaDetailedInService(input: RunSoaPipelineInput): Promise<{
@@ -132,6 +150,9 @@ async function runSoaDetailedInService(input: RunSoaPipelineInput): Promise<{
   allRows: SoaMonthResult["rows"];
   notifyPdfPath: string;
   gmailSearches: SoaGmailSearchLog[];
+  parseFailures: number;
+  downloadedPdfCount: number;
+  parseErrors: { bankLabel: string; fileName: string; error: string }[];
 }> {
   const { runSoaSingleMonth } =
     await import("@/server/legacy/pay-credit-cards/soa-run");
@@ -166,6 +187,9 @@ async function runSoaDetailedInService(input: RunSoaPipelineInput): Promise<{
       allRows: r.rows,
       notifyPdfPath: r.summaryPath,
       gmailSearches: r.gmailSearches,
+      parseFailures: r.parseFailures,
+      downloadedPdfCount: r.downloadedPdfCount,
+      parseErrors: r.parseErrors,
     };
   }
 
@@ -192,6 +216,10 @@ async function runSoaDetailedInService(input: RunSoaPipelineInput): Promise<{
     periodKey: string;
     rows: SoaMonthResult["rows"];
   }[] = [];
+  let parseFailures = 0;
+  let downloadedPdfCount = 0;
+  const parseErrors: { bankLabel: string; fileName: string; error: string }[] =
+    [];
 
   for (const g of contexts) {
     const month = String(g.monthIndex0 + 1);
@@ -199,6 +227,9 @@ async function runSoaDetailedInService(input: RunSoaPipelineInput): Promise<{
     const r = await runSoaSingleMonth({ month, year, skipBanner: true });
     const title = `${g.monthLong} ${g.year}`;
     await writeSummaryPdf(r.rows, r.summaryPath, title, title);
+    parseFailures += r.parseFailures;
+    downloadedPdfCount += r.downloadedPdfCount;
+    parseErrors.push(...r.parseErrors);
     months.push({
       month: g.monthIndex0 + 1,
       year: g.year,
@@ -233,7 +264,15 @@ async function runSoaDetailedInService(input: RunSoaPipelineInput): Promise<{
 
   const gmailSearches = months.flatMap((m) => m.gmailSearches);
 
-  return { months, allRows, notifyPdfPath: rangePdfPath, gmailSearches };
+  return {
+    months,
+    allRows,
+    notifyPdfPath: rangePdfPath,
+    gmailSearches,
+    parseFailures,
+    downloadedPdfCount,
+    parseErrors,
+  };
 }
 
 async function persistRunPdfs(
@@ -433,6 +472,9 @@ export const soaService = {
     const warning = buildSoaGmailWarning({
       parsedCount,
       unavailable,
+      parseFailures: detailed.parseFailures,
+      downloadedPdfCount: detailed.downloadedPdfCount,
+      parseErrors: detailed.parseErrors,
       gmailSearches: detailed.gmailSearches,
       mailboxEmail: gmailMailbox?.email ?? null,
       connectedEmail: gmailIntegration?.email ?? null,

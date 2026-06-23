@@ -85,6 +85,26 @@ export function normalizeSoaSubject(
   return trimmed || DEFAULT_SOA_SUBJECTS[issuer];
 }
 
+/** Null/blank or bank default → use legacy bank.buildQuery (matches CLI). Custom only when user overrides. */
+export function effectiveSoaSubject(
+  value: string | null | undefined,
+  issuer: BankIssuer,
+): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  if (trimmed === DEFAULT_SOA_SUBJECTS[issuer]) return undefined;
+  return trimmed;
+}
+
+export function soaSubjectForStorage(
+  value: string | null | undefined,
+  issuer: BankIssuer,
+): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed === DEFAULT_SOA_SUBJECTS[issuer]) return null;
+  return trimmed;
+}
+
 /** Default accent colors for new cards (hex). */
 export const DEFAULT_CARD_COLORS: Record<BankIssuer, string> = {
   metrobank: "#00156D",

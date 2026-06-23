@@ -262,6 +262,13 @@ export type SoaGmailSearchLog = {
   monthOffset: number;
 };
 
+export type SoaParseError = {
+  bankId: string;
+  bankLabel: string;
+  fileName: string;
+  error: string;
+};
+
 export type SoaSingleMonthResult = {
   ctx: GmailMonthContext;
   rows: SoaRow[];
@@ -271,6 +278,8 @@ export type SoaSingleMonthResult = {
   summaryPath: string;
   parseWarnings: number;
   parseFailures: number;
+  parseErrors: SoaParseError[];
+  downloadedPdfCount: number;
   gmailSearches: SoaGmailSearchLog[];
 };
 
@@ -318,8 +327,10 @@ export async function runSoaSingleMonth(options: {
   const downloaded: DownloadedPdf[] = [];
   const seenMessage = new Set<string>();
   const gmailSearches: SoaGmailSearchLog[] = [];
+  const activeIssuerIds = new Set(cards.map((c) => c.issuer.toLowerCase()));
+  const banksToSearch = banks.filter((b) => activeIssuerIds.has(b.id));
 
-  for (const bank of banks) {
+  for (const bank of banksToSearch) {
     const searchConfigs = gmailSearchConfigsForIssuer(bank.id, cards);
     log.info(`${bank.label}`);
     if (searchConfigs.length > 1) {
@@ -384,6 +395,7 @@ export async function runSoaSingleMonth(options: {
   const rows: SoaRow[] = [];
   let parseWarnings = 0;
   let parseFailures = 0;
+  const parseErrors: SoaParseError[] = [];
 
   if (downloaded.length === 0) {
     log.warn("No PDFs downloaded — skipping unlock/parse.");
@@ -537,13 +549,20 @@ export async function runSoaSingleMonth(options: {
       }
     } catch (e) {
       parseFailures++;
+      const message = errMsg(e);
+      parseErrors.push({
+        bankId: item.bankId,
+        bankLabel: item.bankLabel,
+        fileName: item.fileName,
+        error: message,
+      });
       log.error(`Failed to open / read PDF`);
-      log.detail(errMsg(e));
+      log.detail(message);
     }
   }
 
   const banksWithPdf = new Set(downloaded.map((d) => d.bankId));
-  const missingBanks = banks.filter((b) => !banksWithPdf.has(b.id));
+  const missingBanks = banksToSearch.filter((b) => !banksWithPdf.has(b.id));
   if (missingBanks.length > 0) {
     log.header("Banks with no SOA email this period");
     for (const b of missingBanks) {
@@ -607,6 +626,8 @@ export async function runSoaSingleMonth(options: {
     summaryPath,
     parseWarnings,
     parseFailures,
+    parseErrors,
+    downloadedPdfCount: downloaded.length,
     gmailSearches,
   };
 }
