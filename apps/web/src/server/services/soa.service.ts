@@ -369,14 +369,14 @@ export const soaService = {
 
     const preflightError =
       soaDiagnosticsService.formatPreflightFailure(preflight);
-    const runtimeHints = soaDiagnosticsService.runtimeHints();
-    const pdfWorkerError =
-      soaDiagnosticsService.formatPdfWorkerFailure(runtimeHints);
-    if (pdfWorkerError) {
-      soaDiagnosticsService.logRunBlocked(userId, pdfWorkerError, preflight);
+    const runtimeHints = await soaDiagnosticsService.runtimeHints();
+    const pdfEngineError =
+      soaDiagnosticsService.formatPdfEngineFailure(runtimeHints);
+    if (pdfEngineError) {
+      soaDiagnosticsService.logRunBlocked(userId, pdfEngineError, preflight);
       return {
         ok: false as const,
-        message: pdfWorkerError,
+        message: pdfEngineError,
         diagnostics: { preflight, runtime: runtimeHints },
       };
     }

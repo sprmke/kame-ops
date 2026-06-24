@@ -8,7 +8,8 @@ import { env } from "@/env";
 import { db } from "@/lib/db";
 import { creditCards } from "@/lib/db/schema";
 import { tryDecryptSecret } from "@/lib/utils/encryption";
-import { getPdfWorkerDiagnostics } from "@/server/legacy/pay-credit-cards/pdf-worker-setup";
+import { checkPdfEngineReady } from "@/server/lib/pdf-engine";
+import { checkQpdfEngineReady } from "@/server/lib/qpdf-engine";
 
 export type SoaCardPreflight = {
   issuer: string;
@@ -29,8 +30,8 @@ export type SoaRuntimeHints = {
   authUrl: string | null;
   appUrl: string;
   authUrlMatchesApp: boolean;
-  pdfWorkerOk: boolean;
-  pdfWorkerPath: string | null;
+  pdfEngineOk: boolean;
+  qpdfEngineOk: boolean;
 };
 
 export type SoaParseFailureDetail = {
@@ -92,10 +93,13 @@ export const soaDiagnosticsService = {
     });
   },
 
-  runtimeHints(): SoaRuntimeHints {
+  async runtimeHints(): Promise<SoaRuntimeHints> {
     const appUrl = env.NEXT_PUBLIC_APP_URL;
     const authUrl = env.AUTH_URL ?? null;
-    const pdfWorker = getPdfWorkerDiagnostics();
+    const [pdfEngine, qpdfEngine] = await Promise.all([
+      checkPdfEngineReady(),
+      checkQpdfEngineReady(),
+    ]);
     return {
       nodeEnv: env.NODE_ENV,
       vercel: !!process.env.VERCEL,
@@ -106,8 +110,8 @@ export const soaDiagnosticsService = {
       appUrl,
       authUrlMatchesApp:
         !authUrl || authUrl.replace(/\/$/, "") === appUrl.replace(/\/$/, ""),
-      pdfWorkerOk: pdfWorker.ok,
-      pdfWorkerPath: pdfWorker.ok ? pdfWorker.workerPath : null,
+      pdfEngineOk: pdfEngine.ok,
+      qpdfEngineOk: qpdfEngine.ok,
     };
   },
 
@@ -119,9 +123,16 @@ export const soaDiagnosticsService = {
     return `Cannot decrypt PDF password for: ${list}. ENCRYPTION_KEY on this server must match when passwords were saved. Fix ENCRYPTION_KEY in Vercel (or re-enter each PDF password in Credit Cards). Key fingerprint: ${encryptionKeyFingerprint()}.`;
   },
 
-  formatPdfWorkerFailure(hints: SoaRuntimeHints): string | null {
-    if (hints.pdfWorkerOk) return null;
-    return `PDF engine not available on server (pdf.worker.mjs missing from deployment). Redeploy latest build; check Vercel log for "Copied pdf.worker.mjs". cwd=${process.cwd()}`;
+  formatPdfEngineFailure(hints: SoaRuntimeHints): string | null {
+    if (hints.pdfEngineOk && hints.qpdfEngineOk) return null;
+    const parts: string[] = [];
+    if (!hints.pdfEngineOk) {
+      parts.push("pdf.js engine failed to initialize");
+    }
+    if (!hints.qpdfEngineOk) {
+      parts.push("qpdf engine failed to initialize");
+    }
+    return `PDF tooling not available on server (${parts.join("; ")}). Redeploy or check native dependency tracing.`;
   },
 
   formatParseFailureWarning(options: {

@@ -1,11 +1,9 @@
 // @ts-nocheck
 import fs from "node:fs";
-import "./pdf-node-polyfill";
-import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
-import { ensurePdfJsWorkerReady } from "./pdf-worker-setup";
-import type { CardCredential } from "./types";
 
-await ensurePdfJsWorkerReady(pdfjs);
+import { getPdfJs } from "@/server/lib/pdf-engine";
+
+import type { CardCredential } from "./types";
 
 export type UnlockResult = {
   password: string;
@@ -101,6 +99,7 @@ export async function extractPdfLinesReadingOrderDualAxis(
   pdfPath: string,
   password: string,
 ): Promise<[string[], string[]]> {
+  const pdfjs = await getPdfJs();
   const data = readPdfBinary(pdfPath);
   const loadingTask = pdfjs.getDocument({
     data,
@@ -130,6 +129,7 @@ export async function tryUnlockAndExtractText(
   pdfPath: string,
   passwords: CardCredential[],
 ): Promise<UnlockResult> {
+  const pdfjs = await getPdfJs();
   let lastErr: unknown;
 
   for (const cred of passwords) {

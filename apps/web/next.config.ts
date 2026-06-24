@@ -1,8 +1,19 @@
+import path from "path";
 import type { NextConfig } from "next";
+
+/** Monorepo root — file tracing must include hoisted node_modules native assets. */
+const repoRoot = path.join(__dirname, "../..");
+
+const nativeTraceGlobs = [
+  "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+  "node_modules/@neslinesli93/qpdf-wasm/dist/qpdf.wasm",
+  "node_modules/@napi-rs/canvas-linux-x64-gnu/**/*",
+];
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   typedRoutes: true,
+  outputFileTracingRoot: repoRoot,
   serverExternalPackages: [
     "@napi-rs/canvas",
     "pdfjs-dist",
@@ -11,17 +22,9 @@ const nextConfig: NextConfig = {
     "pdf-to-img",
     "@neslinesli93/qpdf-wasm",
   ],
-  // Vendored copy only — never trace pdf.worker from node_modules (Bun symlinks break Vercel deploy).
   outputFileTracingIncludes: {
-    "/api/trpc/[trpc]": [
-      "./src/server/legacy/pay-credit-cards/vendor/pdf.worker.mjs",
-      "./src/server/legacy/pay-credit-cards/vendor/qpdf.wasm",
-      "./node_modules/@napi-rs/canvas-linux-x64-gnu/**/*",
-    ],
-    "/api/soa/pdf": [
-      "./src/server/legacy/pay-credit-cards/vendor/pdf.worker.mjs",
-      "./src/server/legacy/pay-credit-cards/vendor/qpdf.wasm",
-    ],
+    "/api/trpc/[trpc]": nativeTraceGlobs,
+    "/api/soa/pdf": nativeTraceGlobs,
   },
   experimental: {
     serverActions: { bodySizeLimit: "10mb" },
