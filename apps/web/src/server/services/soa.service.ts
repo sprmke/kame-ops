@@ -393,12 +393,7 @@ export const soaService = {
       input.mode === "single"
         ? `${input.fromMonth}/${input.fromYear}`
         : `${input.fromMonth}/${input.fromYear}–${input.toMonth}/${input.toYear}`;
-    soaDiagnosticsService.logRunStart(
-      userId,
-      periodLabel,
-      preflight,
-      runtimeHints,
-    );
+    soaDiagnosticsService.logRunStart(userId, periodLabel, preflight);
 
     const workDir = await prepareLegacyRuntime(userId);
 

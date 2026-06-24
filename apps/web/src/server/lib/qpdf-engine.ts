@@ -16,6 +16,7 @@ type QpdfModule = {
 type QpdfFactory = (opts: {
   wasmBinary?: Uint8Array;
   noInitialRun: boolean;
+  locateFile?: (path: string) => string;
 }) => Promise<QpdfModule>;
 
 let qpdfModulePromise: Promise<QpdfModule> | null = null;
@@ -44,12 +45,17 @@ function asQpdfFactory(mod: unknown): QpdfFactory {
 }
 
 async function loadQpdfModule(): Promise<QpdfModule> {
-  const wasmBinary = readFileSync(resolveNativeAsset("qpdf.wasm"));
+  const wasmPath = resolveNativeAsset("qpdf.wasm");
+  const wasmBinary = new Uint8Array(readFileSync(wasmPath));
 
   const mod = await import(/* webpackIgnore: true */ "@neslinesli93/qpdf-wasm");
   const createModule = asQpdfFactory(mod);
 
-  return createModule({ wasmBinary, noInitialRun: true });
+  return createModule({
+    wasmBinary,
+    noInitialRun: true,
+    locateFile: (file) => (file.endsWith(".wasm") ? wasmPath : file),
+  });
 }
 
 export type QpdfEngineStatus = { ok: true } | { ok: false; error: string };

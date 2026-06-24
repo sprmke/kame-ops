@@ -16,10 +16,7 @@ const appRoot = join(fileURLToPath(import.meta.url), "..", "..");
 const port = Number(process.env.VERIFY_PORT ?? "3099");
 const skipBuild = process.env.SKIP_BUILD === "1";
 
-const REQUIRED_TRACE_SUFFIXES = [
-  "src/server/lib/native/pdf.worker.mjs",
-  "src/server/lib/native/qpdf.wasm",
-];
+const REQUIRED_TRACE_SUFFIXES = ["src/server/lib/native/qpdf.wasm"];
 
 type EngineHealth = {
   pdfEngineOk: boolean;

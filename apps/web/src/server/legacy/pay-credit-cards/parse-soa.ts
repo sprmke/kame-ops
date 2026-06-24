@@ -7,13 +7,23 @@ function flatten(text: string): string {
 }
 
 const MONTH_ABBR = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ] as const;
 
 /** Map any 3-letter prefix (case-insensitive) → 0-based month index. */
 const MONTH_PREFIX_MAP: Record<string, number> = Object.fromEntries(
-  MONTH_ABBR.map((m, i) => [m.toUpperCase(), i])
+  MONTH_ABBR.map((m, i) => [m.toUpperCase(), i]),
 );
 
 /**
@@ -87,6 +97,34 @@ function normalizeDisplayDate(s: string): string {
   return `${mon} ${day}, ${year}`;
 }
 
+/** Title-case ALL CAPS due labels (e.g. PLS PAY IMMEDIATELY → Pls Pay Immediately). */
+function formatRawDueLabel(s: string): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  if (!t || t === "—") return t;
+  if (parseDateRaw(t)) return normalizeDisplayDate(t);
+  if (t === t.toUpperCase() && /[A-Z]{2,}/.test(t)) {
+    return t.replace(/\b\w+/g, (w) => w.charAt(0) + w.slice(1).toLowerCase());
+  }
+  return t;
+}
+
+/**
+ * When Payment Due Date is prose (e.g. "PLS PAY IMMEDIATELY") instead of a calendar date.
+ */
+function extractRawPaymentDueValue(flat: string): string {
+  const patterns = [
+    /Payment\s+Due\s+Date\s*:\s*([^:]+?)(?=\s+Statement\s+Balance|\s+Minimum\s+Amount|\s+Total\s+Amount|\s+Points\s+Earned|\s+Credit\s+Limit|\s+Overlimit|$)/i,
+    /PAYMENT\s+DUE\s+DATE\s+TOTAL\s+AMOUNT\s+DUE\s+MINIMUM\s+AMOUNT\s+DUE\s+([A-Za-z0-9][^₱]*?)(?=₱|\bP\s*[\d,.]|\s+PHP|\s+PAYMENT\s+INSTRUCTIONS|$)/i,
+  ];
+  for (const re of patterns) {
+    const m = flat.match(re);
+    if (!m?.[1]) continue;
+    const raw = m[1].replace(/\s+/g, " ").trim();
+    if (raw && !parseDateRaw(raw)) return raw;
+  }
+  return "";
+}
+
 function pickFirst(regexes: RegExp[], text: string): string {
   const flat = flatten(text);
   for (const re of regexes) {
@@ -120,7 +158,7 @@ const RCBC_MONTH_INDEX: Record<string, number> = {
 
 function parseRcbcMmmDate(s: string): Date | null {
   const m = s.match(
-    /^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+(\d{2})\s+(\d{4})$/i
+    /^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+(\d{2})\s+(\d{4})$/i,
   );
   if (!m) return null;
   const mon = RCBC_MONTH_INDEX[m[1]!.toUpperCase()];
@@ -132,11 +170,15 @@ function parseRcbcMmmDate(s: string): Date | null {
 }
 
 /** Earlier date → statement, later → payment due (typical monthly SOA). */
-function orderRcbcStmtDue(a: string, b: string): { statement: string; due: string } {
+function orderRcbcStmtDue(
+  a: string,
+  b: string,
+): { statement: string; due: string } {
   const da = parseRcbcMmmDate(a.trim());
   const db = parseRcbcMmmDate(b.trim());
   if (!da || !db) return { statement: a.trim(), due: b.trim() };
-  if (da.getTime() <= db.getTime()) return { statement: a.trim(), due: b.trim() };
+  if (da.getTime() <= db.getTime())
+    return { statement: a.trim(), due: b.trim() };
   return { statement: b.trim(), due: a.trim() };
 }
 
@@ -144,12 +186,15 @@ function orderRcbcStmtDue(a: string, b: string): { statement: string; due: strin
  * RCBC prints "STATEMENT DATE" and "PAYMENT DUE DATE" on one line; values on the next.
  * PDF order may be stmt then due or swapped — use chronological order when both parse.
  */
-function rcbcPairedStatementDueDates(flat: string): { statement?: string; due?: string } {
+function rcbcPairedStatementDueDates(flat: string): {
+  statement?: string;
+  due?: string;
+} {
   const pair = flat.match(
     new RegExp(
       `STATEMENT\\s+DATE\\s+PAYMENT\\s+DUE\\s+DATE\\s+(${RCBC_MMM}\\s+\\d{2}\\s+\\d{4})\\s+(${RCBC_MMM}\\s+\\d{2}\\s+\\d{4})`,
-      "i"
-    )
+      "i",
+    ),
   );
   if (pair?.[1] && pair[2]) {
     const o = orderRcbcStmtDue(pair[1], pair[2]);
@@ -159,8 +204,8 @@ function rcbcPairedStatementDueDates(flat: string): { statement?: string; due?: 
   const pairRev = flat.match(
     new RegExp(
       `PAYMENT\\s+DUE\\s+DATE\\s+STATEMENT\\s+DATE\\s+(${RCBC_MMM}\\s+\\d{2}\\s+\\d{4})\\s+(${RCBC_MMM}\\s+\\d{2}\\s+\\d{4})`,
-      "i"
-    )
+      "i",
+    ),
   );
   if (pairRev?.[1] && pairRev[2]) {
     const o = orderRcbcStmtDue(pairRev[1], pairRev[2]);
@@ -168,10 +213,13 @@ function rcbcPairedStatementDueDates(flat: string): { statement?: string; due?: 
   }
 
   const stmtOnly = flat.match(
-    new RegExp(`STATEMENT\\s+DATE\\s+(${RCBC_MMM}\\s+\\d{2}\\s+\\d{4})`, "i")
+    new RegExp(`STATEMENT\\s+DATE\\s+(${RCBC_MMM}\\s+\\d{2}\\s+\\d{4})`, "i"),
   );
   const dueOnly = flat.match(
-    new RegExp(`PAYMENT\\s+DUE\\s+DATE\\s+(${RCBC_MMM}\\s+\\d{2}\\s+\\d{4})`, "i")
+    new RegExp(
+      `PAYMENT\\s+DUE\\s+DATE\\s+(${RCBC_MMM}\\s+\\d{2}\\s+\\d{4})`,
+      "i",
+    ),
   );
   const out: { statement?: string; due?: string } = {};
   if (stmtOnly?.[1]) out.statement = stmtOnly[1].trim();
@@ -214,9 +262,7 @@ const METRO_MONTH_PREFIX: Record<string, number> = {
 };
 
 function parseMetrobankDayMonthYear(s: string): Date | null {
-  const m = s
-    .trim()
-    .match(/^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$/i);
+  const m = s.trim().match(/^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$/i);
   if (!m) return null;
   const day = Number.parseInt(m[1]!, 10);
   const year = Number.parseInt(m[3]!, 10);
@@ -229,7 +275,7 @@ function parseMetrobankDayMonthYear(s: string): Date | null {
 /** Statement date is always on or before payment due for a billing cycle. */
 function orderMetroStatementDue(
   a: string,
-  b: string
+  b: string,
 ): { statement: string; due: string } {
   const da = parseMetrobankDayMonthYear(a);
   const db = parseMetrobankDayMonthYear(b);
@@ -244,14 +290,17 @@ function orderMetroStatementDue(
  * (both labels, then both values). A plain `payment due date (\\d...)` then wrongly captures
  * the statement date because it is the first date after the label run.
  */
-function metrobankPairedStatementDue(flat: string): { statement?: string; due?: string } {
+function metrobankPairedStatementDue(flat: string): {
+  statement?: string;
+  due?: string;
+} {
   const d = METRO_DAY_MONTH_YEAR;
 
   const gridStmtPay = flat.match(
     new RegExp(
       `statement\\s+date\\s+payment\\s+due\\s+date\\s+${d}\\s+${d}`,
-      "i"
-    )
+      "i",
+    ),
   );
   if (gridStmtPay?.[1] && gridStmtPay[2]) {
     const o = orderMetroStatementDue(gridStmtPay[1], gridStmtPay[2]);
@@ -261,8 +310,8 @@ function metrobankPairedStatementDue(flat: string): { statement?: string; due?: 
   const gridPayStmt = flat.match(
     new RegExp(
       `payment\\s+due\\s+date\\s+statement\\s+date\\s+${d}\\s+${d}`,
-      "i"
-    )
+      "i",
+    ),
   );
   if (gridPayStmt?.[1] && gridPayStmt[2]) {
     const o = orderMetroStatementDue(gridPayStmt[1], gridPayStmt[2]);
@@ -271,7 +320,7 @@ function metrobankPairedStatementDue(flat: string): { statement?: string; due?: 
 
   // Two dates immediately after "Payment Due Date" (values stacked wrong for generic regex).
   const payTwo = flat.match(
-    new RegExp(`payment\\s+due\\s+date\\s+${d}\\s+${d}`, "i")
+    new RegExp(`payment\\s+due\\s+date\\s+${d}\\s+${d}`, "i"),
   );
   if (payTwo?.[1] && payTwo[2]) {
     const o = orderMetroStatementDue(payTwo[1], payTwo[2]);
@@ -281,8 +330,8 @@ function metrobankPairedStatementDue(flat: string): { statement?: string; due?: 
   const stmtDue = flat.match(
     new RegExp(
       `statement\\s+date\\s*[:\\s]+${d}.{1,420}?(?:payment\\s+)?due\\s+date\\s*[:\\s]+${d}`,
-      "i"
-    )
+      "i",
+    ),
   );
   if (stmtDue?.[1] && stmtDue[2]) {
     return { statement: stmtDue[1].trim(), due: stmtDue[2].trim() };
@@ -290,8 +339,8 @@ function metrobankPairedStatementDue(flat: string): { statement?: string; due?: 
   const dueStmt = flat.match(
     new RegExp(
       `(?:payment\\s+)?due\\s+date\\s*[:\\s]+${d}.{1,420}?statement\\s+date\\s*[:\\s]+${d}`,
-      "i"
-    )
+      "i",
+    ),
   );
   if (dueStmt?.[1] && dueStmt[2]) {
     return { statement: dueStmt[2].trim(), due: dueStmt[1].trim() };
@@ -300,13 +349,16 @@ function metrobankPairedStatementDue(flat: string): { statement?: string; due?: 
 }
 
 /** Unionbank often uses "Statement Date:" / "Payment Due Date:" on one screen. */
-function unionbankPairedStatementDue(flat: string): { statement?: string; due?: string } {
+function unionbankPairedStatementDue(flat: string): {
+  statement?: string;
+  due?: string;
+} {
   const d = "([A-Za-z]{3}\\s+\\d{1,2},?\\s+\\d{4})";
   const sd = flat.match(
     new RegExp(
       `Statement\\s+Date\\s*:\\s*${d}.{1,360}?Payment\\s+Due\\s+Date\\s*:\\s*${d}`,
-      "i"
-    )
+      "i",
+    ),
   );
   if (sd?.[1] && sd[2]) {
     return { statement: sd[1].trim(), due: sd[2].trim() };
@@ -314,11 +366,23 @@ function unionbankPairedStatementDue(flat: string): { statement?: string; due?: 
   const ds = flat.match(
     new RegExp(
       `Payment\\s+Due\\s+Date\\s*:\\s*${d}.{1,360}?Statement\\s+Date\\s*:\\s*${d}`,
-      "i"
-    )
+      "i",
+    ),
   );
   if (ds?.[1] && ds[2]) {
     return { statement: ds[2].trim(), due: ds[1].trim() };
+  }
+  const rawPair = flat.match(
+    new RegExp(
+      `Statement\\s+Date\\s*:\\s*${d}.{0,200}?Payment\\s+Due\\s+Date\\s*:\\s*([^:]+?)(?=\\s+Statement\\s+Balance|\\s+Minimum\\s+Amount|\\s+Total\\s+Amount|$)`,
+      "i",
+    ),
+  );
+  if (rawPair?.[1] && rawPair[2]) {
+    const due = rawPair[2].trim();
+    if (due && !parseDateRaw(due)) {
+      return { statement: rawPair[1].trim(), due };
+    }
   }
   return {};
 }
@@ -332,20 +396,18 @@ function preprocessBpiOcrText(text: string): string {
 }
 
 /** BPI statement line amounts (with or without PHP). */
-const BPI_LINE_AMOUNT_CORE =
-  "([\\d]{1,3}(?:,\\d{3})+\\.\\d{2}|\\d+\\.\\d{2})";
+const BPI_LINE_AMOUNT_CORE = "([\\d]{1,3}(?:,\\d{3})+\\.\\d{2}|\\d+\\.\\d{2})";
 
 function bpiMoneySoonAfter(
   flat: string,
   fromIdx: number,
   window: number,
-  opts?: { titleCaseProse?: boolean }
+  opts?: { titleCaseProse?: boolean },
 ): string {
   const tail = flat.slice(fromIdx, fromIdx + window);
   const withCur =
-    tail.match(
-      /(?:PHP|Php|₱)\s*([\d]{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2})\b/i
-    ) ?? tail.match(/\bP\s*([\d]{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2})\b/i);
+    tail.match(/(?:PHP|Php|₱)\s*([\d]{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2})\b/i) ??
+    tail.match(/\bP\s*([\d]{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2})\b/i);
   if (withCur?.[1]) return withCur[1]!.trim();
   if (opts?.titleCaseProse) {
     const commaOnly = tail.match(/\b([\d]{1,3}(?:,\d{3})+\.\d{2})\b/);
@@ -359,7 +421,10 @@ function bpiMoneySoonAfter(
  * BPI OCR often starts with rates/fees prose where "Total Amount Due, applicable…" appears
  * before the real summary. Prefer ALL CAPS labels; then Title Case only when not prose.
  */
-function bpiBestMoneyAfterLabel(flat: string, kind: "total" | "minimum"): string {
+function bpiBestMoneyAfterLabel(
+  flat: string,
+  kind: "total" | "minimum",
+): string {
   const caps =
     kind === "total"
       ? /\bTOTAL\s+AMOUNT\s+DUE\b/g
@@ -392,13 +457,16 @@ const BPI_DATE_ALT =
 const BPI_DATE_CAP = `(${BPI_DATE_ALT})`;
 
 /** BPI e-statements / OCR: Title Case labels; `PHP` often reads as `P H P`. */
-function bpiPairedStatementDue(flat: string): { statement?: string; due?: string } {
+function bpiPairedStatementDue(flat: string): {
+  statement?: string;
+  due?: string;
+} {
   const d = BPI_DATE_CAP;
   const sd = flat.match(
     new RegExp(
       `Statement\\s+Date\\s*[:\\s]+${d}.{1,400}?(?:Payment\\s+)?Due\\s+Date\\s*[:\\s]+${d}`,
-      "i"
-    )
+      "i",
+    ),
   );
   if (sd?.[1] && sd[2]) {
     return { statement: sd[1].trim(), due: sd[2].trim() };
@@ -406,8 +474,8 @@ function bpiPairedStatementDue(flat: string): { statement?: string; due?: string
   const ds = flat.match(
     new RegExp(
       `(?:Payment\\s+)?Due\\s+Date\\s*[:\\s]+${d}.{1,400}?Statement\\s+Date\\s*[:\\s]+${d}`,
-      "i"
-    )
+      "i",
+    ),
   );
   if (ds?.[1] && ds[2]) {
     return { statement: ds[2].trim(), due: ds[1].trim() };
@@ -425,11 +493,11 @@ const RCBC_AMOUNT = "(\\d{1,3}(?:,\\d{3})+\\.\\d{2}|\\d+\\.\\d{2})";
 function rcbcTotalFromColumnMajorLabels(flat: string): string {
   const row = new RegExp(
     `TOTAL\\s+BALANCE\\s+DUE\\s+MINIMUM\\s+PAYMENT\\s+DUE\\s+(?:P\\s*){2,}${RCBC_AMOUNT}\\s+${RCBC_AMOUNT}`,
-    "i"
+    "i",
   );
   const interleaved = new RegExp(
     `TOTAL\\s+BALANCE\\s+DUE\\s+MINIMUM\\s+PAYMENT\\s+DUE\\s+P\\s*${RCBC_AMOUNT}\\s+P\\s*${RCBC_AMOUNT}`,
-    "i"
+    "i",
   );
   const m = flat.match(row) ?? flat.match(interleaved);
   return m?.[1]?.trim() ?? "";
@@ -439,7 +507,7 @@ function rcbcTotalFromColumnMajorLabels(flat: string): string {
 function rcbcMoneyTokensInSlice(slice: string): string[] {
   const out: string[] = [];
   const pesoLed = slice.matchAll(
-    /(?:PHP|Php|₱|(?<![A-Za-z])P(?=[\d]))\s*([\d]{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2})\b/gi
+    /(?:PHP|Php|₱|(?<![A-Za-z])P(?=[\d]))\s*([\d]{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2})\b/gi,
   );
   for (const m of pesoLed) out.push(m[1]!.trim());
   for (const m of slice.matchAll(new RegExp(`\\b${RCBC_AMOUNT}\\b`, "g"))) {
@@ -504,13 +572,13 @@ function rcbcResolveMinimumDue(text: string, existing: string): string {
   const flat = flatten(text);
   const row = new RegExp(
     `TOTAL\\s+BALANCE\\s+DUE\\s+MINIMUM\\s+PAYMENT\\s+DUE\\s+(?:P\\s*){2,}${RCBC_AMOUNT}\\s+${RCBC_AMOUNT}`,
-    "i"
+    "i",
   ).exec(flat);
   if (row?.[2]) return row[2].trim();
 
   const interleaved = new RegExp(
     `TOTAL\\s+BALANCE\\s+DUE\\s+MINIMUM\\s+PAYMENT\\s+DUE\\s+P\\s*${RCBC_AMOUNT}\\s+P\\s*${RCBC_AMOUNT}`,
-    "i"
+    "i",
   ).exec(flat);
   if (interleaved?.[2]) return interleaved[2].trim();
 
@@ -523,28 +591,26 @@ function minimumPatterns(issuerId: string): RegExp[] {
   if (id === "rcbc") {
     specific.push(
       new RegExp(`MINIMUM\\s+PAYMENT\\s+DUE\\s+${PESO}\\s*${AMOUNT}`, "i"),
-      /MINIMUM\s+PAYMENT\s+DUE\s+P\s*([\d,]+\.?\d*)/i
+      /MINIMUM\s+PAYMENT\s+DUE\s+P\s*([\d,]+\.?\d*)/i,
     );
   }
   if (id === "metrobank") {
     specific.push(
-      new RegExp(`Minimum\\s+Amount\\s+Due\\s+${PESO}\\s*${AMOUNT}`, "i")
+      new RegExp(`Minimum\\s+Amount\\s+Due\\s+${PESO}\\s*${AMOUNT}`, "i"),
     );
   }
   if (id === "unionbank") {
     specific.push(
       /Minimum\s+Amount\s+Due\s*:\s*PHP\s*([\d,]+\.?\d*)/i,
-      /MINIMUM\s+AMOUNT\s+DUE\s+([\d,]+\.?\d*)/i
+      /MINIMUM\s+AMOUNT\s+DUE\s+([\d,]+\.?\d*)/i,
     );
   }
   if (id === "bpi") {
     specific.push(
-      new RegExp(
-        `MINIMUM\\s+AMOUNT\\s+DUE\\s+${BPI_LINE_AMOUNT_CORE}`,
-      ),
+      new RegExp(`MINIMUM\\s+AMOUNT\\s+DUE\\s+${BPI_LINE_AMOUNT_CORE}`),
       /Minimum\s+Amount\s+Due\s*:\s*PHP\s*([\d,]+\.?\d*)/i,
       /Minimum\s+Amount\s+Due\s*:\s*P\s*H\s*P\s*([\d,]+\.?\d*)/i,
-      /Minimum\s+Amount\s+Due\s+PHP\s*([\d,]+\.?\d*)/i
+      /Minimum\s+Amount\s+Due\s+PHP\s*([\d,]+\.?\d*)/i,
     );
   }
   const generic: RegExp[] = [
@@ -563,20 +629,20 @@ function totalPatterns(issuerId: string): RegExp[] {
     specific.push(
       new RegExp(
         `TOTAL\\s+BALANCE\\s+DUE\\s+(?:PHP|Php|₱|\\sP|P)\\s*${AMOUNT}`,
-        "i"
+        "i",
       ),
-      new RegExp(`TOTAL\\s+BALANCE\\s+DUE\\s+P\\s*${AMOUNT}`, "i")
+      new RegExp(`TOTAL\\s+BALANCE\\s+DUE\\s+P\\s*${AMOUNT}`, "i"),
     );
   }
   if (id === "metrobank") {
     specific.push(
-      new RegExp(`Total\\s+Amount\\s+Due\\s+${PESO}\\s*${AMOUNT}`, "i")
+      new RegExp(`Total\\s+Amount\\s+Due\\s+${PESO}\\s*${AMOUNT}`, "i"),
     );
   }
   if (id === "unionbank") {
     specific.push(
       /Statement\s+Balance\s*:\s*PHP\s*([\d,]+\.?\d*)/i,
-      /TOTAL\s+AMOUNT\s+DUE\s+([\d,]+\.?\d*)/i
+      /TOTAL\s+AMOUNT\s+DUE\s+([\d,]+\.?\d*)/i,
     );
   }
   if (id === "bpi") {
@@ -584,7 +650,7 @@ function totalPatterns(issuerId: string): RegExp[] {
       new RegExp(`TOTAL\\s+AMOUNT\\s+DUE\\s+${BPI_LINE_AMOUNT_CORE}`),
       /Total\s+Amount\s+Due\s*:\s*PHP\s*([\d,]+\.?\d*)/i,
       /Total\s+Amount\s+Due\s*:\s*P\s*H\s*P\s*([\d,]+\.?\d*)/i,
-      /Total\s+Amount\s+Due\s+PHP\s*([\d,]+\.?\d*)/i
+      /Total\s+Amount\s+Due\s+PHP\s*([\d,]+\.?\d*)/i,
     );
   }
   /**
@@ -592,10 +658,7 @@ function totalPatterns(issuerId: string): RegExp[] {
    * "total amount due 1 day after the statement date".
    */
   const safeGeneric: RegExp[] = [
-    new RegExp(
-      `total\\s+amount\\s+due\\s+${PESO}\\s*${AMOUNT}`,
-      "i"
-    ),
+    new RegExp(`total\\s+amount\\s+due\\s+${PESO}\\s*${AMOUNT}`, "i"),
     new RegExp(`current\\s+balance\\s+${PESO}\\s*${AMOUNT}`, "i"),
     new RegExp(`outstanding\\s+balance\\s+${PESO}\\s*${AMOUNT}`, "i"),
   ];
@@ -607,21 +670,16 @@ function statementDatePatterns(issuerId: string): RegExp[] {
   const specific: RegExp[] = [];
   if (id === "rcbc") {
     specific.push(
-      new RegExp(
-        `STATEMENT\\s+DATE\\s+(${RCBC_MMM}\\s+\\d{2}\\s+\\d{4})`,
-        "i"
-      )
+      new RegExp(`STATEMENT\\s+DATE\\s+(${RCBC_MMM}\\s+\\d{2}\\s+\\d{4})`, "i"),
     );
   }
   if (id === "unionbank") {
-    specific.push(
-      /Statement\s+Date\s*:\s*([A-Za-z]{3}\s+\d{1,2},?\s+\d{4})/i
-    );
+    specific.push(/Statement\s+Date\s*:\s*([A-Za-z]{3}\s+\d{1,2},?\s+\d{4})/i);
   }
   if (id === "bpi") {
     specific.push(
       new RegExp(`Statement\\s+Date\\s*[:]?\s*${BPI_DATE_CAP}`, "i"),
-      new RegExp(`STATEMENT\\s+DATE\\s+${BPI_DATE_CAP}`, "i")
+      new RegExp(`STATEMENT\\s+DATE\\s+${BPI_DATE_CAP}`, "i"),
     );
   }
   const metroMessy =
@@ -643,25 +701,22 @@ function dueDatePatterns(issuerId: string): RegExp[] {
     specific.push(
       new RegExp(
         `PAYMENT\\s+DUE\\s+DATE\\s+(${RCBC_MMM}\\s+\\d{2}\\s+\\d{4})`,
-        "i"
-      )
+        "i",
+      ),
     );
   }
   if (id === "unionbank") {
     specific.push(
       /Payment\s+Due\s+Date\s*:\s*([A-Za-z]{3}\s+\d{1,2},?\s*\d{4})/i,
       /PAYMENT\s+DUE\s+DATE\s+([A-Za-z]{3}\s+\d{1,2},?\s+\d{4})/i,
-      /([A-Za-z]{3}\s+\d{1,2},?\s+\d{4})\s+[\d,]+\.\d{2}\s+[\d,]+\.\d{2}\b/
+      /([A-Za-z]{3}\s+\d{1,2},?\s+\d{4})\s+[\d,]+\.\d{2}\s+[\d,]+\.\d{2}\b/,
     );
   }
   if (id === "bpi") {
     specific.push(
-      new RegExp(
-        `Payment\\s+Due\\s+Date\\s*[:]?\s*${BPI_DATE_CAP}`,
-        "i"
-      ),
+      new RegExp(`Payment\\s+Due\\s+Date\\s*[:]?\s*${BPI_DATE_CAP}`, "i"),
       new RegExp(`PAYMENT\\s+DUE\\s+DATE\\s+${BPI_DATE_CAP}`, "i"),
-      new RegExp(`Due\\s+Date\\s*[:]?\s*${BPI_DATE_CAP}`, "i")
+      new RegExp(`Due\\s+Date\\s*[:]?\s*${BPI_DATE_CAP}`, "i"),
     );
   }
   const generic: RegExp[] = [
@@ -694,7 +749,7 @@ export function parseSoaText(
   messageId: string,
   pdfFileName: string,
   text: string,
-  options?: ParseSoaTextOptions
+  options?: ParseSoaTextOptions,
 ): SoaRow {
   if (issuerId.toLowerCase() === "bpi" && options?.bpiFromOcr) {
     text = preprocessBpiOcrText(text);
@@ -707,7 +762,7 @@ export function parseSoaText(
   if (issuerId.toLowerCase() === "metrobank") {
     const flat = flatten(text);
     const combined = flat.match(
-      /Total\s+Amount\s+Due\s+Minimum\s+Amount\s+Due\s+PHP\s*([\d,]+\.?\d*)\s+PHP\s*([\d,]+\.?\d*)/i
+      /Total\s+Amount\s+Due\s+Minimum\s+Amount\s+Due\s+PHP\s*([\d,]+\.?\d*)\s+PHP\s*([\d,]+\.?\d*)/i,
     );
     if (combined) {
       totalDue = combined[1]!;
@@ -737,6 +792,11 @@ export function parseSoaText(
     if (ub.due) dueDate = ub.due;
   }
 
+  if (!dueDate) {
+    const rawDue = extractRawPaymentDueValue(flatten(text));
+    if (rawDue) dueDate = rawDue;
+  }
+
   if (issuerId.toLowerCase() === "bpi") {
     const flat = flatten(text);
     const bp = bpiPairedStatementDue(flat);
@@ -744,13 +804,13 @@ export function parseSoaText(
     if (!dueDate && bp.due) dueDate = bp.due;
     if (!totalDue) {
       const m = flat.match(
-        /Total\s+Amount\s+Due\s*:?\s*(?:PHP|P\s*H\s*P|Php)\s*([\d,]+\.\d{2}|\d+\.\d{2})/i
+        /Total\s+Amount\s+Due\s*:?\s*(?:PHP|P\s*H\s*P|Php)\s*([\d,]+\.\d{2}|\d+\.\d{2})/i,
       );
       if (m?.[1]) totalDue = m[1].trim();
     }
     if (!minimumDue) {
       const m = flat.match(
-        /Minimum\s+Amount\s+Due\s*:?\s*(?:PHP|P\s*H\s*P|Php)\s*([\d,]+\.\d{2}|\d+\.\d{2})/i
+        /Minimum\s+Amount\s+Due\s*:?\s*(?:PHP|P\s*H\s*P|Php)\s*([\d,]+\.\d{2}|\d+\.\d{2})/i,
       );
       if (m?.[1]) minimumDue = m[1].trim();
     }
@@ -779,7 +839,7 @@ export function parseSoaText(
     minimumDue: minimumDue || "—",
     totalDue: totalDue || "—",
     statementDate: normalizeDisplayDate(statementDate || "—"),
-    dueDate: normalizeDisplayDate(dueDate || "—"),
+    dueDate: formatRawDueLabel(dueDate || "—"),
     parseNotes:
       bpiManyMissing && options?.bpiFromOcr
         ? "BPI: OCR text did not match parsers. BPI_OCR_DEBUG=1 saves raw OCR under data/output/YYYY-MM/. Try BPI_OCR_DUAL=1 or BPI_OCR_PSM=4|6|11; see docs/SETUP.md for Preview/ocrmypdf."

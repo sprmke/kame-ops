@@ -1,12 +1,10 @@
 import path from "path";
 import type { NextConfig } from "next";
 
-/** Monorepo root — file tracing must include hoisted node_modules native assets. */
 const repoRoot = path.join(__dirname, "../..");
 
-/** Vendored copies only — never trace node_modules (Bun .bun symlinks break Vercel packaging). */
+/** Vendored native files only — do not trace node_modules (Bun .bun symlinks break Vercel). */
 const nativeTraceGlobs = [
-  "./src/server/lib/native/pdf.worker.mjs",
   "./src/server/lib/native/qpdf.wasm",
   "./src/server/lib/native/canvas.linux-x64-gnu.node",
 ];
@@ -48,20 +46,11 @@ const nextConfig: NextConfig = {
         ...config.experiments,
         asyncWebAssembly: true,
       };
-      const externals = config.externals;
       config.externals = [
-        ...(Array.isArray(externals) ? externals : [externals]),
+        ...(Array.isArray(config.externals)
+          ? config.externals
+          : [config.externals]),
         "@neslinesli93/qpdf-wasm",
-        (
-          { request }: { request?: string },
-          callback: (err?: Error | null, result?: string) => void,
-        ) => {
-          if (request?.endsWith(".wasm")) {
-            callback(null, `commonjs ${request}`);
-            return;
-          }
-          callback();
-        },
       ];
     }
     return config;

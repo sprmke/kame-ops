@@ -5,11 +5,9 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 const NATIVE_RELATIVE = "src/server/lib/native";
-
 const NATIVE_DIR = dirname(fileURLToPath(import.meta.url));
 
-/** Bundled copy from build (Vercel trace) or node_modules (local dev). */
-export function resolveNativeAsset(id: "pdf.worker.mjs" | "qpdf.wasm"): string {
+export function resolveNativeAsset(id: "qpdf.wasm"): string {
   const candidates = [
     join(NATIVE_DIR, "native", id),
     join(process.cwd(), NATIVE_RELATIVE, id),
@@ -26,6 +24,6 @@ export function resolveNativeAsset(id: "pdf.worker.mjs" | "qpdf.wasm"): string {
   }
 
   throw new Error(
-    `${id} not found (tried: ${candidates.join(", ")}). Run \`bun run prepare-server-native\` from apps/web.`,
+    `${id} not found. Run \`bun run prepare-server-native\` from apps/web.`,
   );
 }

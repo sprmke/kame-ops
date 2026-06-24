@@ -219,7 +219,7 @@ export const banks: BankDefinition[] = [
     label: "BPI",
     buildQuery: (ctx) =>
       [
-        'subject:"BPI Credit Card Electronic Statement of Account"',
+        'subject:("BPI Credit Card Electronic Statement" OR "Electronic Statement of Account")',
         `("${ctx.monthShort} ${ctx.year}" OR "${ctx.monthLong} ${ctx.year}")`,
       ].join(" "),
   },
@@ -228,7 +228,7 @@ export const banks: BankDefinition[] = [
     label: "Unionbank",
     buildQuery: (ctx) =>
       [
-        'subject:"REWARDS VISA PLATINUM Credit Card e-Statement"',
+        'subject:("REWARDS VISA PLATINUM" OR "REWARDS VISA")',
         "2600",
         `("${ctx.monthLong} ${ctx.year}" OR "${ctx.monthShort} ${ctx.year}")`,
       ].join(" "),

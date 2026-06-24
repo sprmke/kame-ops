@@ -53,7 +53,6 @@ function encryptionKeyFingerprint(): string {
   return createHash("sha256").update(key).digest("hex").slice(0, 8);
 }
 
-/** Strip long temp paths from error text; keep filename only. */
 export function sanitizeSoaParseError(error: string): string {
   return error
     .replace(/\/tmp\/[^\s)]+/g, (match) => basename(match))
@@ -63,14 +62,10 @@ export function sanitizeSoaParseError(error: string): string {
 
 function formatFailureLine(f: SoaParseFailureDetail): string {
   const sanitized = sanitizeSoaParseError(f.error);
-  const isWorkerError = /pdf\.worker|fake worker failed/i.test(f.error);
   const cards =
     f.issuerCardLast4s.length > 0
       ? ` (tried •••• ${f.issuerCardLast4s.join(", •••• ")})`
       : "";
-  if (isWorkerError) {
-    return `${f.bankLabel} · ${f.fileName}: PDF engine failed to start on server (pdf.worker missing). Redeploy after latest fix — not a password issue.${cards}`;
-  }
   return `${f.bankLabel} · ${f.fileName}: ${sanitized}${cards}`;
 }
 
@@ -124,14 +119,13 @@ export const soaDiagnosticsService = {
     if (bad.length === 0) return null;
 
     const list = bad.map((c) => `${c.issuer} •••• ${c.last4}`).join(", ");
-    return `Cannot decrypt PDF password for: ${list}. ENCRYPTION_KEY on this server must match when passwords were saved. Fix ENCRYPTION_KEY in Vercel (or re-enter each PDF password in Credit Cards). Key fingerprint: ${encryptionKeyFingerprint()}.`;
+    return `Cannot decrypt PDF password for: ${list}. ENCRYPTION_KEY fingerprint: ${encryptionKeyFingerprint()}.`;
   },
 
   formatPdfEngineFailure(hints: SoaRuntimeHints): string | null {
-    // SOA parse requires pdf.js; qpdf is only for optional unlocked PDF copies / viewer.
     if (hints.pdfEngineOk) return null;
     const detail = hints.pdfEngineError ? ` (${hints.pdfEngineError})` : "";
-    return `PDF engine not available on server${detail}. Redeploy after a successful build (look for "Prepared pdf.worker.mjs" in Vercel logs).`;
+    return `PDF engine not available on server${detail}.`;
   },
 
   formatParseFailureWarning(options: {
@@ -147,20 +141,13 @@ export const soaDiagnosticsService = {
 
     const lines = parseErrors.slice(0, 4).map(formatFailureLine);
     const more =
-      parseErrors.length > 4
-        ? ` (+${parseErrors.length - 4} more — see Vercel function logs [soa])`
-        : "";
-    const allWorkerErrors = parseErrors.every((e) =>
-      /pdf\.worker|fake worker failed/i.test(e.error),
-    );
+      parseErrors.length > 4 ? ` (+${parseErrors.length - 4} more)` : "";
 
     if (parsedCount === 0) {
       return [
         `Downloaded ${downloadedPdfCount} SOA PDF(s) but unlocked 0.`,
         ...lines,
-        allWorkerErrors
-          ? "PDF engine misconfigured on server — redeploy latest build (not a password issue)."
-          : "Re-enter PDF passwords in Credit Cards (Edit → Save). Compare ENCRYPTION_KEY fingerprint in Vercel logs with local.",
+        "Check PDF passwords in Credit Cards or ENCRYPTION_KEY on this server.",
         more,
       ]
         .filter(Boolean)
@@ -180,7 +167,6 @@ export const soaDiagnosticsService = {
     userId: string,
     periodLabel: string,
     preflight: SoaCardPreflight[],
-    hints: SoaRuntimeHints,
   ): void {
     console.info(
       "[soa] run-start",
@@ -188,15 +174,6 @@ export const soaDiagnosticsService = {
         userId,
         period: periodLabel,
         cardCount: preflight.length,
-        cards: preflight.map((c) => ({
-          issuer: c.issuer,
-          last4: c.last4,
-          decryptOk: c.decryptOk,
-          passwordLength: c.passwordLength,
-          gmailMonthOffset: c.gmailMonthOffset,
-          soaSubject: c.soaSubject,
-        })),
-        runtime: hints,
       }),
     );
   },
@@ -208,7 +185,7 @@ export const soaDiagnosticsService = {
   ): void {
     console.error(
       "[soa] run-blocked",
-      JSON.stringify({ userId, reason, preflight }),
+      JSON.stringify({ userId, reason, cardCount: preflight.length }),
     );
   },
 
@@ -217,10 +194,8 @@ export const soaDiagnosticsService = {
       "[soa] pdf-unlock-failed",
       JSON.stringify({
         bankId: detail.bankId,
-        bankLabel: detail.bankLabel,
         fileName: detail.fileName,
         passwordsTried: detail.passwordsTried,
-        issuerCardLast4s: detail.issuerCardLast4s,
         error: sanitizeSoaParseError(detail.error),
       }),
     );
