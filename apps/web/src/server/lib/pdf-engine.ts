@@ -1,10 +1,6 @@
 import "server-only";
 
-import { pathToFileURL } from "url";
-
 import "@/server/legacy/pay-credit-cards/pdf-node-polyfill";
-import { resolveNativeAsset } from "@/server/lib/native-assets";
-import { createPackageRequire } from "@/server/lib/package-require";
 
 declare global {
   var pdfjsWorker: { WorkerMessageHandler?: unknown } | undefined;
@@ -25,17 +21,14 @@ export function getPdfJs(): Promise<PdfJs> {
 }
 
 async function initPdfJs(): Promise<PdfJs> {
-  const require = createPackageRequire();
-  const pdfPath = require.resolve("pdfjs-dist/legacy/build/pdf.mjs");
-  const workerPath = resolveNativeAsset("pdf.worker.mjs");
-
   const [pdfjs, worker] = await Promise.all([
-    import(pathToFileURL(pdfPath).href),
-    import(pathToFileURL(workerPath).href),
+    import(/* webpackIgnore: true */ "pdfjs-dist/legacy/build/pdf.mjs"),
+    import(/* webpackIgnore: true */ "pdfjs-dist/legacy/build/pdf.worker.mjs"),
   ]);
 
   globalThis.pdfjsWorker = worker;
-  pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href;
+  pdfjs.GlobalWorkerOptions.workerSrc =
+    "pdfjs-dist/legacy/build/pdf.worker.mjs";
 
   return pdfjs;
 }

@@ -3,7 +3,6 @@ import "server-only";
 import { readFileSync } from "fs";
 
 import { resolveNativeAsset } from "@/server/lib/native-assets";
-import { createPackageRequire } from "@/server/lib/package-require";
 
 type QpdfModule = {
   FS: {
@@ -31,11 +30,25 @@ export function getQpdfModule(): Promise<QpdfModule> {
   return qpdfModulePromise;
 }
 
+function asQpdfFactory(mod: unknown): QpdfFactory {
+  if (typeof mod === "function") return mod as QpdfFactory;
+  if (
+    mod &&
+    typeof mod === "object" &&
+    "default" in mod &&
+    typeof (mod as { default: unknown }).default === "function"
+  ) {
+    return (mod as { default: QpdfFactory }).default;
+  }
+  throw new Error("qpdf-wasm module did not export a factory function");
+}
+
 async function loadQpdfModule(): Promise<QpdfModule> {
-  const require = createPackageRequire();
-  const wasmPath = resolveNativeAsset("qpdf.wasm");
-  const wasmBinary = readFileSync(wasmPath);
-  const createModule = require("@neslinesli93/qpdf-wasm") as QpdfFactory;
+  const wasmBinary = readFileSync(resolveNativeAsset("qpdf.wasm"));
+
+  const mod = await import(/* webpackIgnore: true */ "@neslinesli93/qpdf-wasm");
+  const createModule = asQpdfFactory(mod);
+
   return createModule({ wasmBinary, noInitialRun: true });
 }
 

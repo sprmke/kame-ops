@@ -43,6 +43,7 @@
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------- |
 | `POST /api/auth/register`     | Removed — use Google sign-in                                                                                            | —           |
 | `GET /api/cron/reminders`     | Cron: send due reminders (Bearer)                                                                                       | Implemented |
+| `GET /api/health/engines`     | Local prod verify: pdf/qpdf engine status (localhost only)                                                              | Implemented |
 | `GET /api/soa/pdf`            | Stream SOA source or period summary PDF (auth); resolves `pdfStoragePath` / `summaryPdfStoragePath` or legacy work dirs | Implemented |
 | `POST /api/webhooks/telegram` | Telegram updates (text + receipt photos)                                                                                | Implemented |
 | `POST /api/receipts/upload`   | Receipt file upload (Supabase or local)                                                                                 | Implemented |

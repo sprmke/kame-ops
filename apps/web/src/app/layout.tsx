@@ -11,7 +11,9 @@ export const metadata: Metadata = {
   title: { default: "KameOps", template: "%s | KameOps" },
   description:
     "Business automation platform for credit cards, reminders, and workflows.",
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? LOCAL_DEV_APP_URL),
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_APP_URL?.trim() || LOCAL_DEV_APP_URL,
+  ),
 };
 
 export const viewport: Viewport = {

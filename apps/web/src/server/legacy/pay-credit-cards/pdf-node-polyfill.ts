@@ -1,9 +1,15 @@
 /**
- * pdfjs-dist expects browser canvas APIs. Load @napi-rs/canvas before pdf.mjs
- * is evaluated (including under Next.js/Turbopack server bundles).
- * Optional on serverless — pdf.js still runs without it (text quality may vary).
+ * pdfjs-dist expects browser canvas APIs and Node 22+ builtins.
+ * Load before pdf.mjs is evaluated (Next.js server bundles, Vercel Node 20).
  */
 const globalScope = globalThis as Record<string, unknown>;
+
+if (typeof process.getBuiltinModule !== "function") {
+  process.getBuiltinModule = (name: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require(name);
+  };
+}
 
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
