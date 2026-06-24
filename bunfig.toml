@@ -3,6 +3,8 @@
 [install]
 # Use exact versions for reproducibility
 exact = true
+# Hoisted layout avoids node_modules/.bun symlinks (breaks Vercel serverless packaging).
+linker = "hoisted"
 
 [install.lockfile]
 # Print the lockfile to the console

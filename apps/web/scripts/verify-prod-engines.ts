@@ -47,6 +47,29 @@ function run(
   });
 }
 
+function assertTraceExcludesBunStore(): void {
+  const nftPath = join(
+    appRoot,
+    ".next/server/app/api/trpc/[trpc]/route.js.nft.json",
+  );
+  if (!existsSync(nftPath)) return;
+
+  const nft = JSON.parse(readFileSync(nftPath, "utf8")) as { files: string[] };
+  const bunPaths = nft.files.filter((file) =>
+    file.includes("node_modules/.bun"),
+  );
+  if (bunPaths.length > 0) {
+    console.warn(
+      `⚠ Trace includes ${bunPaths.length} node_modules/.bun paths (Vercel deploy may fail).`,
+    );
+    console.warn(
+      "  Vercel uses `bun install --linker hoisted` — run that locally to match production.",
+    );
+    return;
+  }
+  console.log("✓ tRPC trace has no node_modules/.bun symlinks");
+}
+
 function assertTraceIncludesNativeAssets(): void {
   const nftPath = join(
     appRoot,
@@ -127,6 +150,7 @@ async function main(): Promise<void> {
   }
 
   assertTraceIncludesNativeAssets();
+  assertTraceExcludesBunStore();
 
   const env = {
     ...process.env,

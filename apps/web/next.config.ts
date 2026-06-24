@@ -4,14 +4,17 @@ import type { NextConfig } from "next";
 /** Monorepo root — file tracing must include hoisted node_modules native assets. */
 const repoRoot = path.join(__dirname, "../..");
 
+/** Vendored copies only — never trace node_modules (Bun .bun symlinks break Vercel packaging). */
 const nativeTraceGlobs = [
   "./src/server/lib/native/pdf.worker.mjs",
   "./src/server/lib/native/qpdf.wasm",
-  "node_modules/pdfjs-dist/legacy/build/pdf.mjs",
-  "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
-  "node_modules/@neslinesli93/qpdf-wasm/dist/qpdf.js",
-  "node_modules/@neslinesli93/qpdf-wasm/dist/qpdf.wasm",
-  "node_modules/@napi-rs/canvas-linux-x64-gnu/**/*",
+  "./src/server/lib/native/canvas.linux-x64-gnu.node",
+];
+
+const traceExcludeGlobs = [
+  "**/node_modules/.bun/**",
+  "./src/server/legacy/data/downloads/**",
+  "./src/server/legacy/data/output/**",
 ];
 
 const nextConfig: NextConfig = {
@@ -29,6 +32,12 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/trpc/[trpc]": nativeTraceGlobs,
     "/api/soa/pdf": nativeTraceGlobs,
+    "/api/health/engines": nativeTraceGlobs,
+  },
+  outputFileTracingExcludes: {
+    "/api/trpc/[trpc]": traceExcludeGlobs,
+    "/api/soa/pdf": traceExcludeGlobs,
+    "/api/health/engines": traceExcludeGlobs,
   },
   experimental: {
     serverActions: { bodySizeLimit: "10mb" },

@@ -1,9 +1,9 @@
 /**
  * Copy native binaries next to server lib for Vercel file tracing.
- * Runtime loads packages via webpackIgnore; wasm is read from this folder.
+ * Runtime loads pdfjs/qpdf via serverExternalPackages; wasm from this folder.
  */
 import { createRequire } from "node:module";
-import { copyFileSync, mkdirSync } from "fs";
+import { copyFileSync, mkdirSync, readdirSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
@@ -30,4 +30,20 @@ for (const { name, src } of assets) {
   const dest = join(outDir, name);
   copyFileSync(src, dest);
   console.log(`Prepared ${name} → ${dest}`);
+}
+
+try {
+  const canvasPkgDir = dirname(
+    require.resolve("@napi-rs/canvas-linux-x64-gnu/package.json"),
+  );
+  const nodeFile = readdirSync(canvasPkgDir).find((f) => f.endsWith(".node"));
+  if (nodeFile) {
+    const dest = join(outDir, "canvas.linux-x64-gnu.node");
+    copyFileSync(join(canvasPkgDir, nodeFile), dest);
+    console.log(`Prepared canvas.linux-x64-gnu.node → ${dest}`);
+  }
+} catch {
+  console.log(
+    "Skip canvas.linux-x64-gnu.node (optional dep not installed on this platform)",
+  );
 }
