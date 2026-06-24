@@ -32,6 +32,8 @@ export type SoaRuntimeHints = {
   authUrlMatchesApp: boolean;
   pdfEngineOk: boolean;
   qpdfEngineOk: boolean;
+  pdfEngineError: string | null;
+  qpdfEngineError: string | null;
 };
 
 export type SoaParseFailureDetail = {
@@ -112,6 +114,8 @@ export const soaDiagnosticsService = {
         !authUrl || authUrl.replace(/\/$/, "") === appUrl.replace(/\/$/, ""),
       pdfEngineOk: pdfEngine.ok,
       qpdfEngineOk: qpdfEngine.ok,
+      pdfEngineError: pdfEngine.ok ? null : pdfEngine.error,
+      qpdfEngineError: qpdfEngine.ok ? null : qpdfEngine.error,
     };
   },
 
@@ -124,15 +128,10 @@ export const soaDiagnosticsService = {
   },
 
   formatPdfEngineFailure(hints: SoaRuntimeHints): string | null {
-    if (hints.pdfEngineOk && hints.qpdfEngineOk) return null;
-    const parts: string[] = [];
-    if (!hints.pdfEngineOk) {
-      parts.push("pdf.js engine failed to initialize");
-    }
-    if (!hints.qpdfEngineOk) {
-      parts.push("qpdf engine failed to initialize");
-    }
-    return `PDF tooling not available on server (${parts.join("; ")}). Redeploy or check native dependency tracing.`;
+    // SOA parse requires pdf.js; qpdf is only for optional unlocked PDF copies / viewer.
+    if (hints.pdfEngineOk) return null;
+    const detail = hints.pdfEngineError ? ` (${hints.pdfEngineError})` : "";
+    return `PDF engine not available on server${detail}. Redeploy after a successful build (look for "Prepared pdf.worker.mjs" in Vercel logs).`;
   },
 
   formatParseFailureWarning(options: {

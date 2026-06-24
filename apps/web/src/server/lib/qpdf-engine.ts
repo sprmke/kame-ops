@@ -1,5 +1,10 @@
 import "server-only";
 
+import { readFileSync } from "fs";
+
+import { resolveNativeAsset } from "@/server/lib/native-assets";
+import { createPackageRequire } from "@/server/lib/package-require";
+
 type QpdfModule = {
   FS: {
     writeFile: (path: string, data: Uint8Array) => void;
@@ -16,10 +21,6 @@ type QpdfFactory = (opts: {
 
 let qpdfModulePromise: Promise<QpdfModule> | null = null;
 
-/**
- * qpdf-wasm via in-memory wasmBinary — avoids locateFile / require.resolve at
- * bundle time (webpack was inlining resolve() as a numeric module id on Vercel).
- */
 export function getQpdfModule(): Promise<QpdfModule> {
   if (!qpdfModulePromise) {
     qpdfModulePromise = loadQpdfModule().catch((err) => {
@@ -31,14 +32,10 @@ export function getQpdfModule(): Promise<QpdfModule> {
 }
 
 async function loadQpdfModule(): Promise<QpdfModule> {
-  const { createRequire } = await import("module");
-  const { readFileSync } = await import("fs");
-  const require = createRequire(import.meta.url);
-
-  const wasmPath = require.resolve("@neslinesli93/qpdf-wasm/dist/qpdf.wasm");
+  const require = createPackageRequire();
+  const wasmPath = resolveNativeAsset("qpdf.wasm");
   const wasmBinary = readFileSync(wasmPath);
   const createModule = require("@neslinesli93/qpdf-wasm") as QpdfFactory;
-
   return createModule({ wasmBinary, noInitialRun: true });
 }
 
@@ -49,6 +46,8 @@ export async function checkQpdfEngineReady(): Promise<QpdfEngineStatus> {
     await getQpdfModule();
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: String(e) };
+    const error = e instanceof Error ? e.message : String(e);
+    console.error("[qpdf-engine] init failed:", error);
+    return { ok: false, error };
   }
 }

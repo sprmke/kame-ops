@@ -1,9 +1,12 @@
 import "server-only";
 
+import { pathToFileURL } from "url";
+
 import "@/server/legacy/pay-credit-cards/pdf-node-polyfill";
+import { resolveNativeAsset } from "@/server/lib/native-assets";
+import { createPackageRequire } from "@/server/lib/package-require";
 
 declare global {
-  // pdf.js Node fake-worker path reads this before importing workerSrc
   var pdfjsWorker: { WorkerMessageHandler?: unknown } | undefined;
 }
 
@@ -11,10 +14,6 @@ type PdfJs = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 
 let pdfJsPromise: Promise<PdfJs> | null = null;
 
-/**
- * Lazy pdf.js for server (local + Vercel). Preloads WorkerMessageHandler on
- * globalThis so pdf.js never dynamic-imports a missing ./pdf.worker.mjs path.
- */
 export function getPdfJs(): Promise<PdfJs> {
   if (!pdfJsPromise) {
     pdfJsPromise = initPdfJs().catch((err) => {
@@ -26,26 +25,30 @@ export function getPdfJs(): Promise<PdfJs> {
 }
 
 async function initPdfJs(): Promise<PdfJs> {
+  const require = createPackageRequire();
+  const pdfPath = require.resolve("pdfjs-dist/legacy/build/pdf.mjs");
+  const workerPath = resolveNativeAsset("pdf.worker.mjs");
+
   const [pdfjs, worker] = await Promise.all([
-    import(/* webpackIgnore: true */ "pdfjs-dist/legacy/build/pdf.mjs"),
-    import(/* webpackIgnore: true */ "pdfjs-dist/legacy/build/pdf.worker.mjs"),
+    import(pathToFileURL(pdfPath).href),
+    import(pathToFileURL(workerPath).href),
   ]);
 
   globalThis.pdfjsWorker = worker;
-  // Override default "./pdf.worker.mjs" (truthy but wrong on serverless).
-  pdfjs.GlobalWorkerOptions.workerSrc = "pdfjs-internal-worker";
+  pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href;
 
   return pdfjs;
 }
 
 export type PdfEngineStatus = { ok: true } | { ok: false; error: string };
 
-/** Preflight probe for SOA diagnostics. */
 export async function checkPdfEngineReady(): Promise<PdfEngineStatus> {
   try {
     await getPdfJs();
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: String(e) };
+    const error = e instanceof Error ? e.message : String(e);
+    console.error("[pdf-engine] init failed:", error);
+    return { ok: false, error };
   }
 }

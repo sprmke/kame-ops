@@ -5,6 +5,8 @@ import type { NextConfig } from "next";
 const repoRoot = path.join(__dirname, "../..");
 
 const nativeTraceGlobs = [
+  "./src/server/lib/native/pdf.worker.mjs",
+  "./src/server/lib/native/qpdf.wasm",
   "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
   "node_modules/@neslinesli93/qpdf-wasm/dist/qpdf.wasm",
   "node_modules/@napi-rs/canvas-linux-x64-gnu/**/*",
