@@ -32,6 +32,7 @@ export function useSoaRunDialog(options: UseSoaRunDialogOptions = {}) {
   >();
   const [runSettled, setRunSettled] = useState<RunSoaSettled>(null);
   const [runErrorMessage, setRunErrorMessage] = useState<string | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const lastPeriodIdRef = useRef<string | null>(null);
 
   const runPipeline = api.soa.runPipeline.useMutation({
@@ -68,6 +69,7 @@ export function useSoaRunDialog(options: UseSoaRunDialogOptions = {}) {
     if (!open) {
       setRunSettled(null);
       setRunErrorMessage(null);
+      setActiveRunId(null);
       lastPeriodIdRef.current = null;
     }
   }
@@ -77,6 +79,7 @@ export function useSoaRunDialog(options: UseSoaRunDialogOptions = {}) {
     setRunOpen(false);
     setRunSettled(null);
     setRunErrorMessage(null);
+    setActiveRunId(null);
     lastPeriodIdRef.current = null;
     options.onAfterRunComplete?.(periodId);
   }
@@ -95,14 +98,17 @@ export function useSoaRunDialog(options: UseSoaRunDialogOptions = {}) {
       open: runOpen,
       onOpenChange: handleRunDialogOpenChange,
       initial: runInitial ?? options.initial,
+      runId: activeRunId,
       isPending: runPipeline.isPending,
       settled: runSettled,
       errorMessage: runErrorMessage,
       onRunComplete: handleRunComplete,
       onSubmit: (values: RunSoaFormValues) => {
+        const runId = crypto.randomUUID();
+        setActiveRunId(runId);
         setRunSettled(null);
         setRunErrorMessage(null);
-        runPipeline.mutate(toRunSoaPipelineInput(values));
+        runPipeline.mutate(toRunSoaPipelineInput(values, runId));
       },
     },
   };
