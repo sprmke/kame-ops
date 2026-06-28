@@ -136,6 +136,18 @@ function redundantSinglePeriodIds(periods: SoaPeriodRecord[]): string[] {
     .map((p) => p.id);
 }
 
+function findCoveringMultiMonthPeriod(
+  month: number,
+  year: number,
+  periods: SoaPeriodRecord[],
+): SoaPeriodRecord | undefined {
+  return periods.find(
+    (p) =>
+      isMultiMonthPeriod(p) &&
+      isMonthInRange(month, year, p.fromMonth, p.fromYear, p.toMonth, p.toYear),
+  );
+}
+
 async function aggregatePeriodStats(userId: string, period: SoaPeriodRecord) {
   const [statements, dues] = await Promise.all([
     db.query.soaStatements.findMany({
@@ -351,6 +363,24 @@ export const soaPeriodService = {
     };
   },
 
+  /** Prefer a covering range period so post-run navigation survives list pruning. */
+  async resolveNavigationPeriodId(
+    userId: string,
+    period: SoaPeriodRecord,
+  ): Promise<string> {
+    if (isMultiMonthPeriod(period)) return period.id;
+
+    const periods = await db.query.soaPeriods.findMany({
+      where: eq(soaPeriods.userId, userId),
+    });
+    const covering = findCoveringMultiMonthPeriod(
+      period.fromMonth,
+      period.fromYear,
+      periods,
+    );
+    return covering?.id ?? period.id;
+  },
+
   async upsertPeriod(
     userId: string,
     input: {
@@ -364,15 +394,38 @@ export const soaPeriodService = {
       createCalendar: boolean;
     },
   ) {
-    const existing = await db.query.soaPeriods.findFirst({
-      where: and(
-        eq(soaPeriods.userId, userId),
-        eq(soaPeriods.fromMonth, input.fromMonth),
-        eq(soaPeriods.fromYear, input.fromYear),
-        eq(soaPeriods.toMonth, input.toMonth),
-        eq(soaPeriods.toYear, input.toYear),
-      ),
+    const allPeriods = await db.query.soaPeriods.findMany({
+      where: eq(soaPeriods.userId, userId),
     });
+
+    if (!isMultiMonthPeriod(input)) {
+      const covering = findCoveringMultiMonthPeriod(
+        input.fromMonth,
+        input.fromYear,
+        allPeriods,
+      );
+      if (covering) {
+        const [updated] = await db
+          .update(soaPeriods)
+          .set({
+            notifyTelegram: input.notifyTelegram,
+            notifySlack: input.notifySlack,
+            createCalendar: input.createCalendar,
+            lastRunAt: new Date(),
+          })
+          .where(eq(soaPeriods.id, covering.id))
+          .returning();
+        return updated!;
+      }
+    }
+
+    const existing = allPeriods.find(
+      (period) =>
+        period.fromMonth === input.fromMonth &&
+        period.fromYear === input.fromYear &&
+        period.toMonth === input.toMonth &&
+        period.toYear === input.toYear,
+    );
 
     if (existing) {
       const [updated] = await db

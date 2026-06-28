@@ -44,6 +44,44 @@ export type RunSoaPipelineInput = {
   runId?: string;
 };
 
+async function resolveRunPeriodBounds(input: RunSoaPipelineInput): Promise<{
+  fromMonth: number;
+  fromYear: number;
+  toMonth: number;
+  toYear: number;
+}> {
+  if (
+    input.mode === "range" &&
+    input.fromMonth === input.toMonth &&
+    input.fromYear === input.toYear &&
+    input.monthCount &&
+    input.monthCount > 1
+  ) {
+    const { lastNMonthsEndingAt } =
+      await import("@/server/legacy/pay-credit-cards/month");
+    const contexts = lastNMonthsEndingAt(
+      String(input.toMonth),
+      String(input.toYear),
+      input.monthCount,
+    );
+    const first = contexts[0]!;
+    const last = contexts[contexts.length - 1]!;
+    return {
+      fromMonth: first.monthIndex0 + 1,
+      fromYear: first.year,
+      toMonth: last.monthIndex0 + 1,
+      toYear: last.year,
+    };
+  }
+
+  return {
+    fromMonth: input.fromMonth,
+    fromYear: input.fromYear,
+    toMonth: input.toMonth,
+    toYear: input.toYear,
+  };
+}
+
 function resolveMonthCount(input: RunSoaPipelineInput): number {
   if (input.mode === "single") return 1;
   if (
@@ -514,12 +552,10 @@ export const soaService = {
         email?: string;
       }>(userId, "gmail");
 
+      const periodBounds = await resolveRunPeriodBounds(input);
       const period = await soaPeriodService.upsertPeriod(userId, {
         mode: input.mode,
-        fromMonth: input.fromMonth,
-        fromYear: input.fromYear,
-        toMonth: input.toMonth,
-        toYear: input.toYear,
+        ...periodBounds,
         notifyTelegram: input.notifyTelegram,
         notifySlack: input.notifySlack,
         createCalendar: input.createCalendar,
@@ -654,9 +690,12 @@ export const soaService = {
         statementCount,
       };
 
+      const navigationPeriodId =
+        await soaPeriodService.resolveNavigationPeriodId(userId, period);
+
       soaDiagnosticsService.logRunEnd({
         userId,
-        periodId: period.id,
+        periodId: navigationPeriodId,
         ...diagnostics,
         warning: warning ?? null,
       });
@@ -665,7 +704,7 @@ export const soaService = {
 
       return {
         ok: true as const,
-        periodId: period.id,
+        periodId: navigationPeriodId,
         rowCount: detailed.allRows.length,
         statementCount,
         parsedCount,

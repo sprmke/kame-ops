@@ -57,7 +57,9 @@ export function SoaListPage() {
     },
     onAfterRunComplete: (periodId) => {
       if (periodId) {
-        router.push(ROUTES.dashboard.soaPeriod(periodId));
+        void utils.soa.getPeriod.prefetch({ periodId }).then(() => {
+          router.push(ROUTES.dashboard.soaPeriod(periodId));
+        });
       }
     },
   });
