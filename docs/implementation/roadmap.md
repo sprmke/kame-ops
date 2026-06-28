@@ -28,9 +28,9 @@
 - [x] Cron routes
 - [ ] Supabase Cron dashboard (manual external setup)
 
-## Phase 5 — Receipts ✅ (basic)
+## Phase 5 — Receipts ✅
 
-- [x] Upload API + OCR tRPC + list UI
+- [x] Upload API + AI validation + mark paid + list UI
 - [x] Supabase Storage service (local `/tmp` fallback when unset)
 
 ## Phase 6 — SOA analytics ✅

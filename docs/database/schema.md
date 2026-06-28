@@ -8,7 +8,7 @@
 - `credit_cards` — card credentials (encrypted PDF password), optional `soa_subject` (Gmail SOA search), `color` (#RRGGBB accent)
 - `soa_statements`, `soa_transactions` — parsed SOA data
 - `due_entries` — payment due tracking
-- `receipts` — uploaded receipt images + OCR/AI fields
+- `receipts` — uploaded receipt images + AI validation fields
 - `reminders`, `reminder_logs` — generic reminder engine
 - `integrations` — Gmail, Telegram, Slack, Calendar per user
 - `automation_jobs`, `automation_runs` — cron definitions and logs

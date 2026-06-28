@@ -35,7 +35,8 @@
 | `transactionCategories` | listOptions, listRules, createRule, updateRule, deleteRule, updateTransactionCategory                                         | Implemented — keyword rules + learned corrections                                                                                          |
 | `reminders`             | listDue, status, sendNow (force optional), markPaid, markUnpaid                                                               | Implemented                                                                                                                                |
 | `automations`           | list, create, run                                                                                                             | Implemented                                                                                                                                |
-| `integrations`          | list, upsert                                                                                                                  | Implemented                                                                                                                                |
+| `integrations`          | list, upsert, getFormConfigs, **receiptAiStatus**, **verifyReceiptAi**                                                        | Implemented                                                                                                                                |
+| `receipts`              | list, unpaidDueEntries, validateAndMarkPaid, confirmMarkPaid                                                                  | Implemented — AI receipt validation (Gemini + Groq fallback), mark SOA paid                                                                |
 
 ## REST / webhooks
 
@@ -50,27 +51,29 @@
 
 ## Database (Drizzle)
 
-| Table                                | Purpose                                                                             |
-| ------------------------------------ | ----------------------------------------------------------------------------------- |
-| `users`, auth tables                 | NextAuth users                                                                      |
-| `credit_cards`                       | Card credentials (encrypted PDF password, `soa_subject`, `color`)                   |
-| `soa_periods`                        | SOA run periods (date range + notify/calendar settings; `summary_pdf_storage_path`) |
-| `soa_statements`, `soa_transactions` | SOA history                                                                         |
-| `due_entries`                        | Due dates / paid state                                                              |
-| `integrations`                       | Encrypted provider config                                                           |
-| `reminders`, `reminder_logs`         | Reminder config + send log                                                          |
-| `automation_jobs`, `automation_runs` | Scheduled jobs                                                                      |
-| `receipts`                           | Receipt OCR (schema ready)                                                          |
-| `activity_logs`                      | Audit trail                                                                         |
+| Table                                | Purpose                                                                                          |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `users`, auth tables                 | NextAuth users                                                                                   |
+| `credit_cards`                       | Card credentials (encrypted PDF password, `soa_subject`, `color`)                                |
+| `soa_periods`                        | SOA run periods (date range + notify/calendar settings; `summary_pdf_storage_path`)              |
+| `soa_statements`, `soa_transactions` | SOA history                                                                                      |
+| `due_entries`                        | Due dates / paid state                                                                           |
+| `integrations`                       | Encrypted provider config                                                                        |
+| `reminders`, `reminder_logs`         | Reminder config + send log                                                                       |
+| `automation_jobs`, `automation_runs` | Scheduled jobs                                                                                   |
+| `receipts`                           | Payment receipt uploads + AI validation (`ai_verdict`, `payment_status`, links to `due_entries`) |
+| `activity_logs`                      | Audit trail                                                                                      |
 
 ## Services (server)
 
-| Service                     | Purpose                                   |
-| --------------------------- | ----------------------------------------- |
-| `gmail.service.ts`          | Google OAuth tokens + legacy Gmail bridge |
-| `storage.service.ts`        | Supabase Storage uploads + local fallback |
-| `integration.service.ts`    | Encrypted per-user integrations           |
-| `legacy-runtime.service.ts` | Bridge to pay-credit-cards CLI            |
+| Service                         | Purpose                                   |
+| ------------------------------- | ----------------------------------------- |
+| `gmail.service.ts`              | Google OAuth tokens + legacy Gmail bridge |
+| `storage.service.ts`            | Supabase Storage uploads + local fallback |
+| `integration.service.ts`        | Encrypted per-user integrations           |
+| `receipt-validation.service.ts` | Gemini multi-key + Groq vision validation |
+| `receipt.service.ts`            | Receipt upload processing + mark paid     |
+| `legacy-runtime.service.ts`     | Bridge to pay-credit-cards CLI            |
 
 Source copied to `apps/web/src/server/legacy/pay-credit-cards/` — used at runtime via dynamic import for SOA, reminders, and notifications. Original repo: `automated-tasks/pay-credit-cards`.
 

@@ -20,7 +20,7 @@ Temporary reference for porting the CLI at `automated-tasks/pay-credit-cards/`.
 - [ ] Telegram PDF + Slack text
 - [ ] Google Calendar D-4…D-0 + mark paid/unpaid
 - [ ] Telegram paid/unpaid text commands
-- [ ] Receipt OCR + minimum due validation
+- [x] Receipt AI validation + minimum due threshold for mark paid
 - [ ] Bank parsers: metrobank, rcbc, bpi, unionbank
 
 ## Scheduling

@@ -25,8 +25,8 @@
 
 ## Receipt upload
 
-1. Upload sample or payment receipt in **Receipts**
-2. OCR + optional AI analysis
-3. Link to card / mark paid when amount validates
+1. Upload payment receipt in **Receipts**
+2. AI validates card, amount, and bank/wallet (Gemini + Groq fallback)
+3. Mark SOA paid when amount meets minimum/total due
 
 Expand with screen-level steps when UI is implemented.
