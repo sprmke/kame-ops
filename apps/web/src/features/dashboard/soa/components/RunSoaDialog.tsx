@@ -21,7 +21,6 @@ import { cn } from "@/lib/utils/cn";
 import { useRunSoaProgress } from "../hooks/use-run-soa-progress";
 import {
   buildRunSoaProgressSteps,
-  monthSpan,
   type RunSoaFormValues,
 } from "../lib/run-soa-progress";
 import { RunSoaProgressPanel } from "./RunSoaProgressPanel";
@@ -35,6 +34,7 @@ type RunSoaDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initial?: Partial<RunSoaFormValues>;
+  runId?: string | null;
   onSubmit: (values: RunSoaFormValues) => void;
   isPending?: boolean;
   settled?: RunSoaSettled;
@@ -83,6 +83,7 @@ export function RunSoaDialog({
   open,
   onOpenChange,
   initial,
+  runId = null,
   onSubmit,
   isPending,
   settled = null,
@@ -104,18 +105,19 @@ export function RunSoaDialog({
     () => buildRunSoaProgressSteps(progressValues),
     [progressValues],
   );
-  const span = monthSpan(progressValues);
   const runFailed = settled === "error";
   const runSucceeded = settled === "success";
-  const { activeStepIndex, progress, pastEstimate } = useRunSoaProgress(
-    !!isPending,
-    progressSteps,
-    span,
-    !isPending && !runFailed,
-  );
+  const {
+    steps: liveSteps,
+    activeStepIndex,
+    progress,
+    detail,
+    finished: progressFinished,
+    failed: progressFailed,
+  } = useRunSoaProgress(runId, progressSteps, !!isPending, settled);
 
-  const progressFailed = !isPending && runFailed;
-  const progressFinished = !isPending && !runFailed && showProgress;
+  const progressFailedState = !isPending && runFailed;
+  const progressFinishedState = !isPending && !runFailed && showProgress;
 
   useEffect(() => {
     if (!open) return;
@@ -188,15 +190,15 @@ export function RunSoaDialog({
         {showProgress ? (
           <>
             <RunSoaProgressPanel
-              steps={progressSteps}
+              steps={liveSteps}
               activeStepIndex={activeStepIndex}
-              progress={progressFinished ? 100 : progress}
-              finished={progressFinished || progressFailed}
-              failed={progressFailed}
+              progress={progressFinishedState ? 100 : progress}
+              finished={progressFinishedState || progressFinished}
+              failed={progressFailedState || progressFailed}
               errorMessage={errorMessage}
-              pastEstimate={pastEstimate}
+              detail={detail}
             />
-            {progressFailed && (
+            {progressFailedState && (
               <DialogFooter>
                 <Button
                   variant="outline"
