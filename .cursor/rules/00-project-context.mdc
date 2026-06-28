@@ -21,14 +21,14 @@ alwaysApply: true
 - **Automations**: Cron-style jobs (Supabase Cron / pg_cron), run history, manual trigger
 - **Reminders**: Generic due-date reminders with channels (Telegram, Slack, email)
 - **Notifications**: Unified notification service; idempotent fingerprints per reminder
-- **Receipts & documents**: Supabase Storage, OCR, optional AI analysis
+- **Receipts & documents**: Supabase Storage, AI receipt validation, BPI SOA OCR when needed
 
 ### Credit cards module (sub-module)
 
 - **Credit cards**: CRUD (replaces `CARDS_JSON` env)
 - **SOA pipeline**: Gmail fetch → PDF unlock/parse → summary PDF → state upsert
 - **Due tracking**: Minimum/total due, paid status, interest charges
-- **Mark paid**: UI, Telegram webhook, receipt OCR (ported from CLI)
+- **Mark paid**: UI, Telegram webhook, receipt AI validation (ported from CLI)
 - **Banks (PH)**: Metrobank, RCBC, BPI, Unionbank parsers
 
 ### Legacy reference
@@ -95,7 +95,7 @@ User-friendly errors, loading/empty states, WCAG 2.1 AA, light/dark theme via CS
 | Storage | Supabase Storage (SOA PDFs, receipts) |
 | Email | Resend, React Email |
 | Cron | Supabase Cron (pg_cron) |
-| OCR | Tesseract.js (receipts; BPI SOA when needed) |
+| OCR | Tesseract.js (BPI SOA PDFs when `BPI_OCR=1`; not used for payment receipts) |
 | AI | OpenAI / Anthropic (receipt analysis, optional) |
 
 ## AI Assistant Guidelines

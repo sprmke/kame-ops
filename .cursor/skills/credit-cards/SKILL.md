@@ -1,6 +1,6 @@
 ---
 name: credit-cards
-description: Credit card SOA module for KameOps — Gmail SOA fetch, PDF parsing (Metrobank, RCBC, BPI, Unionbank), due tracking, mark-paid, receipt OCR. Use when porting pay-credit-cards CLI or building CC UI/API.
+description: Credit card SOA module for KameOps — Gmail SOA fetch, PDF parsing (Metrobank, RCBC, BPI, Unionbank), due tracking, mark-paid, receipt AI validation. Use when porting pay-credit-cards CLI or building CC UI/API.
 ---
 
 # Credit Cards Module Skill
@@ -9,16 +9,16 @@ description: Credit card SOA module for KameOps — Gmail SOA fetch, PDF parsing
 
 Port from `automated-tasks/pay-credit-cards/src/`:
 
-| Legacy file                                                     | Target service                                     |
-| --------------------------------------------------------------- | -------------------------------------------------- |
-| `soa-run.ts`                                                    | `soa.service.ts`                                   |
-| `parse-soa.ts`, `parse-transactions.ts`, `pdf.ts`, `bpi-ocr.ts` | `soa-parse.service.ts`                             |
-| `due-reminders-state.ts`                                        | `reminder.service.ts` + `due_entries` schema       |
-| `notify.ts`, `notification-body.ts`                             | `notification.service.ts`                          |
-| `send-reminders.ts`                                             | `reminder.service.ts` + cron job                   |
-| `mark-paid.ts`, `receipt-ocr.ts`                                | `credit-card.service.ts`, `receipt-ocr.service.ts` |
-| `google-calendar.ts`                                            | `google-calendar.service.ts`                       |
-| `gmail.ts`                                                      | `gmail.service.ts`                                 |
+| Legacy file                                                     | Target service                                        |
+| --------------------------------------------------------------- | ----------------------------------------------------- |
+| `soa-run.ts`                                                    | `soa.service.ts`                                      |
+| `parse-soa.ts`, `parse-transactions.ts`, `pdf.ts`, `bpi-ocr.ts` | `soa-parse.service.ts`                                |
+| `due-reminders-state.ts`                                        | `reminder.service.ts` + `due_entries` schema          |
+| `notify.ts`, `notification-body.ts`                             | `notification.service.ts`                             |
+| `send-reminders.ts`                                             | `reminder.service.ts` + cron job                      |
+| `mark-paid.ts`, `receipt-ocr.ts` (CLI)                          | `receipt.service.ts`, `receipt-validation.service.ts` |
+| `google-calendar.ts`                                            | `google-calendar.service.ts`                          |
+| `gmail.ts`                                                      | `gmail.service.ts`                                    |
 
 ## Card Configuration
 
@@ -62,7 +62,7 @@ runSoa: protectedProcedure
 
 Text: `(\d{4})\s*[-–—]\s*(.+?)\s*[-–—]\s*paid`
 
-Receipt: OCR amount must be ≥ minimum due (or total if configured).
+Receipt: AI-extracted amount must be ≥ minimum due (or total if configured).
 
 ## Summary PDF
 

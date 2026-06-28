@@ -5,7 +5,7 @@ globs:
   - '**/soa/**'
   - '**/server/services/soa*.ts'
   - '**/server/services/credit-card*.ts'
-  - '**/server/services/receipt-ocr*.ts'
+  - '**/server/services/receipt*.service.ts'
   - '**/server/routers/credit-cards.ts'
   - '**/server/routers/soa.ts'
 alwaysApply: false
@@ -51,17 +51,17 @@ Order of operations (match legacy `soa-run.ts`):
 | Input | Behavior |
 | ----- | -------- |
 | `xxxx - month year - paid` | Text command (Telegram or API) |
-| Receipt image | OCR → amount ≥ minimum due → mark paid |
+| Receipt image | AI vision → amount ≥ minimum due → mark paid |
 | `xxxx - month year - unpaid` | Reverse paid state |
 
 Side effects: update due entry, suppress/restore reminder fingerprints, patch calendar events.
 
-## Receipt OCR
+## Receipt AI validation
 
-- Tesseract PSM default 6 for app screenshots
-- Parse card last-4 (labeled lines, 16-digit PAN, masked, known last-4 fallback)
-- Parse amount from labeled lines (`Bill Amount`, `Total`, etc.)
-- Store image in Supabase Storage under `receipts/{userId}/YYYY-MM/`
+- Gemini 2.5 Flash vision (multi-key rotation) + Groq fallback
+- Extract card last-4, amount, bank/wallet from PH e-wallet/bank screenshots
+- Amount must meet minimum due (or total when `RECEIPT_REQUIRE_TOTAL_DUE=1`)
+- Store uploads in Supabase Storage under `receipts/{userId}/`
 
 ## Security
 

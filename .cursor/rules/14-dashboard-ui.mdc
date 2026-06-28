@@ -25,7 +25,7 @@ KameOps is **dashboard-first** (no large public marketing surface in v1). Guest-
 | Reminders | List/filter reminders, window config, sent log |
 | Automations | Job list, cron schedule editor, run history |
 | Integrations | Connect Gmail/Telegram/Slack/Calendar with status |
-| Receipts | Upload gallery, OCR result, link to mark paid |
+| Receipts | Upload gallery, AI verdict, mark paid |
 | Settings | Profile, timezone, notification defaults |
 
 ## Data Tables

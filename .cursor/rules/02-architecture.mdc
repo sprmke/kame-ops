@@ -36,7 +36,7 @@ src/features/
 │   ├── reminders/              # Generic reminder engine UI
 │   ├── automations/            # Cron jobs, run logs
 │   ├── integrations/           # Gmail, Telegram, Slack, Calendar
-│   ├── receipts/               # Upload, OCR, AI analysis
+│   ├── receipts/               # Upload, AI validation, mark paid
 │   ├── analytics/              # Spending charts (CC module data)
 │   └── settings/               # Profile, notifications prefs
 └── shared/
@@ -107,7 +107,8 @@ src/server/
 │   ├── telegram.service.ts
 │   ├── slack.service.ts
 │   ├── google-calendar.service.ts
-│   ├── receipt-ocr.service.ts
+│   ├── receipt.service.ts
+│   ├── receipt-validation.service.ts
 │   ├── automation.service.ts
 │   └── storage.service.ts
 └── jobs/                           # Cron entrypoints calling services
