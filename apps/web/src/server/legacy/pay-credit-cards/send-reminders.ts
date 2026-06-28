@@ -2,7 +2,7 @@
 /**
  * Daily due-date reminder runner.
  *
- * Reads `data/due-reminders-state.json` (populated by runSoa) and sends a
+ * Reads `due-reminders-state.json` (populated by SOA runs) and sends a
  * Telegram / Slack ping for every card whose due date is D-`windowDays`..D-0
  * away. Idempotent: each (card, dueDate, daysAway) tuple is only sent once,
  * so launchd / cron can safely fire this at 12:00 every day.
@@ -387,25 +387,4 @@ export async function runSendReminders(
   log.line("");
 
   return { sent, skipped, failed };
-}
-
-async function main() {
-  const dryRun =
-    process.argv.includes("--dry-run") || process.argv.includes("-n");
-  const force = process.argv.includes("--force") || process.argv.includes("-f");
-  const asOf = parseAsOfYmd();
-
-  await runSendReminders({ dryRun, force, asOf });
-}
-
-const isCliEntry =
-  typeof process.argv[1] === "string" &&
-  process.argv[1].includes("send-reminders");
-
-if (isCliEntry) {
-  main().catch((e) => {
-    const msg = e instanceof Error ? e.message : String(e);
-    log.error(msg);
-    process.exit(1);
-  });
 }

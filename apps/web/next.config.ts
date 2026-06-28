@@ -9,11 +9,7 @@ const nativeTraceGlobs = [
   "./src/server/lib/native/canvas.linux-x64-gnu.node",
 ];
 
-const traceExcludeGlobs = [
-  "**/node_modules/.bun/**",
-  "./src/server/legacy/data/downloads/**",
-  "./src/server/legacy/data/output/**",
-];
+const traceExcludeGlobs = ["**/node_modules/.bun/**"];
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
