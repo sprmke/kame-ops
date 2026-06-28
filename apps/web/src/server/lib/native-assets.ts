@@ -7,7 +7,9 @@ import { fileURLToPath } from "url";
 const NATIVE_RELATIVE = "src/server/lib/native";
 const NATIVE_DIR = dirname(fileURLToPath(import.meta.url));
 
-export function resolveNativeAsset(id: "qpdf.wasm"): string {
+export type NativeAssetId = "qpdf.wasm" | "canvas.linux-x64-gnu.node";
+
+export function resolveNativeAsset(id: NativeAssetId): string {
   const candidates = [
     join(NATIVE_DIR, "native", id),
     join(process.cwd(), NATIVE_RELATIVE, id),

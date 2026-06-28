@@ -175,6 +175,37 @@ export const activityLogs = pgTable(
   (table) => [index("activity_logs_user_idx").on(table.userId)],
 );
 
+export const soaRunProgress = pgTable(
+  "soa_run_progress",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: varchar("status", { length: 16 }).notNull().default("running"),
+    progress: integer("progress").notNull().default(0),
+    steps: jsonb("steps")
+      .$type<import("@/lib/soa-run-progress").SoaRunStepSnapshot[]>()
+      .notNull(),
+    detail: text("detail"),
+    error: text("error"),
+    monthCount: integer("month_count").notNull().default(1),
+    gmailMonthIndex: integer("gmail_month_index").notNull().default(0),
+    parseMonthIndex: integer("parse_month_index").notNull().default(0),
+    parseFileFraction: integer("parse_file_fraction").notNull().default(0),
+    uploadFraction: integer("upload_fraction").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("soa_run_progress_user_idx").on(table.userId),
+    index("soa_run_progress_updated_idx").on(table.updatedAt),
+  ],
+);
+
 export const integrationsRelations = relations(integrations, ({ one }) => ({
   user: one(users, { fields: [integrations.userId], references: [users.id] }),
 }));

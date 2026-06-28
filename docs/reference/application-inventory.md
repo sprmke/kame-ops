@@ -28,14 +28,14 @@
 
 ## tRPC API
 
-| Router                  | Procedures                                                                                                | Status                                                                   |
-| ----------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `creditCards`           | list, get, create, update, delete                                                                         | Implemented                                                              |
-| `soa`                   | listPeriods, getPeriod, getStatement, updatePeriod, deletePeriod, list, runPipeline, dedupe, clearHistory | Implemented — period detail has Overview / Transactions / Analytics tabs |
-| `transactionCategories` | listOptions, listRules, createRule, updateRule, deleteRule, updateTransactionCategory                     | Implemented — keyword rules + learned corrections                        |
-| `reminders`             | listDue, status, sendNow (force optional), markPaid, markUnpaid                                           | Implemented                                                              |
-| `automations`           | list, create, run                                                                                         | Implemented                                                              |
-| `integrations`          | list, upsert                                                                                              | Implemented                                                              |
+| Router                  | Procedures                                                                                                                    | Status                                                                                                                                     |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `creditCards`           | list, get, create, update, delete                                                                                             | Implemented                                                                                                                                |
+| `soa`                   | listPeriods, getPeriod, getStatement, updatePeriod, deletePeriod, list, runPipeline, **getRunProgress**, dedupe, clearHistory | Implemented — period detail has Overview / Transactions / Analytics tabs; `runPipeline` accepts optional `runId` for live progress polling |
+| `transactionCategories` | listOptions, listRules, createRule, updateRule, deleteRule, updateTransactionCategory                                         | Implemented — keyword rules + learned corrections                                                                                          |
+| `reminders`             | listDue, status, sendNow (force optional), markPaid, markUnpaid                                                               | Implemented                                                                                                                                |
+| `automations`           | list, create, run                                                                                                             | Implemented                                                                                                                                |
+| `integrations`          | list, upsert                                                                                                                  | Implemented                                                                                                                                |
 
 ## REST / webhooks
 

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { protectedProcedure, router } from "@/server/trpc";
 import { soaPeriodService } from "@/server/services/soa-period.service";
+import { soaRunProgressService } from "@/server/services/soa-run-progress.service";
 import { soaService } from "@/server/services/soa.service";
 
 const runSoaInputSchema = z.object({
@@ -14,6 +15,7 @@ const runSoaInputSchema = z.object({
   notifyTelegram: z.boolean(),
   notifySlack: z.boolean(),
   createCalendar: z.boolean(),
+  runId: z.string().uuid().optional(),
 });
 
 const updatePeriodSchema = z.object({
@@ -70,6 +72,12 @@ export const soaRouter = router({
     .input(runSoaInputSchema)
     .mutation(({ ctx, input }) =>
       soaService.runSoaPipeline(ctx.user.id, input),
+    ),
+
+  getRunProgress: protectedProcedure
+    .input(z.object({ runId: z.string().uuid() }))
+    .query(({ ctx, input }) =>
+      soaRunProgressService.getSnapshot(ctx.user.id, input.runId),
     ),
 
   dedupe: protectedProcedure.mutation(({ ctx }) =>
