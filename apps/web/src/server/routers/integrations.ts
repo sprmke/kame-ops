@@ -23,4 +23,16 @@ export const integrationsRouter = router({
     .mutation(({ ctx, input }) =>
       integrationService.upsert(ctx.user.id, input),
     ),
+
+  receiptAiStatus: protectedProcedure.query(async () => {
+    const { getReceiptAiSecretsStatus } =
+      await import("@/server/services/receipt-validation.service");
+    return getReceiptAiSecretsStatus();
+  }),
+
+  verifyReceiptAi: protectedProcedure.mutation(async () => {
+    const { verifyReceiptAiIntegration } =
+      await import("@/server/services/receipt-validation.service");
+    return verifyReceiptAiIntegration();
+  }),
 });

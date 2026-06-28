@@ -1,57 +1,33 @@
 import { z } from "zod";
 
 import { protectedProcedure, router } from "@/server/trpc";
+import { receiptService } from "@/server/services/receipt.service";
 
 export const receiptsRouter = router({
-  list: protectedProcedure.query(async ({ ctx }) => {
-    const { db } = await import("@/lib/db");
-    const { receipts } = await import("@/lib/db/schema");
-    const { eq, desc } = await import("drizzle-orm");
-    return db.query.receipts.findMany({
-      where: eq(receipts.userId, ctx.user.id),
-      orderBy: [desc(receipts.createdAt)],
-      limit: 50,
-    });
-  }),
+  list: protectedProcedure.query(({ ctx }) => receiptService.list(ctx.user.id)),
 
-  processOcr: protectedProcedure
+  unpaidDueEntries: protectedProcedure.query(({ ctx }) =>
+    receiptService.listUnpaidDueEntries(ctx.user.id),
+  ),
+
+  validateAndMarkPaid: protectedProcedure
     .input(
       z.object({
-        storagePath: z.string(),
+        storagePath: z.string().min(1),
         originalFileName: z.string().optional(),
+        dueEntryId: z.string().uuid().optional(),
+        caption: z.string().optional(),
+        /** When false, only run AI validation without marking paid. */
+        markPaid: z.boolean().default(true),
       }),
     )
-    .mutation(async ({ ctx, input }) => {
-      const { db } = await import("@/lib/db");
-      const { receipts } = await import("@/lib/db/schema");
-      const { ocrReceipt, parseReceiptText } =
-        await import("@/server/legacy/pay-credit-cards/receipt-ocr");
+    .mutation(({ ctx, input }) =>
+      receiptService.processUploadedReceipt(ctx.user.id, input),
+    ),
 
-      const { storageService } =
-        await import("@/server/services/storage.service");
-      const localPath = await storageService.resolveLocalPath(
-        input.storagePath,
-      );
-      const ocr = await ocrReceipt(localPath);
-      const parsed = parseReceiptText(ocr.text);
-
-      const [row] = await db
-        .insert(receipts)
-        .values({
-          userId: ctx.user.id,
-          storagePath: input.storagePath,
-          originalFileName: input.originalFileName,
-          ocrText: ocr.text,
-          ocrConfidence: String(ocr.confidence ?? ""),
-          parsedCardLast4: parsed.cardLast4,
-          parsedAmount:
-            parsed.amount != null ? String(parsed.amount) : undefined,
-          parsedAmountRaw: parsed.amountRaw,
-          bankDetected: undefined,
-          status: "processed",
-        })
-        .returning();
-
-      return { receipt: row, parsed };
-    }),
+  confirmMarkPaid: protectedProcedure
+    .input(z.object({ receiptId: z.string().uuid() }))
+    .mutation(({ ctx, input }) =>
+      receiptService.markPaidFromReceiptId(ctx.user.id, input.receiptId),
+    ),
 });

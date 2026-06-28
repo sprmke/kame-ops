@@ -169,19 +169,12 @@ export const remindersConfig = {
 };
 
 /**
- * Mark-as-paid via receipt image sent to the Telegram bot.
+ * Mark-as-paid via receipt image (Telegram bot or dashboard upload).
  *
- * - `imagesDir`   — where downloaded receipts are persisted (grouped by YYYY-MM).
- * - `tesseractPsm`— Tesseract page-segmentation mode ("0".."13"); default "6"
- *   (SINGLE_BLOCK) works well for most banking-app screenshots.
  * - `requireTotalDue` — when true, only mark paid if amount >= Total Due.
  *   Default (false) uses the Minimum Due threshold.
  */
 export const receiptConfig = {
-  imagesDir: process.env.RECEIPT_IMAGES_DIR
-    ? path.resolve(projectRoot, process.env.RECEIPT_IMAGES_DIR)
-    : path.join(projectPaths.dataDir, "receipts"),
-  tesseractPsm: (process.env.RECEIPT_TESSERACT_PSM ?? "").trim(),
   requireTotalDue: /^(1|true|yes)$/i.test(
     (process.env.RECEIPT_REQUIRE_TOTAL_DUE ?? "").trim(),
   ),

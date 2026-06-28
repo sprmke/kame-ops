@@ -31,7 +31,7 @@ import {
   markCalendarEventsUnpaid,
 } from "./google-calendar";
 import { log } from "./logger";
-import { parseMoneyToNumber, type ParsedReceipt } from "./receipt-ocr";
+import { parseMoneyToNumber, type ParsedReceipt } from "./receipt-utils";
 
 // ─── Month parsing ────────────────────────────────────────────────────────────
 
@@ -502,14 +502,14 @@ export function buildReceiptConfirmationMessage(
       return (
         `❌ *Card number not detected*\n\n` +
         `Could not read a credit card number from the receipt.\n\n` +
-        `_OCR excerpt:_\n\`\`\`\n${result.parsed.rawExcerpt}\n\`\`\`\n\n` +
+        `_Details:_\n\`\`\`\n${result.parsed.rawExcerpt}\n\`\`\`\n\n` +
         `You can still mark it manually:\n\`xxxx - month year - paid\``
       );
     case "no_amount_detected":
       return (
         `❌ *Amount not detected*\n\n` +
         `Could not read the payment amount from the receipt.\n\n` +
-        `_OCR excerpt:_\n\`\`\`\n${result.parsed.rawExcerpt}\n\`\`\``
+        `_Details:_\n\`\`\`\n${result.parsed.rawExcerpt}\n\`\`\``
       );
     case "no_due_entry":
       return (

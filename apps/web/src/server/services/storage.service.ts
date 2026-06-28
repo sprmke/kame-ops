@@ -75,7 +75,7 @@ export const storageService = {
   },
 
   /**
-   * Resolve a stored path/key to a local filesystem path for OCR/parsing.
+   * Resolve a stored path/key to a local filesystem path for parsing.
    * Downloads Supabase objects to a temp file when needed.
    */
   async resolveLocalPath(storagePath: string): Promise<string> {
