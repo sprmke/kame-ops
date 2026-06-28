@@ -60,9 +60,13 @@ export function WorkflowProgressPanel({
   const done = finished && !failed;
 
   return (
-    <div className="space-y-6 py-2" aria-live="polite" aria-busy={!finished}>
-      <div className="flex flex-col items-center gap-4 pt-2 text-center">
-        <div className="relative flex h-16 w-16 items-center justify-center">
+    <div
+      className="min-w-0 space-y-6 overflow-hidden py-2"
+      aria-live="polite"
+      aria-busy={!finished}
+    >
+      <div className="flex w-full min-w-0 flex-col items-center gap-4 pt-2 text-center">
+        <div className="relative flex h-16 w-16 shrink-0 items-center justify-center">
           {!done && !failed && (
             <>
               <span
@@ -92,22 +96,35 @@ export function WorkflowProgressPanel({
           </div>
         </div>
 
-        <div className="space-y-1">
-          <p className="font-display text-base font-semibold">
+        <div className="w-full min-w-0 space-y-1">
+          <p
+            className="truncate font-display text-base font-semibold"
+            title={done ? doneTitle : failed ? failedTitle : current?.label}
+          >
             {done ? doneTitle : failed ? failedTitle : current?.label}
           </p>
           {failed && errorMessage ? (
-            <p className="text-sm text-destructive">{errorMessage}</p>
+            <p
+              className="truncate text-sm text-destructive"
+              title={errorMessage}
+            >
+              {errorMessage}
+            </p>
           ) : !finished && detail ? (
-            <p className="text-sm text-muted-foreground">{detail}</p>
+            <p
+              className="truncate text-sm text-muted-foreground"
+              title={detail}
+            >
+              {detail}
+            </p>
           ) : null}
         </div>
       </div>
 
-      <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>Progress</span>
-          <span className="tabular-nums font-medium text-foreground">
+      <div className="min-w-0 space-y-2">
+        <div className="flex min-w-0 items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span className="shrink-0">Progress</span>
+          <span className="shrink-0 tabular-nums font-medium text-foreground">
             {progress}%
           </span>
         </div>
@@ -124,7 +141,7 @@ export function WorkflowProgressPanel({
             <li
               key={step.id}
               className={cn(
-                "flex items-center gap-3 text-sm transition-colors",
+                "flex min-w-0 items-center gap-3 text-sm transition-colors",
                 isComplete && "text-muted-foreground",
                 isCurrent && "font-medium text-foreground",
                 !isComplete && !isCurrent && "text-muted-foreground/45",
@@ -146,7 +163,7 @@ export function WorkflowProgressPanel({
                   aria-hidden
                 />
               )}
-              <span>{step.label}</span>
+              <span className="min-w-0 truncate">{step.label}</span>
             </li>
           );
         })}

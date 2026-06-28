@@ -173,7 +173,7 @@ export function RunSoaDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="max-h-[90vh] max-w-lg overflow-y-auto"
+        className="max-h-[90vh] max-w-lg overflow-x-hidden overflow-y-auto"
         onPointerDownOutside={(e) => {
           if (isPending || (runSucceeded && showProgress)) e.preventDefault();
         }}
