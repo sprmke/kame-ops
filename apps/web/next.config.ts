@@ -24,7 +24,6 @@ const nextConfig: NextConfig = {
     "pdfjs-dist",
     "pdfkit",
     "tesseract.js",
-    "pdf-to-img",
     "@neslinesli93/qpdf-wasm",
   ],
   outputFileTracingIncludes: {
