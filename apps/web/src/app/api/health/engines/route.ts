@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { checkCanvasEngineReady } from "@/server/lib/canvas-engine";
 import { checkPdfEngineReady } from "@/server/lib/pdf-engine";
 import { checkQpdfEngineReady } from "@/server/lib/qpdf-engine";
 
@@ -10,9 +11,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const [pdfEngine, qpdfEngine] = await Promise.all([
+  const [pdfEngine, qpdfEngine, canvasEngine] = await Promise.all([
     checkPdfEngineReady(),
     checkQpdfEngineReady(),
+    checkCanvasEngineReady(),
   ]);
 
   return NextResponse.json({
@@ -21,7 +23,9 @@ export async function GET(request: Request) {
     cwd: process.cwd(),
     pdfEngineOk: pdfEngine.ok,
     qpdfEngineOk: qpdfEngine.ok,
+    canvasEngineOk: canvasEngine.ok,
     pdfEngineError: pdfEngine.ok ? null : pdfEngine.error,
     qpdfEngineError: qpdfEngine.ok ? null : qpdfEngine.error,
+    canvasEngineError: canvasEngine.ok ? null : canvasEngine.error,
   });
 }
