@@ -29,6 +29,7 @@ import {
   extractPdfLinesReadingOrderDualAxis,
   tryUnlockAndExtractText,
 } from "./pdf";
+import type { SoaRunMonthProgressContext } from "@/server/services/soa-run-progress.service";
 import { writeRangeSummaryPdf, writeSummaryPdf } from "./summary-pdf";
 import type {
   CardCredential,
@@ -293,8 +294,9 @@ export async function runSoaSingleMonth(options: {
   month: string;
   year: string;
   skipBanner?: boolean;
+  progress?: SoaRunMonthProgressContext;
 }): Promise<SoaSingleMonthResult> {
-  const { month, year, skipBanner = false } = options;
+  const { month, year, skipBanner = false, progress } = options;
   const ctx = buildMonthContext(month, year);
   const cards = loadCardCredentials();
 
@@ -325,6 +327,7 @@ export async function runSoaSingleMonth(options: {
   log.header("Gmail · search & download");
   const gmail = await getGmailClient();
   log.success("Gmail API client ready");
+  const monthLabel = `${ctx.monthLong} ${ctx.year}`;
 
   const downloaded: DownloadedPdf[] = [];
   const seenMessage = new Set<string>();
@@ -333,6 +336,11 @@ export async function runSoaSingleMonth(options: {
   const banksToSearch = banks.filter((b) => activeIssuerIds.has(b.id));
 
   for (const bank of banksToSearch) {
+    await progress?.reporter.setGmailProgress(
+      progress.monthIndex,
+      monthLabel,
+      bank.label,
+    );
     const searchConfigs = gmailSearchConfigsForIssuer(bank.id, cards);
     log.info(`${bank.label}`);
     if (searchConfigs.length > 1) {
@@ -401,9 +409,25 @@ export async function runSoaSingleMonth(options: {
 
   if (downloaded.length === 0) {
     log.warn("No PDFs downloaded — skipping unlock/parse.");
+  } else {
+    await progress?.reporter.setParseProgress(
+      progress?.monthIndex ?? 0,
+      monthLabel,
+      0,
+      downloaded.length,
+    );
   }
 
-  for (const item of downloaded) {
+  for (let pdfIndex = 0; pdfIndex < downloaded.length; pdfIndex++) {
+    const item = downloaded[pdfIndex]!;
+    await progress?.reporter.setParseProgress(
+      progress?.monthIndex ?? 0,
+      monthLabel,
+      pdfIndex,
+      downloaded.length,
+      item.bankLabel,
+      item.fileName,
+    );
     const pws = passwordsForIssuer(item.bankId, cards);
     if (pws.length === 0) {
       log.warn(
@@ -452,8 +476,6 @@ export async function runSoaSingleMonth(options: {
             Number.parseFloat(process.env.BPI_OCR_SCALE ?? "3") || 3,
           ),
         );
-        const { ocrPdfToPlainText, parseBpiPsmEnv } = await import("./bpi-ocr");
-        const psm = parseBpiPsmEnv(process.env.BPI_OCR_PSM);
         const dualSparse = /^(1|true|yes)$/i.test(
           process.env.BPI_OCR_DUAL?.trim() ?? "",
         );
@@ -461,6 +483,9 @@ export async function runSoaSingleMonth(options: {
           process.env.BPI_OCR_DEBUG?.trim() ?? "",
         );
         try {
+          const { ocrPdfToPlainText, parseBpiPsmEnv } =
+            await import("./bpi-ocr");
+          const psm = parseBpiPsmEnv(process.env.BPI_OCR_PSM);
           log.info(
             [
               "BPI OCR",

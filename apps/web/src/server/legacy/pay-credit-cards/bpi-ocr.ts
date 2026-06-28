@@ -1,7 +1,8 @@
 // @ts-nocheck
 import "./pdf-node-polyfill";
 import { createWorker, PSM } from "tesseract.js";
-import { pdf } from "pdf-to-img";
+
+import { rasterizePdfPages } from "@/server/lib/pdf-rasterize";
 
 export type BpiOcrOptions = {
   /** Max pages to OCR; `0` = entire PDF. */
@@ -44,7 +45,7 @@ async function recognizeWithPsm(
 }
 
 /**
- * Rasterize PDF pages to bitmaps (same idea as screenshot → OCR), then Tesseract.
+ * Rasterize PDF pages to bitmaps (pdf.js + canvas), then Tesseract.
  * For higher quality on disk, use Apple Preview / ocrmypdf and parse manually — see docs/SETUP.md.
  */
 export async function ocrPdfToPlainText(
@@ -53,15 +54,15 @@ export async function ocrPdfToPlainText(
   options: BpiOcrOptions,
 ): Promise<string> {
   const { maxPages, scale, psm, dualSparse } = options;
-  const doc = await pdf(pdfPath, { password, scale });
   const worker = await createWorker("eng");
   const parts: string[] = [];
-  const limit = maxPages <= 0 ? Number.POSITIVE_INFINITY : maxPages;
   try {
-    let n = 0;
-    for await (const pageBuf of doc) {
-      n++;
-      if (n > limit) break;
+    for await (const pageBuf of rasterizePdfPages(
+      pdfPath,
+      password,
+      scale,
+      maxPages,
+    )) {
       let chunk = await recognizeWithPsm(worker, pageBuf, psm);
       if (dualSparse && psm !== PSM.SPARSE_TEXT) {
         const sparse = await recognizeWithPsm(worker, pageBuf, PSM.SPARSE_TEXT);
