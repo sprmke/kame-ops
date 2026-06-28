@@ -20,7 +20,7 @@ type TgUpdate = {
 };
 
 /**
- * Telegram webhook — mark-paid/unpaid text commands and receipt photo OCR.
+ * Telegram webhook — mark-paid/unpaid text commands and receipt AI validation.
  * Set webhook URL to /api/webhooks/telegram and TELEGRAM_WEBHOOK_SECRET.
  */
 export async function POST(request: Request) {
@@ -55,25 +55,13 @@ export async function POST(request: Request) {
   if (msg.photo?.length) {
     const largest = pickLargestPhoto(msg.photo);
     if (largest) {
-      await handleReceiptPhoto(
-        botToken,
-        userId,
-        msg,
-        largest.file_id,
-        update.update_id,
-      );
+      await handleReceiptPhoto(botToken, userId, msg, largest.file_id);
       return NextResponse.json({ ok: true, action: "receipt_photo" });
     }
   }
 
   if (msg.document?.mime_type?.startsWith("image/")) {
-    await handleReceiptPhoto(
-      botToken,
-      userId,
-      msg,
-      msg.document.file_id,
-      update.update_id,
-    );
+    await handleReceiptPhoto(botToken, userId, msg, msg.document.file_id);
     return NextResponse.json({ ok: true, action: "receipt_document" });
   }
 
@@ -145,40 +133,38 @@ async function handleReceiptPhoto(
   userId: string,
   msg: TgMessage,
   fileId: string,
-  updateId: number,
 ): Promise<void> {
   await sendTelegramReply(
     botToken,
     msg.chat.id,
-    "⏳ Receipt received! Reading and verifying your payment… _(this may take up to 30 seconds)_",
+    "⏳ Receipt received! Validating your payment…",
   );
 
-  const { downloadTelegramPhoto, ocrReceipt, parseReceiptText } =
-    await import("@/server/legacy/pay-credit-cards/receipt-ocr");
-  const { markCardPaidFromReceipt, buildReceiptConfirmationMessage } =
-    await import("@/server/legacy/pay-credit-cards/mark-paid");
-  const { dueSyncService } = await import("@/server/services/due-sync.service");
+  const { downloadTelegramFile } =
+    await import("@/server/legacy/pay-credit-cards/receipt-utils");
+  const { receiptService } = await import("@/server/services/receipt.service");
 
   let reply: string;
   try {
-    const downloaded = await downloadTelegramPhoto(botToken, fileId, {
-      suggestedName: `${updateId}-${msg.message_id}`,
-    });
+    const downloaded = await downloadTelegramFile(botToken, fileId);
 
-    const ocr = await ocrReceipt(downloaded.filePath);
-    const parsed = parseReceiptText(ocr.text);
-    const result = await markCardPaidFromReceipt(parsed, {
-      caption: msg.caption,
-    });
-    reply = buildReceiptConfirmationMessage(result);
+    const result = await receiptService.processTelegramReceipt(
+      userId,
+      downloaded.buffer,
+      downloaded.mimeType,
+      msg.caption,
+    );
 
-    if (result.ok) {
-      const workDir = process.env.DATA_DIR!;
-      await dueSyncService.syncFromLegacyFile(userId, workDir);
+    if (result.error) {
+      reply = `❌ *AI validation unavailable*\n\n${result.error}`;
+    } else if (result.message) {
+      reply = result.message;
+    } else {
+      reply = "❌ Could not process receipt";
     }
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
-    reply = `❌ Error processing receipt image: ${errMsg}`;
+    reply = `❌ Error processing receipt: ${errMsg}`;
   }
 
   await sendTelegramReply(botToken, msg.chat.id, reply);

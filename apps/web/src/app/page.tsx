@@ -78,8 +78,9 @@ export default async function HomePage() {
           </h1>
           <p className="text-pretty mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">
             KameOps is your command center for credit card SOA processing,
-            due-date notifications, receipt OCR, and workflow automations. Built
-            for reliability when bills and deadlines cannot slip.
+            due-date notifications, receipt AI validation, and workflow
+            automations. Built for reliability when bills and deadlines cannot
+            slip.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             <Button size="lg" asChild className="shadow-glow">

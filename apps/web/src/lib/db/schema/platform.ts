@@ -146,13 +146,25 @@ export const receipts = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     storagePath: text("storage_path").notNull(),
     originalFileName: varchar("original_file_name", { length: 512 }),
-    ocrText: text("ocr_text"),
-    ocrConfidence: varchar("ocr_confidence", { length: 16 }),
     parsedCardLast4: varchar("parsed_card_last4", { length: 4 }),
     parsedAmount: varchar("parsed_amount", { length: 32 }),
     parsedAmountRaw: varchar("parsed_amount_raw", { length: 64 }),
     bankDetected: varchar("bank_detected", { length: 64 }),
-    aiAnalysis: jsonb("ai_analysis").$type<Record<string, unknown>>(),
+    aiVerdict: varchar("ai_verdict", { length: 32 }),
+    aiSummary: text("ai_summary"),
+    aiProvider: varchar("ai_provider", { length: 16 }),
+    aiAnalysis: jsonb("ai_analysis").$type<{
+      confidence?: number | null;
+      hasAmount?: boolean;
+      hasDate?: boolean;
+      hasReference?: boolean;
+      isCreditCardPayment?: boolean;
+      paymentDate?: string;
+      referenceNumber?: string;
+      aiModelError?: string;
+    }>(),
+    dueEntryId: uuid("due_entry_id"),
+    paymentStatus: varchar("payment_status", { length: 32 }).default("pending"),
     status: varchar("status", { length: 32 }).default("pending"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
