@@ -72,9 +72,6 @@ export const DEFAULT_SOA_SUBJECTS: Record<BankIssuer, string> = {
   unionbank: "REWARDS VISA PLATINUM Credit Card e-Statement",
 };
 
-/** @deprecated Use DEFAULT_SOA_SUBJECTS */
-export const DEFAULT_SOA_SUBJECT_EXAMPLES = DEFAULT_SOA_SUBJECTS;
-
 export function defaultSoaSubject(issuer: BankIssuer): string {
   return DEFAULT_SOA_SUBJECTS[issuer];
 }

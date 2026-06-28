@@ -66,16 +66,16 @@
 
 ## Services (server)
 
-| Service                         | Purpose                                   |
-| ------------------------------- | ----------------------------------------- |
-| `gmail.service.ts`              | Google OAuth tokens + legacy Gmail bridge |
-| `storage.service.ts`            | Supabase Storage uploads + local fallback |
-| `integration.service.ts`        | Encrypted per-user integrations           |
-| `receipt-validation.service.ts` | Gemini multi-key + Groq vision validation |
-| `receipt.service.ts`            | Receipt upload processing + mark paid     |
-| `legacy-runtime.service.ts`     | Bridge to pay-credit-cards CLI            |
+| Service                         | Purpose                                          |
+| ------------------------------- | ------------------------------------------------ |
+| `gmail.service.ts`              | Google OAuth tokens + legacy Gmail bridge        |
+| `storage.service.ts`            | Supabase Storage uploads + local fallback        |
+| `integration.service.ts`        | Encrypted per-user integrations                  |
+| `receipt-validation.service.ts` | Gemini multi-key + Groq vision validation        |
+| `receipt.service.ts`            | Receipt upload processing + mark paid            |
+| `legacy-runtime.service.ts`     | Env + temp workdir bridge for ported CLI modules |
 
-Source copied to `apps/web/src/server/legacy/pay-credit-cards/` — used at runtime via dynamic import for SOA, reminders, and notifications. Original repo: `automated-tasks/pay-credit-cards`.
+`apps/web/src/server/legacy/pay-credit-cards/` — **still required at runtime** (SOA parse, reminders, mark-paid, notify, Gmail/Calendar). Loaded via dynamic import from services; data lives in `/tmp/kame-ops-{userId}/`, not under `legacy/data/`. Full removal depends on porting into `server/services/` (see `docs/temp/pay-credit-cards-migration.md`). Source of truth: `automated-tasks/pay-credit-cards`.
 
 ## Scripts
 

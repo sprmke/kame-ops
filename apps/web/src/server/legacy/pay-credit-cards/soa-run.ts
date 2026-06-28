@@ -6,23 +6,15 @@ import {
   buildGmailQuery,
   buildGmailQueryWithSubject,
   ensureDirs,
-  isNotifyConfigured,
   loadCardCredentials,
 } from "./config";
-import { notifySummaryPdf } from "./notify";
-import { upsertDuesFromSoaRows } from "./due-reminders-state";
 import {
   getGmailClient,
   searchAndDownloadPdfs,
   type DownloadedPdf,
 } from "./gmail";
 import { log, logBanner } from "./logger";
-import {
-  buildMonthContext,
-  enumerateMonthsInclusive,
-  lastNMonthsEndingAt,
-  shiftMonthContext,
-} from "./month";
+import { buildMonthContext, shiftMonthContext } from "./month";
 import { parseSoaText } from "./parse-soa";
 import { extractTransactions } from "./parse-transactions";
 import {
@@ -30,36 +22,12 @@ import {
   tryUnlockAndExtractText,
 } from "./pdf";
 import type { SoaRunMonthProgressContext } from "@/server/services/soa-run-progress.service";
-import { writeRangeSummaryPdf, writeSummaryPdf } from "./summary-pdf";
 import type {
   CardCredential,
   GmailMonthContext,
   SoaRow,
   TransactionLine,
 } from "./types";
-
-/** Single-month summary PDF title: optional name + label from env (see .env.example). */
-function buildSoaSingleMonthPdfTitle(
-  monthLong: string,
-  year: string | number,
-): string {
-  const display = process.env.SOA_SUMMARY_DISPLAY_NAME?.trim() ?? "";
-  const doc =
-    process.env.SOA_SUMMARY_DOCUMENT_LABEL?.trim() || "Credit Card SOA Summary";
-  const y = typeof year === "number" ? String(year) : year;
-  const tail = `${doc} — ${monthLong} ${y}`;
-  return display ? `${display} - ${tail}` : tail;
-}
-
-/** Combined range summary PDF title. */
-function buildSoaRangePdfTitle(
-  first: GmailMonthContext,
-  last: GmailMonthContext,
-): string {
-  const label =
-    process.env.SOA_SUMMARY_RANGE_LABEL?.trim() || "Credit Card SOA";
-  return `${label} — ${first.monthLong} ${first.year} through ${last.monthLong} ${last.year}`;
-}
 
 /** Prefer geometry-ordered text when it recovers more rows or obvious RCBC table fixes. */
 function rcbcGeomParseImprovesOn(
@@ -101,93 +69,6 @@ function rcbcGeomParseImprovesOn(
     }
   }
   return false;
-}
-
-export type RunSoaOptions = {
-  mode: "single" | "range";
-  month: string;
-  year: string;
-  /** When true, do not send Telegram/Slack notification after the PDF is written. */
-  skipNotify: boolean;
-  /** Set true when an outer script already showed a banner (e.g. run-prompt). */
-  skipBanner?: boolean;
-  /** Last N months ending at `month`/`year` (range mode, default 4). */
-  rangeMonthCount?: number;
-  /** Inclusive range endpoints (range mode). */
-  fromMonth?: string;
-  fromYear?: string;
-  toMonth?: string;
-  toYear?: string;
-};
-
-export function parseArgs(argv: string[]): RunSoaOptions {
-  let month = "";
-  let year = "";
-  let skipNotify = false;
-  let range = false;
-  let rangeMonthCount: number | undefined;
-  let fromMonth = "";
-  let fromYear = "";
-  let toMonth = "";
-  let toYear = "";
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i]!;
-    if (a === "--month" && argv[i + 1]) {
-      month = argv[++i]!;
-    } else if (a.startsWith("--month=")) {
-      month = a.split("=")[1] ?? "";
-    } else if (a === "--year" && argv[i + 1]) {
-      year = argv[++i]!;
-    } else if (a.startsWith("--year=")) {
-      year = a.split("=")[1] ?? "";
-    } else if (a === "--no-notify" || a === "--no-email") {
-      skipNotify = true;
-    } else if (a === "--range") {
-      range = true;
-    } else if (a === "--months" && argv[i + 1]) {
-      rangeMonthCount = Number.parseInt(argv[++i]!, 10);
-    } else if (a.startsWith("--months=")) {
-      rangeMonthCount = Number.parseInt(a.split("=")[1] ?? "", 10);
-    } else if (a === "--from-month" && argv[i + 1]) {
-      fromMonth = argv[++i]!;
-    } else if (a.startsWith("--from-month=")) {
-      fromMonth = a.split("=")[1] ?? "";
-    } else if (a === "--from-year" && argv[i + 1]) {
-      fromYear = argv[++i]!;
-    } else if (a.startsWith("--from-year=")) {
-      fromYear = a.split("=")[1] ?? "";
-    } else if (a === "--to-month" && argv[i + 1]) {
-      toMonth = argv[++i]!;
-    } else if (a.startsWith("--to-month=")) {
-      toMonth = a.split("=")[1] ?? "";
-    } else if (a === "--to-year" && argv[i + 1]) {
-      toYear = argv[++i]!;
-    } else if (a.startsWith("--to-year=")) {
-      toYear = a.split("=")[1] ?? "";
-    }
-  }
-  const now = new Date();
-  if (!month) month = String(now.getMonth() + 1);
-  if (!year) year = String(now.getFullYear());
-  const mode: "single" | "range" = range ? "range" : "single";
-  const out: RunSoaOptions = { mode, month, year, skipNotify };
-  if (mode === "range") {
-    if (fromMonth && fromYear && toMonth && toYear) {
-      out.fromMonth = fromMonth;
-      out.fromYear = fromYear;
-      out.toMonth = toMonth;
-      out.toYear = toYear;
-    } else {
-      let n =
-        rangeMonthCount !== undefined && Number.isFinite(rangeMonthCount)
-          ? Math.trunc(rangeMonthCount)
-          : 4;
-      if (n < 1) n = 4;
-      if (n > 60) n = 60;
-      out.rangeMonthCount = n;
-    }
-  }
-  return out;
 }
 
 function passwordsForIssuer(
@@ -670,228 +551,4 @@ export async function runSoaSingleMonth(options: {
     downloadedPdfCount: downloaded.length,
     gmailSearches,
   };
-}
-
-function rangeFolderKey(
-  first: GmailMonthContext,
-  last: GmailMonthContext,
-): string {
-  return `range-${first.year}-${first.monthNum2}-to-${last.year}-${last.monthNum2}`;
-}
-
-async function runSoaRange(options: RunSoaOptions): Promise<SoaRow[]> {
-  const { skipNotify, skipBanner = false } = options;
-  const cards = loadCardCredentials();
-  if (cards.length === 0) {
-    log.error(
-      "CARDS_JSON is empty or missing. Set it in .env (see .env.example).",
-    );
-    process.exit(1);
-  }
-
-  const anyEndpoint =
-    !!options.fromMonth ||
-    !!options.fromYear ||
-    !!options.toMonth ||
-    !!options.toYear;
-  const allEndpoints =
-    !!options.fromMonth &&
-    !!options.fromYear &&
-    !!options.toMonth &&
-    !!options.toYear;
-
-  let contexts: GmailMonthContext[];
-  if (anyEndpoint && !allEndpoints) {
-    log.error(
-      "For --range with explicit bounds, pass all of: --from-month, --from-year, --to-month, --to-year (or omit all four and use --months).",
-    );
-    process.exit(1);
-  }
-  if (allEndpoints) {
-    contexts = enumerateMonthsInclusive(
-      options.fromMonth!,
-      options.fromYear!,
-      options.toMonth!,
-      options.toYear!,
-    );
-  } else {
-    const n = options.rangeMonthCount ?? 4;
-    contexts = lastNMonthsEndingAt(options.month, options.year, n);
-  }
-
-  if (!skipBanner) {
-    const first = contexts[0]!;
-    const last = contexts[contexts.length - 1]!;
-    logBanner(
-      "pay-credit-cards · SOA range",
-      `${first.monthLong} ${first.year} → ${last.monthLong} ${last.year} (${contexts.length} months)`,
-    );
-  }
-
-  log.header("Pre-flight");
-  log.kv("Months in range", String(contexts.length));
-  log.kv("Cards in CARDS_JSON", String(cards.length));
-  log.kv(
-    "Notify step",
-    skipNotify ? "skipped (--no-notify / --no-email)" : "enabled",
-  );
-
-  const results: SoaSingleMonthResult[] = [];
-  let totalWarnings = 0;
-  let totalFailures = 0;
-
-  for (let i = 0; i < contexts.length; i++) {
-    const g = contexts[i]!;
-    log.line("");
-    log.header(`Period ${i + 1}/${contexts.length}: ${g.monthLong} ${g.year}`);
-    const r = await runSoaSingleMonth({
-      month: String(g.monthIndex0 + 1),
-      year: String(g.year),
-      skipBanner: true,
-    });
-    results.push(r);
-    totalWarnings += r.parseWarnings;
-    totalFailures += r.parseFailures;
-
-    log.header(`Summary PDF · ${g.monthLong} ${g.year}`);
-    const singleTitle = buildSoaSingleMonthPdfTitle(g.monthLong, g.year);
-    await writeSummaryPdf(
-      r.rows,
-      r.summaryPath,
-      singleTitle,
-      `${g.monthLong} ${g.year}`,
-    );
-    log.success("Written");
-    log.detail(r.summaryPath);
-  }
-
-  const { output } = ensureDirs();
-  const first = contexts[0]!;
-  const last = contexts[contexts.length - 1]!;
-  const rangeDir = path.join(output, rangeFolderKey(first, last));
-  fs.mkdirSync(rangeDir, { recursive: true });
-  const rangePdfName = `soa-summary-range-${first.year}-${first.monthNum2}-to-${last.year}-${last.monthNum2}.pdf`;
-  const rangePdfPath = path.join(rangeDir, rangePdfName);
-  const rangeTitle = buildSoaRangePdfTitle(first, last);
-  log.header("Combined range PDF");
-  await writeRangeSummaryPdf(
-    results.map((r) => ({
-      periodLabel: `${r.ctx.monthLong} ${r.ctx.year}`,
-      periodKey: r.periodKey,
-      rows: r.rows,
-    })),
-    rangePdfPath,
-    rangeTitle,
-  );
-  log.success("Written");
-  log.detail(rangePdfPath);
-
-  if (!skipNotify) {
-    log.header("Notify (Telegram / Slack)");
-    if (!isNotifyConfigured()) {
-      log.warn("No notifier configured — skipping send.");
-      log.detail(
-        "Set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID (PDF) and/or SLACK_WEBHOOK_URL, or use --no-notify.",
-      );
-    } else {
-      try {
-        const n = await notifySummaryPdf(
-          rangePdfPath,
-          `${rangeTitle} (automated)`,
-        );
-        if (n.telegram) log.success("Sent summary PDF to Telegram.");
-        if (n.slack) log.success("Posted summary notice to Slack.");
-      } catch (e) {
-        log.error(errMsg(e));
-        log.detail("Range PDF was still saved locally.");
-      }
-    }
-  }
-
-  log.header("Run summary");
-  const parsedCards = results.reduce(
-    (acc, r) => acc + r.rows.filter((row) => row.cardLast4 !== "—").length,
-    0,
-  );
-  log.kv("Months processed", String(results.length));
-  log.kv("Card-rows total (sum per month)", String(parsedCards));
-  log.kv("Parse warnings", String(totalWarnings));
-  log.kv("PDF failures", String(totalFailures));
-  log.line("");
-
-  const allRows = results.flatMap((r) => r.rows);
-  persistDueReminders(allRows);
-  return allRows;
-}
-
-function persistDueReminders(rows: SoaRow[]): void {
-  try {
-    const res = upsertDuesFromSoaRows(rows);
-    if (res.added === 0 && res.updated === 0) return;
-    log.info(
-      `Due reminders state: +${res.added} added, ${res.updated} refreshed.`,
-    );
-    log.detail(res.path);
-  } catch (e) {
-    log.warn(
-      `Could not update due reminders state: ${
-        e instanceof Error ? e.message : String(e)
-      }`,
-    );
-  }
-}
-
-export async function runSoa(options: RunSoaOptions): Promise<SoaRow[]> {
-  if (options.mode === "range") {
-    return runSoaRange(options);
-  }
-
-  const { month, year, skipNotify, skipBanner = false } = options;
-  const r = await runSoaSingleMonth({ month, year, skipBanner });
-
-  log.kv(
-    "Notify step",
-    skipNotify ? "skipped (--no-notify / --no-email)" : "enabled",
-  );
-
-  log.header("Summary PDF");
-  const title = buildSoaSingleMonthPdfTitle(r.ctx.monthLong, r.ctx.year);
-  await writeSummaryPdf(
-    r.rows,
-    r.summaryPath,
-    title,
-    `${r.ctx.monthLong} ${r.ctx.year}`,
-  );
-  log.success(`Written`);
-  log.detail(r.summaryPath);
-
-  if (!skipNotify) {
-    log.header("Notify (Telegram / Slack)");
-    if (!isNotifyConfigured()) {
-      log.warn("No notifier configured — skipping send.");
-      log.detail(
-        "Set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID (PDF) and/or SLACK_WEBHOOK_URL, or use --no-notify.",
-      );
-    } else {
-      try {
-        const n = await notifySummaryPdf(r.summaryPath, `${title} (automated)`);
-        if (n.telegram) log.success("Sent summary PDF to Telegram.");
-        if (n.slack) log.success("Posted summary notice to Slack.");
-      } catch (e) {
-        log.error(errMsg(e));
-        log.detail("Summary PDF was still saved locally.");
-      }
-    }
-  }
-
-  log.header("Run summary");
-  const parsedCards = r.rows.filter((row) => row.cardLast4 !== "—").length;
-  log.kv("Rows in summary", String(r.rows.length));
-  log.kv("Cards with parsed SOA", String(parsedCards));
-  log.kv("Parse warnings", String(r.parseWarnings));
-  log.kv("PDF failures", String(r.parseFailures));
-  log.line("");
-
-  persistDueReminders(r.rows);
-  return r.rows;
 }

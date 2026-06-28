@@ -58,7 +58,7 @@ import {
 import {
   DEFAULT_REMINDER_WINDOW_DAYS,
   formatReminderSummary,
-} from '../lib/reminder-labels';
+} from '@/lib/reminders/reminder-labels';
 import { CreditCardsTable } from './CreditCardsTable';
 import { CardColorPicker } from './CardColorPicker';
 import { usePersistedViewMode } from '@/hooks/use-persisted-view-mode';

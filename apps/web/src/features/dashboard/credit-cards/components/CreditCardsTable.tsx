@@ -26,7 +26,7 @@ import {
 import { formatBankIssuer } from "@/lib/db/schema/credit-cards";
 import { CardBankLabel } from "@/lib/credit-cards/CardBankLabel";
 import { resolveCardAccent } from "@/lib/credit-cards/card-accent";
-import { formatReminderSummary } from "../lib/reminder-labels";
+import { formatReminderSummary } from "@/lib/reminders/reminder-labels";
 
 export type CreditCardRow = {
   id: string;

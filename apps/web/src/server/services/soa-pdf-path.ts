@@ -10,8 +10,7 @@ export function soaWorkDir(userId: string): string {
 }
 
 /**
- * Legacy SOA runs wrote under src/server/legacy/data when config loaded
- * before DATA_DIR was set. Also check /tmp for older macOS layouts.
+ * Candidate work dirs for SOA PDFs on disk (matches prepareLegacyRuntime).
  */
 export function soaWorkDirCandidates(userId: string): string[] {
   const candidates: string[] = [];
@@ -21,7 +20,6 @@ export function soaWorkDirCandidates(userId: string): string[] {
 
   add(soaWorkDir(userId));
   add(join("/tmp", `kame-ops-${userId}`));
-  add(join(process.cwd(), "src/server/legacy/data"));
   if (process.env.DATA_DIR) add(process.env.DATA_DIR);
 
   return candidates;

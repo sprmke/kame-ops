@@ -80,18 +80,6 @@ function linesFromPlacedItems(
 }
 
 /**
- * One string per visual line, ordered top-to-bottom then left-to-right.
- * Use for RCBC (and similar) when naive stream concatenation mis-pairs table columns.
- */
-export async function extractPdfLinesReadingOrder(
-  pdfPath: string,
-  password: string,
-): Promise<string[]> {
-  const [desc] = await extractPdfLinesReadingOrderDualAxis(pdfPath, password);
-  return desc;
-}
-
-/**
  * Two full-document line lists: [higher-y-first, lower-y-first]. PDF y-axis direction
  * varies; RCBC txn parsing picks whichever yields a better row set.
  */
