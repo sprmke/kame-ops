@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth/auth-config";
+import { ReceiptUploadProgressReporter } from "@/server/services/receipt-upload-progress.service";
 import { storageService } from "@/server/services/storage.service";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -38,17 +39,43 @@ export async function POST(request: Request) {
     );
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const storagePath = await storageService.uploadPrivate(
-    session.user.id,
-    file.name,
-    buffer,
-    file.type || undefined,
-  );
+  const processIdRaw = form.get("processId");
+  const processId =
+    typeof processIdRaw === "string" && processIdRaw.length > 0
+      ? processIdRaw
+      : null;
+  const markPaid = form.get("markPaid") !== "false";
+  const updateCalendar = form.get("updateCalendar") === "true";
 
-  return NextResponse.json({
-    storagePath,
-    originalFileName: file.name,
-    storageBackend: storageService.isCloudStorage() ? "supabase" : "local",
-  });
+  let reporter: ReceiptUploadProgressReporter | null = null;
+  if (processId) {
+    reporter = await ReceiptUploadProgressReporter.create(
+      session.user.id,
+      processId,
+      { markPaid, updateCalendar },
+    );
+    await reporter.activate("upload", file.name);
+  }
+
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const storagePath = await storageService.uploadPrivate(
+      session.user.id,
+      file.name,
+      buffer,
+      file.type || undefined,
+    );
+
+    await reporter?.completeStep("upload");
+
+    return NextResponse.json({
+      storagePath,
+      originalFileName: file.name,
+      storageBackend: storageService.isCloudStorage() ? "supabase" : "local",
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Upload failed";
+    await reporter?.fail(message);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

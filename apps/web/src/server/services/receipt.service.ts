@@ -13,6 +13,7 @@ import {
   shouldPersistReceiptValidation,
   validateCreditCardReceiptImage,
 } from "./receipt-validation.service";
+import { ReceiptUploadProgressReporter } from "./receipt-upload-progress.service";
 import { storageService } from "./storage.service";
 
 function mimeFromPath(path: string): string {
@@ -79,10 +80,22 @@ export const receiptService = {
       dueEntryId?: string;
       caption?: string;
       markPaid?: boolean;
+      processId?: string;
     },
   ): Promise<ReceiptProcessResult> {
+    let reporter: ReceiptUploadProgressReporter | null = null;
+    if (input.processId) {
+      reporter =
+        (await ReceiptUploadProgressReporter.resume(userId, input.processId)) ??
+        null;
+      if (reporter) {
+        await reporter.activate("prepare", "Loading your cards");
+      }
+    }
+
     const buffer = await storageService.readPrivate(input.storagePath);
     if (!buffer?.length) {
+      await reporter?.fail("Could not read uploaded receipt");
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: "Could not read uploaded receipt",
@@ -118,6 +131,7 @@ export const receiptService = {
           ),
         })) ?? undefined;
       if (!targetDueEntry) {
+        await reporter?.fail("Due entry not found");
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Due entry not found",
@@ -133,11 +147,16 @@ export const receiptService = {
       };
     }
 
+    await reporter?.completeStep("prepare");
+
     const mimeType = mimeFromPath(input.originalFileName ?? input.storagePath);
+    await reporter?.activate("validate", "Analyzing receipt with AI");
     const ai = await validateCreditCardReceiptImage(buffer, mimeType, {
       knownCards,
       dueContext,
     });
+    await reporter?.completeStep("validate");
+    await reporter?.activate("save", "Saving receipt details");
 
     const extraction = ai.extraction;
     const paymentStatus = ai.aiModelError ? "ai_error" : "pending";
@@ -171,7 +190,10 @@ export const receiptService = {
       })
       .returning();
 
+    await reporter?.completeStep("save");
+
     if (ai.aiModelError) {
+      await reporter?.fail(ai.aiModelError);
       return {
         receipt: receiptRow!,
         ai,
@@ -188,6 +210,7 @@ export const receiptService = {
         .update(receipts)
         .set({ paymentStatus: "rejected" })
         .where(eq(receipts.id, receiptRow!.id));
+      await reporter?.fail("Receipt does not look like payment proof");
       return {
         receipt: receiptRow!,
         ai,
@@ -200,6 +223,7 @@ export const receiptService = {
     }
 
     if (input.markPaid === false) {
+      await reporter?.complete();
       return {
         receipt: receiptRow!,
         ai,
@@ -216,6 +240,12 @@ export const receiptService = {
       await import("@/server/legacy/pay-credit-cards/mark-paid");
 
     const parsed = aiToParsedReceipt(ai);
+    await reporter?.activate(
+      "mark_paid",
+      parsed.cardLast4
+        ? `Card •••• ${parsed.cardLast4}`
+        : "Matching payment to due date",
+    );
     const payResult = await markCardPaidFromReceipt(parsed, {
       caption: input.caption,
     });
@@ -226,6 +256,7 @@ export const receiptService = {
         .set({ paymentStatus: "rejected" })
         .where(eq(receipts.id, receiptRow!.id));
 
+      await reporter?.fail(paymentFailureMessage(payResult));
       return {
         receipt: receiptRow!,
         ai,
@@ -235,6 +266,27 @@ export const receiptService = {
           code: payResult.reason,
         },
       };
+    }
+
+    await reporter?.completeStep("mark_paid");
+    await reporter?.activate(
+      "reminders",
+      payResult.remindersSuppressed > 0
+        ? `${payResult.remindersSuppressed} reminder(s) silenced`
+        : "Updating reminder status",
+    );
+    await reporter?.completeStep("reminders");
+
+    const snapshot = reporter?.snapshot();
+    const hasCalendarStep = snapshot?.steps.some((s) => s.id === "calendar");
+    if (hasCalendarStep) {
+      await reporter?.activate(
+        "calendar",
+        payResult.calendarUpdated > 0
+          ? `${payResult.calendarUpdated} event(s) updated`
+          : "Checking calendar events",
+      );
+      await reporter?.completeStep("calendar");
     }
 
     const matchedEntry = await db.query.dueEntries.findFirst({
@@ -264,7 +316,10 @@ export const receiptService = {
       })
       .where(eq(receipts.id, receiptRow!.id));
 
+    await reporter?.activate("sync", "Syncing paid status");
     await dueSyncService.syncFromLegacyFile(userId, workDir);
+    await reporter?.completeStep("sync");
+    await reporter?.complete();
 
     const updatedReceipt = await db.query.receipts.findFirst({
       where: eq(receipts.id, receiptRow!.id),

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { protectedProcedure, router } from "@/server/trpc";
 import { receiptService } from "@/server/services/receipt.service";
+import { receiptUploadProgressService } from "@/server/services/receipt-upload-progress.service";
 
 export const receiptsRouter = router({
   list: protectedProcedure.query(({ ctx }) => receiptService.list(ctx.user.id)),
@@ -9,6 +10,12 @@ export const receiptsRouter = router({
   unpaidDueEntries: protectedProcedure.query(({ ctx }) =>
     receiptService.listUnpaidDueEntries(ctx.user.id),
   ),
+
+  getUploadProgress: protectedProcedure
+    .input(z.object({ processId: z.string().uuid() }))
+    .query(({ ctx, input }) =>
+      receiptUploadProgressService.getSnapshot(ctx.user.id, input.processId),
+    ),
 
   validateAndMarkPaid: protectedProcedure
     .input(
@@ -19,6 +26,7 @@ export const receiptsRouter = router({
         caption: z.string().optional(),
         /** When false, only run AI validation without marking paid. */
         markPaid: z.boolean().default(true),
+        processId: z.string().uuid().optional(),
       }),
     )
     .mutation(({ ctx, input }) =>

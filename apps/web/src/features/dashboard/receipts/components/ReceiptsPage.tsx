@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Receipt, Upload } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,44 +20,78 @@ import {
 import { api } from "@/lib/api/client";
 
 import {
+  ReceiptUploadProgressDialog,
+  type ReceiptUploadSettled,
+} from "./ReceiptUploadProgressDialog";
+import {
   paymentStatusLabel,
   ReceiptAiVerdictBadge,
 } from "./ReceiptAiVerdictBadge";
 
 export function ReceiptsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
   const [selectedDueEntryId, setSelectedDueEntryId] = useState<string>("");
+  const [progressOpen, setProgressOpen] = useState(false);
+  const [activeProcessId, setActiveProcessId] = useState<string | null>(null);
+  const [uploadSettled, setUploadSettled] =
+    useState<ReceiptUploadSettled>(null);
+  const [uploadErrorMessage, setUploadErrorMessage] = useState<string | null>(
+    null,
+  );
+  const [isUploading, setIsUploading] = useState(false);
   const utils = api.useUtils();
 
   const { data: receipts, isLoading } = api.receipts.list.useQuery();
   const { data: unpaidDues } = api.receipts.unpaidDueEntries.useQuery();
+  const { data: integrations } = api.integrations.list.useQuery();
+
+  const connected = useMemo(
+    () => new Set(integrations?.map((i) => i.provider) ?? []),
+    [integrations],
+  );
+
+  const uploadOptions = useMemo(
+    () => ({
+      markPaid: true,
+      updateCalendar:
+        connected.has("gmail") || connected.has("google_calendar"),
+    }),
+    [connected],
+  );
 
   const validateAndMarkPaid = api.receipts.validateAndMarkPaid.useMutation({
     onSuccess: (result) => {
       if (result.payment.ok) {
+        setUploadSettled("success");
         toast.success(
           `Payment confirmed — •••• ${result.receipt.parsedCardLast4 ?? "????"}`,
         );
       } else if (result.payment.code === "validate_only") {
+        setUploadSettled("success");
         toast.message("Receipt validated");
       } else if (result.payment.code === "ai_error") {
+        setUploadErrorMessage(result.payment.reason);
+        setUploadSettled("error");
         toast.error("AI validation unavailable", {
           description: result.payment.reason,
         });
       } else {
+        setUploadErrorMessage(result.payment.reason);
+        setUploadSettled("error");
         toast.error(result.payment.reason);
       }
       void utils.receipts.list.invalidate();
       void utils.receipts.unpaidDueEntries.invalidate();
       void utils.reminders.listDue.invalidate();
       void utils.reminders.status.invalidate();
-      setUploading(false);
+      setIsUploading(false);
       setSelectedDueEntryId("");
     },
     onError: (e) => {
+      setUploadErrorMessage(e.message);
+      setUploadSettled("error");
       toast.error(e.message);
-      setUploading(false);
+      setIsUploading(false);
     },
   });
 
@@ -72,30 +106,66 @@ export function ReceiptsPage() {
   });
 
   async function handleFile(file: File) {
-    setUploading(true);
+    const processId = crypto.randomUUID();
+    setActiveProcessId(processId);
+    setUploadSettled(null);
+    setUploadErrorMessage(null);
+    setProgressOpen(true);
+    setIsUploading(true);
+
     const form = new FormData();
     form.append("file", file);
+    form.append("processId", processId);
+    form.append("markPaid", "true");
+    form.append(
+      "updateCalendar",
+      uploadOptions.updateCalendar ? "true" : "false",
+    );
 
     try {
       const res = await fetch("/api/receipts/upload", {
         method: "POST",
         body: form,
       });
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(body?.error ?? "Upload failed");
+      }
       const { storagePath } = (await res.json()) as { storagePath: string };
       validateAndMarkPaid.mutate({
         storagePath,
         originalFileName: file.name,
         dueEntryId: selectedDueEntryId || undefined,
         markPaid: true,
+        processId,
       });
-    } catch {
-      toast.error("Upload failed");
-      setUploading(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Upload failed";
+      setUploadErrorMessage(message);
+      setUploadSettled("error");
+      toast.error(message);
+      setIsUploading(false);
     }
   }
 
-  const busy = uploading || validateAndMarkPaid.isPending;
+  function handleProgressComplete() {
+    setProgressOpen(false);
+    setActiveProcessId(null);
+    setUploadSettled(null);
+    setUploadErrorMessage(null);
+  }
+
+  function handleProgressOpenChange(open: boolean) {
+    if (!open && (isUploading || validateAndMarkPaid.isPending)) return;
+    if (!open && uploadSettled === "success") return;
+    if (!open) {
+      handleProgressComplete();
+    } else {
+      setProgressOpen(open);
+    }
+  }
 
   return (
     <div className="space-y-8">
@@ -132,14 +202,29 @@ export function ReceiptsPage() {
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) void handleFile(file);
+                e.target.value = "";
               }}
             />
-            <Button onClick={() => fileRef.current?.click()} disabled={busy}>
+            <Button
+              onClick={() => fileRef.current?.click()}
+              disabled={isUploading || validateAndMarkPaid.isPending}
+            >
               <Upload className="mr-2 h-4 w-4" />
               Upload receipt
             </Button>
           </>
         }
+      />
+
+      <ReceiptUploadProgressDialog
+        open={progressOpen}
+        onOpenChange={handleProgressOpenChange}
+        processId={activeProcessId}
+        options={uploadOptions}
+        isPending={isUploading || validateAndMarkPaid.isPending}
+        settled={uploadSettled}
+        errorMessage={uploadErrorMessage}
+        onComplete={handleProgressComplete}
       />
 
       {isLoading ? (

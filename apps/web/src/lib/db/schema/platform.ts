@@ -187,6 +187,34 @@ export const activityLogs = pgTable(
   (table) => [index("activity_logs_user_idx").on(table.userId)],
 );
 
+export const receiptUploadProgress = pgTable(
+  "receipt_upload_progress",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: varchar("status", { length: 16 }).notNull().default("running"),
+    progress: integer("progress").notNull().default(0),
+    steps: jsonb("steps")
+      .$type<
+        import("@/lib/receipt-upload-progress").ReceiptUploadStepSnapshot[]
+      >()
+      .notNull(),
+    detail: text("detail"),
+    error: text("error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("receipt_upload_progress_user_idx").on(table.userId),
+    index("receipt_upload_progress_updated_idx").on(table.updatedAt),
+  ],
+);
+
 export const soaRunProgress = pgTable(
   "soa_run_progress",
   {

@@ -36,7 +36,7 @@
 | `reminders`             | listDue, status, sendNow (force optional), markPaid, markUnpaid                                                               | Implemented                                                                                                                                |
 | `automations`           | list, create, run                                                                                                             | Implemented                                                                                                                                |
 | `integrations`          | list, upsert, getFormConfigs, **receiptAiStatus**, **verifyReceiptAi**                                                        | Implemented                                                                                                                                |
-| `receipts`              | list, unpaidDueEntries, validateAndMarkPaid, confirmMarkPaid                                                                  | Implemented — AI receipt validation (Gemini + Groq fallback), mark SOA paid                                                                |
+| `receipts`              | list, unpaidDueEntries, **getUploadProgress**, validateAndMarkPaid, confirmMarkPaid                                           | Implemented — AI receipt validation (Gemini + Groq fallback), mark SOA paid; upload progress polling                                       |
 
 ## REST / webhooks
 
