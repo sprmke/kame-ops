@@ -32,7 +32,7 @@ const FEATURES = [
     icon: Zap,
     title: "Automations",
     description:
-      "Schedule SOA runs and reminder jobs. Wire Supabase Cron or any scheduler to secure API endpoints.",
+      "Schedule SOA checks and payment reminders from the dashboard — runs automatically in the background.",
   },
   {
     icon: Shield,

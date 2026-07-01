@@ -43,7 +43,10 @@ export function MobileDashboardNav({ user }: MobileDashboardNavProps) {
               <Menu className="h-5 w-5" />
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="flex w-72 flex-col p-0">
+          <SheetContent
+            side="left"
+            className="flex w-[min(18rem,85vw)] flex-col p-0"
+          >
             <SheetHeader className="border-b border-border px-4 py-4 text-left">
               <SheetTitle className="sr-only">Navigation</SheetTitle>
               <BrandLogo size="sm" showTagline />

@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   pgTable,
   uuid,
@@ -8,6 +8,7 @@ import {
   integer,
   boolean,
   index,
+  uniqueIndex,
   jsonb,
 } from "drizzle-orm/pg-core";
 
@@ -111,7 +112,15 @@ export const automationJobs = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date()),
   },
-  (table) => [index("automation_jobs_user_idx").on(table.userId)],
+  (table) => [
+    index("automation_jobs_user_idx").on(table.userId),
+    uniqueIndex("automation_jobs_user_reminders_uidx")
+      .on(table.userId)
+      .where(sql`${table.jobType} = 'send_due_reminders'`),
+    uniqueIndex("automation_jobs_user_soa_pipeline_uidx")
+      .on(table.userId)
+      .where(sql`${table.jobType} = 'run_soa_pipeline'`),
+  ],
 );
 
 export const automationRuns = pgTable(
@@ -243,6 +252,89 @@ export const soaRunProgress = pgTable(
   (table) => [
     index("soa_run_progress_user_idx").on(table.userId),
     index("soa_run_progress_updated_idx").on(table.updatedAt),
+  ],
+);
+
+export const reminderRunProgress = pgTable(
+  "reminder_run_progress",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: varchar("status", { length: 16 }).notNull().default("running"),
+    progress: integer("progress").notNull().default(0),
+    steps: jsonb("steps")
+      .$type<import("@/lib/reminder-run-progress").ReminderRunStepSnapshot[]>()
+      .notNull(),
+    detail: text("detail"),
+    error: text("error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("reminder_run_progress_user_idx").on(table.userId),
+    index("reminder_run_progress_updated_idx").on(table.updatedAt),
+  ],
+);
+
+export const dueActionProgress = pgTable(
+  "due_action_progress",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    action: varchar("action", { length: 16 }).notNull(),
+    status: varchar("status", { length: 16 }).notNull().default("running"),
+    progress: integer("progress").notNull().default(0),
+    steps: jsonb("steps")
+      .$type<import("@/lib/due-action-progress").DueActionStepSnapshot[]>()
+      .notNull(),
+    detail: text("detail"),
+    error: text("error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("due_action_progress_user_idx").on(table.userId),
+    index("due_action_progress_updated_idx").on(table.updatedAt),
+  ],
+);
+
+export const aiCategorizeProgress = pgTable(
+  "ai_categorize_progress",
+  {
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: varchar("status", { length: 16 }).notNull().default("running"),
+    progress: integer("progress").notNull().default(0),
+    steps: jsonb("steps")
+      .$type<
+        import("@/lib/ai-categorize-progress").AiCategorizeStepSnapshot[]
+      >()
+      .notNull(),
+    detail: text("detail"),
+    error: text("error"),
+    aiBatchIndex: integer("ai_batch_index").notNull().default(0),
+    aiBatchTotal: integer("ai_batch_total").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("ai_categorize_progress_user_idx").on(table.userId),
+    index("ai_categorize_progress_updated_idx").on(table.updatedAt),
   ],
 );
 

@@ -48,12 +48,15 @@
     --ring: 28 92% 52%;
     --radius: 0.75rem;
 
-    /* Charts — orange, gold, money green, slate blue, coral */
+    /* Charts — brand orange/gold + distinct category hues */
     --chart-1: 28 92% 52%;
     --chart-2: 42 96% 55%;
     --chart-3: 152 52% 40%;
     --chart-4: 210 70% 50%;
-    --chart-5: 12 80% 58%;
+    --chart-5: 330 62% 52%;
+    --chart-6: 265 58% 52%;
+    --chart-7: 185 62% 42%;
+    --chart-8: 85 52% 44%;
 
     /* Sidebar */
     --sidebar-background: 40 50% 99%;
@@ -108,7 +111,10 @@
     --chart-2: 42 96% 60%;
     --chart-3: 152 48% 48%;
     --chart-4: 210 70% 58%;
-    --chart-5: 12 75% 62%;
+    --chart-5: 330 58% 58%;
+    --chart-6: 265 55% 60%;
+    --chart-7: 185 58% 48%;
+    --chart-8: 85 48% 48%;
 
     --sidebar-background: 22 18% 8%;
     --sidebar-foreground: 38 22% 92%;

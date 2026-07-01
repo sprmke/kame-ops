@@ -60,7 +60,7 @@ export function formatReminderActiveLabel(
   const when = formatDaysUntilDue(daysAway);
   return alreadySent
     ? `${when} — reminder already sent`
-    : `${when} — ready to send`;
+    : `${when} — scheduled`;
 }
 
 function formatYmdShort(ymd: string): string {
@@ -88,7 +88,7 @@ export function noRemindersTodayMessage(): string {
 
 export function alreadySentRemindersMessage(inWindowCount: number): string {
   const noun = inWindowCount === 1 ? "card" : "cards";
-  return `${inWindowCount} ${noun} already reminded today. Use Force send to send again.`;
+  return `${inWindowCount} ${noun} already reminded today. Use Run now on Automations to send again.`;
 }
 
 export function inWindowCountLabel(count: number): string {

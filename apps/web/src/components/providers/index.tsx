@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 
 import { Toaster } from "@/components/ui/sonner";
+import { NavigationProgress } from "@/components/shared/NavigationProgress";
+import { GoogleReconnectModal } from "@/components/shared/GoogleReconnectModal";
 import { TRPCProvider } from "@/lib/api/client";
 
 interface ProvidersProps {
@@ -36,7 +38,9 @@ export function Providers({ children }: ProvidersProps) {
             enableSystem
             disableTransitionOnChange
           >
+            <NavigationProgress />
             {children}
+            <GoogleReconnectModal />
             <Toaster />
           </ThemeProvider>
         </TRPCProvider>

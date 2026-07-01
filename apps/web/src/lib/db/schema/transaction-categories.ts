@@ -10,6 +10,30 @@ import {
 
 import { users } from "./users";
 
+export const userTransactionCategories = pgTable(
+  "user_transaction_categories",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    slug: varchar("slug", { length: 32 }).notNull(),
+    label: varchar("label", { length: 64 }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("user_tx_categories_user_idx").on(table.userId),
+    uniqueIndex("user_tx_categories_user_slug_uidx").on(
+      table.userId,
+      table.slug,
+    ),
+    uniqueIndex("user_tx_categories_user_label_uidx").on(
+      table.userId,
+      table.label,
+    ),
+  ],
+);
+
 export const transactionCategoryRules = pgTable(
   "transaction_category_rules",
   {

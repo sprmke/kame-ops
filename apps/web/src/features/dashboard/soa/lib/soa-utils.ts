@@ -89,6 +89,45 @@ export function periodLabel(month: number, year: number): string {
   return name ? `${name} ${year}` : `${month}/${year}`;
 }
 
+export function isSoaPeriodRange(period: {
+  mode: string;
+  fromMonth: number;
+  fromYear: number;
+  toMonth: number;
+  toYear: number;
+}): boolean {
+  if (period.mode === "range") return true;
+  return (
+    period.fromMonth !== period.toMonth || period.fromYear !== period.toYear
+  );
+}
+
+/** Primary title — statement month for singles, full span for multi-month ranges. */
+export function soaPeriodCardTitle(period: {
+  mode: string;
+  fromMonth: number;
+  fromYear: number;
+  toMonth: number;
+  toYear: number;
+  label: string;
+}): string {
+  if (isSoaPeriodRange(period)) return period.label;
+  return periodLabel(period.fromMonth, period.fromYear);
+}
+
+/** Secondary line: parent range when a single-month run sits inside a multi-month period. */
+export function soaPeriodCardSubtitle(period: {
+  mode: string;
+  fromMonth: number;
+  fromYear: number;
+  toMonth: number;
+  toYear: number;
+  withinRangeLabel?: string | null;
+}): string | null {
+  if (period.withinRangeLabel) return period.withinRangeLabel;
+  return null;
+}
+
 export function periodKey(month: number, year: number): SoaPeriodKey {
   return `${year}-${month}`;
 }

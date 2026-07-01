@@ -7,6 +7,7 @@ import { useState, type ReactNode } from "react";
 import superjson from "superjson";
 
 import { LOCAL_DEV_APP_URL } from "@/lib/constants/dev-url";
+import { googleReconnectLink } from "@/lib/api/google-reconnect-link";
 import type { AppRouter } from "@/server/routers/_app";
 
 export const api = createTRPCReact<AppRouter>();
@@ -32,6 +33,7 @@ export function TRPCProvider({
             process.env.NODE_ENV === "development" ||
             (op.direction === "down" && op.result instanceof Error),
         }),
+        googleReconnectLink,
         httpBatchLink({
           url: `${getBaseUrl()}/api/trpc`,
           transformer: superjson,

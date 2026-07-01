@@ -5,13 +5,13 @@ import {
   CreditCard,
   FileText,
   LayoutDashboard,
-  Plug,
+  Loader2,
   Receipt,
   Settings,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
+import { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 
 import { DASHBOARD_NAV, ROUTES } from "@/config/routes";
@@ -22,8 +22,6 @@ const ICONS: Record<(typeof DASHBOARD_NAV)[number]["icon"], LucideIcon> = {
   CreditCard,
   FileText,
   Bell,
-  Zap,
-  Plug,
   Receipt,
   Settings,
 };
@@ -41,6 +39,24 @@ interface DashboardNavLinksProps {
   onNavigate?: () => void;
 }
 
+type NavItem = (typeof DASHBOARD_NAV)[number];
+
+function DashboardNavLinkContent({ item }: { item: NavItem }) {
+  const { pending } = useLinkStatus();
+  const Icon = ICONS[item.icon];
+
+  return (
+    <>
+      {pending ? (
+        <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+      ) : (
+        <Icon className="h-4 w-4 shrink-0" aria-hidden />
+      )}
+      <span className={cn(pending && "opacity-80")}>{item.title}</span>
+    </>
+  );
+}
+
 export function DashboardNavLinks({
   variant,
   onNavigate,
@@ -51,12 +67,12 @@ export function DashboardNavLinks({
   return (
     <>
       {DASHBOARD_NAV.map((item) => {
-        const Icon = ICONS[item.icon];
         const active = isDashboardNavActive(pathname, item.href);
         return (
           <Link
             key={item.href}
             href={item.href}
+            prefetch
             onClick={onNavigate}
             className={cn(
               "flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
@@ -69,8 +85,7 @@ export function DashboardNavLinks({
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
-            <Icon className="h-4 w-4 shrink-0" aria-hidden />
-            {item.title}
+            <DashboardNavLinkContent item={item} />
           </Link>
         );
       })}

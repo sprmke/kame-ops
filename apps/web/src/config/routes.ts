@@ -13,7 +13,6 @@ export const ROUTES = {
       `/dashboard/soa/${periodId}/${statementId}` as const,
     reminders: "/dashboard/reminders",
     automations: "/dashboard/automations",
-    integrations: "/dashboard/integrations",
     receipts: "/dashboard/receipts",
     settings: "/dashboard/settings",
   },
@@ -32,8 +31,6 @@ export const DASHBOARD_NAV = [
   },
   { title: "SOA", href: ROUTES.dashboard.soa, icon: "FileText" },
   { title: "Reminders", href: ROUTES.dashboard.reminders, icon: "Bell" },
-  { title: "Automations", href: ROUTES.dashboard.automations, icon: "Zap" },
-  { title: "Integrations", href: ROUTES.dashboard.integrations, icon: "Plug" },
   { title: "Receipts", href: ROUTES.dashboard.receipts, icon: "Receipt" },
   { title: "Settings", href: ROUTES.dashboard.settings, icon: "Settings" },
 ] as const;

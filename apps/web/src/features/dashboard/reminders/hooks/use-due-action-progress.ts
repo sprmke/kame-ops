@@ -2,19 +2,21 @@
 
 import { useMemo } from "react";
 
-import { activeReceiptStepIndexFromSteps } from "@/lib/receipt-upload-progress";
+import {
+  activeDueActionStepIndexFromSteps,
+  type DueActionStepSnapshot,
+} from "@/lib/due-action-progress";
 import { api } from "@/lib/api/client";
 
-import type { ReceiptUploadSettled } from "../components/ReceiptUploadProgressDialog";
-import type { ReceiptUploadProgressStep } from "../lib/receipt-upload-progress";
+import type { DueActionSettled } from "../components/DueActionProgressDialog";
 
-export function useReceiptUploadProgress(
+export function useDueActionProgress(
   processId: string | null,
-  fallbackSteps: ReceiptUploadProgressStep[],
+  fallbackSteps: DueActionStepSnapshot[],
   isPending: boolean,
-  settled: ReceiptUploadSettled,
+  settled: DueActionSettled,
 ) {
-  const { data: serverProgress } = api.receipts.getUploadProgress.useQuery(
+  const { data: serverProgress } = api.reminders.getActionProgress.useQuery(
     { processId: processId! },
     {
       enabled: Boolean(processId) && isPending,
@@ -33,8 +35,7 @@ export function useReceiptUploadProgress(
         ? "failed"
         : (serverProgress?.status ?? "running");
     const progress = succeeded ? 100 : (serverProgress?.progress ?? 0);
-    const activeStepIndex = activeReceiptStepIndexFromSteps(steps, status);
-    const currentStep = steps[activeStepIndex] ?? steps[0];
+    const activeStepIndex = activeDueActionStepIndexFromSteps(steps, status);
     const detail = serverProgress?.detail ?? null;
 
     return {
@@ -44,7 +45,6 @@ export function useReceiptUploadProgress(
       detail,
       finished: succeeded,
       failed,
-      currentStep,
     };
   }, [serverProgress, fallbackSteps, succeeded, failed]);
 }

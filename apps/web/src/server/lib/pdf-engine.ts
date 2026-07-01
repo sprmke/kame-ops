@@ -1,6 +1,6 @@
 import "server-only";
 
-import "@/server/legacy/pay-credit-cards/pdf-node-polyfill";
+import "@/lib/soa/pdf-node-polyfill";
 
 declare global {
   var pdfjsWorker: { WorkerMessageHandler?: unknown } | undefined;
