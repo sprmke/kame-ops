@@ -3,6 +3,12 @@
 import * as React from "react";
 import { LayoutGrid, List, Kanban } from "lucide-react";
 
+import {
+  segmentedToggleButtonClass,
+  segmentedToggleIconClass,
+  segmentedToggleLabelClass,
+  segmentedToggleRootClass,
+} from "@/components/shared/segmented-toggle-styles";
 import { cn } from "@/lib/utils/cn";
 
 export type ViewMode = "grid" | "table" | "kanban";
@@ -33,13 +39,14 @@ export function ViewToggle({
   options = ["table", "grid", "kanban"],
 }: ViewToggleProps) {
   const filteredOptions = options
-    .map((value) => VIEW_OPTIONS.find((opt) => opt.value === value))
+    .map((optionValue) => VIEW_OPTIONS.find((opt) => opt.value === optionValue))
     .filter((opt): opt is ViewOption => opt != null);
 
   return (
     <div
       className={cn(
-        "inline-flex items-center rounded-lg border bg-muted p-1",
+        segmentedToggleRootClass,
+        "hidden md:inline-flex",
         className,
       )}
     >
@@ -52,17 +59,12 @@ export function ViewToggle({
             key={option.value}
             type="button"
             onClick={() => onChange(option.value)}
-            className={cn(
-              "inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-200",
-              isActive
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
+            className={segmentedToggleButtonClass(isActive)}
             aria-label={`${option.label} view`}
             aria-pressed={isActive}
           >
-            <Icon className="mr-2 h-4 w-4" />
-            {option.label}
+            <Icon className={segmentedToggleIconClass} />
+            <span className={segmentedToggleLabelClass}>{option.label}</span>
           </button>
         );
       })}

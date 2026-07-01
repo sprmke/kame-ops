@@ -1,6 +1,6 @@
-import { type ReactNode } from "react";
+import { type ReactNode } from 'react';
 
-import { cn } from "@/lib/utils/cn";
+import { cn } from '@/lib/utils/cn';
 
 interface DashboardPageHeaderProps {
   title: string;
@@ -18,12 +18,12 @@ export function DashboardPageHeader({
   return (
     <div
       className={cn(
-        "relative flex flex-col gap-4 pb-6 sm:flex-row sm:items-end sm:justify-between",
+        'flex relative flex-col gap-4 sm:flex-row sm:items-end sm:justify-between',
         className,
       )}
     >
-      <div className="space-y-2 border-l-4 border-primary pl-4">
-        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+      <div className="pl-4 space-y-2 border-l-4 border-primary">
+        <h1 className="text-2xl font-bold tracking-tight break-words font-display text-foreground sm:text-3xl">
           {title}
         </h1>
         {description && (
@@ -33,7 +33,7 @@ export function DashboardPageHeader({
         )}
       </div>
       {actions && (
-        <div className="flex shrink-0 flex-wrap gap-2 pl-4 sm:pl-0">
+        <div className="flex flex-wrap gap-2 pl-4 shrink-0 sm:pl-0">
           {actions}
         </div>
       )}

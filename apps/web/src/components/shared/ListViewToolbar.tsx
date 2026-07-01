@@ -60,7 +60,6 @@ export function ListViewToolbar({
                 type="button"
                 variant="outline"
                 size="icon"
-                className="h-8 w-8"
                 disabled={page <= 1}
                 onClick={() => onPageChange(page - 1)}
                 aria-label="Previous page"
@@ -74,7 +73,6 @@ export function ListViewToolbar({
                 type="button"
                 variant="outline"
                 size="icon"
-                className="h-8 w-8"
                 disabled={page >= pageCount}
                 onClick={() => onPageChange(page + 1)}
                 aria-label="Next page"
@@ -89,6 +87,7 @@ export function ListViewToolbar({
         value={viewMode}
         onChange={onViewModeChange}
         options={["table", "grid"]}
+        className="w-full sm:w-auto"
       />
     </div>
   );

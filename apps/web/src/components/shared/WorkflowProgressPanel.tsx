@@ -28,6 +28,7 @@ type WorkflowProgressPanelProps = {
   icon?: LucideIcon;
   doneTitle?: string;
   failedTitle?: string;
+  summaryLines?: string[];
 };
 
 function ProgressBar({ value }: { value: number }) {
@@ -55,6 +56,7 @@ export function WorkflowProgressPanel({
   icon: Icon = FileText,
   doneTitle = "All done",
   failedTitle = "Run failed",
+  summaryLines,
 }: WorkflowProgressPanelProps) {
   const current = steps[activeStepIndex] ?? steps[0];
   const done = finished && !failed;
@@ -130,6 +132,14 @@ export function WorkflowProgressPanel({
         </div>
         <ProgressBar value={progress} />
       </div>
+
+      {done && summaryLines?.length ? (
+        <ul className="space-y-1 rounded-lg border border-border/80 bg-muted/20 p-3 text-sm text-muted-foreground">
+          {summaryLines.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      ) : null}
 
       <ol className="space-y-2 rounded-lg border border-border/80 bg-muted/20 p-4">
         {steps.map((step, index) => {
