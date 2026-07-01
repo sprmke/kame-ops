@@ -44,10 +44,11 @@ const jobs = await db.query.automationJobs.findMany({
 ```typescript
 const AUTOMATION_JOB_TYPES = {
   RUN_SOA_PIPELINE: "run_soa_pipeline",
-  SEND_REMINDERS: "send_due_reminders",
-  CUSTOM_WEBHOOK: "custom_webhook",
+  SEND_DUE_REMINDERS: "send_due_reminders",
 } as const;
 ```
+
+Default `send_due_reminders` job is seeded on first Automations/Reminders visit (daily 12:00 PM). Per-card window and ping interval live on **Credit Cards** settings. Manual **Run now** on Automations passes `force: true` to resend same-day reminders.
 
 Cron invokes secured API routes; services perform work; runs are logged.
 
@@ -60,8 +61,8 @@ interface NotificationPayload {
   fingerprint: string;
 }
 
-// notification.service sends only to configured channels
-await notificationService.sendReminder(userId, payload);
+// Outbound messages go through notification.service.ts
+await reminderService.sendDueRemindersForUser(userId);
 ```
 
 Never call Telegram/Slack from UI components.

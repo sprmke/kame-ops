@@ -5,52 +5,30 @@ description: Credit card SOA module for KameOps — Gmail SOA fetch, PDF parsing
 
 # Credit Cards Module Skill
 
-## Legacy Source
+## Legacy CLI Source
 
-Port from `automated-tasks/pay-credit-cards/src/`:
+Reference behavior: `automated-tasks/pay-credit-cards/src/`. Web implementation:
 
-| Legacy file                                                     | Target service                                        |
-| --------------------------------------------------------------- | ----------------------------------------------------- |
-| `soa-run.ts`                                                    | `soa.service.ts`                                      |
-| `parse-soa.ts`, `parse-transactions.ts`, `pdf.ts`, `bpi-ocr.ts` | `soa-parse.service.ts`                                |
-| `due-reminders-state.ts`                                        | `reminder.service.ts` + `due_entries` schema          |
-| `notify.ts`, `notification-body.ts`                             | `notification.service.ts`                             |
-| `send-reminders.ts`                                             | `reminder.service.ts` + cron job                      |
-| `mark-paid.ts`, `receipt-ocr.ts` (CLI)                          | `receipt.service.ts`, `receipt-validation.service.ts` |
-| `google-calendar.ts`                                            | `google-calendar.service.ts`                          |
-| `gmail.ts`                                                      | `gmail.service.ts`                                    |
+| Legacy file                                                     | Web location                                                        |
+| --------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `soa-run.ts`                                                    | `lib/soa/run.ts` + `soa.service.ts`                                 |
+| `parse-soa.ts`, `parse-transactions.ts`, `pdf.ts`, `bpi-ocr.ts` | `lib/soa/`                                                          |
+| `summary-pdf.ts`                                                | `lib/soa/summary-pdf.ts`                                            |
+| `gmail.ts`                                                      | `lib/soa/gmail-fetch.ts` + `gmail.service.ts`                       |
+| `google-calendar.ts`                                            | `lib/soa/google-calendar.ts` + `google-calendar.service.ts`         |
+| `notification-body.ts`                                          | `lib/reminders/notification-body.ts`                                |
+| `due-reminders-state.ts`                                        | **Removed** — `due_entries` + `reminder_logs`                       |
+| `send-reminders.ts`, `notify.ts`                                | **Removed** — `send-due-reminders.service` + `notification.service` |
+| `mark-paid.ts`                                                  | **Removed** — `mark-paid.service.ts`                                |
+| `receipt-ocr.ts` (CLI)                                          | `receipt-validation.service.ts` (AI vision)                         |
 
 ## Card Configuration
 
-Replace `CARDS_JSON` env with DB:
+DB table `credit_cards` (replaces `CARDS_JSON`). Loaded via `creditCardService.listForSoaPipeline()` into workdir env for SOA run.
 
-```typescript
-interface CreditCard {
-  issuer: "metrobank" | "rcbc" | "bpi" | "unionbank";
-  last4: string;
-  pdfPasswordEncrypted: string;
-  label?: string;
-  fullPan?: string;
-  contactLine?: string;
-  gmailMonthOffset?: number; // default 0
-}
-```
+## SOA Run
 
-## SOA Run API
-
-```typescript
-// tRPC mutation — conceptual
-runSoa: protectedProcedure
-  .input(
-    z.object({
-      month: z.number().min(1).max(12),
-      year: z.number(),
-      mode: z.enum(["single", "range"]),
-      skipNotify: z.boolean().optional(),
-    }),
-  )
-  .mutation(({ ctx, input }) => soaService.run(ctx.user.id, input));
-```
+`tRPC` → `soa.service.runSoaPipeline` → `prepareSoaWorkdir` → `lib/soa/run.ts`.
 
 ## Parsing Notes
 
@@ -58,23 +36,20 @@ runSoa: protectedProcedure
 - **BPI**: enable OCR path when pdf.js text is empty
 - **Unavailable SOA**: set `soaUnavailable` flag; UI shows em dash in overview
 
-## Mark Paid Parity
+## Mark Paid
 
-Text: `(\d{4})\s*[-–—]\s*(.+?)\s*[-–—]\s*paid`
+Native `mark-paid.service.ts` — Postgres + `reminder_logs` + calendar. Text: `(\d{4})\s*[-–—]\s*(.+?)\s*[-–—]\s*paid`.
 
-Receipt: AI-extracted amount must be ≥ minimum due (or total if configured).
+## Receipt AI keys
+
+Settings → `ai_api_keys` (encrypted). No env vars.
 
 ## Summary PDF
 
-Generate with pdfkit or store template; upload to Supabase Storage. Telegram receives document; Slack gets text + optional web link.
+`lib/soa/summary-pdf.ts` — paid column from Postgres via `overview-paid-label.ts` inject.
 
 ## Migration Checklist
 
-- [ ] Import cards from `CARDS_JSON` seed script
+- [ ] Import cards from CLI via `scripts/migrate-from-cli.ts`
 - [ ] Import `due-reminders-state.json` → `due_entries` + `reminder_logs`
-- [ ] Upload `data/receipts/` to Storage
 - [ ] Compare one month SOA output CLI vs web for each bank
-
-## Rule Reference
-
-`@.cursor/rules/18-credit-cards-module.mdc`

@@ -50,6 +50,15 @@ const nextConfig: NextConfig = {
     }
     return config;
   },
+  async redirects() {
+    return [
+      {
+        source: "/dashboard/integrations",
+        destination: "/dashboard/settings",
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       {

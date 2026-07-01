@@ -99,19 +99,19 @@ src/server/
 │   └── receipts.ts
 ├── services/
 │   ├── credit-card.service.ts
-│   ├── soa.service.ts              # Port from pay-credit-cards soa-run
-│   ├── soa-parse.service.ts        # parse-soa, parse-transactions, pdf
-│   ├── reminder.service.ts
-│   ├── notification.service.ts     # Telegram + Slack abstraction
+│   ├── soa.service.ts              # SOA pipeline (lib/soa/run + summary PDF)
+│   ├── reminder.service.ts         # Due reminders (native send + default automation seed)
+│   ├── send-due-reminders.service.ts
+│   ├── notification.service.ts     # Telegram/Slack outbound
+│   ├── reminder-log.service.ts     # reminder_logs idempotency
+│   ├── soa-workdir.service.ts      # Per-user SOA workdir + OAuth env
+│   ├── mark-paid.service.ts        # Native mark paid/unpaid/receipt
+│   ├── automation.service.ts       # automation_jobs CRUD + dispatch
 │   ├── gmail.service.ts
-│   ├── telegram.service.ts
-│   ├── slack.service.ts
-│   ├── google-calendar.service.ts
 │   ├── receipt.service.ts
 │   ├── receipt-validation.service.ts
-│   ├── automation.service.ts
 │   └── storage.service.ts
-└── jobs/                           # Cron entrypoints calling services
+└── app/api/cron/dispatch/          # Vercel Cron → dispatchDueJobs()
 ```
 
 ## Credit Cards Module Boundaries

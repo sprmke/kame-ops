@@ -28,23 +28,23 @@ Philippine bank credit card SOA automation. This module must preserve behavior f
 
 ## SOA Pipeline (service layer)
 
-Order of operations (match legacy `soa-run.ts`):
+Order of operations (`lib/soa/run.ts`):
 
 1. Build month context (`gmailMonthOffset` per card)
 2. Gmail search per bank → download PDFs
 3. Unlock PDF with card password(s)
 4. Parse SOA fields + transactions
-5. Write summary PDF to storage (optional download in UI)
-6. Upsert `due_entries` from parsed rows
+5. Upsert `due_entries` via `due-entry-upsert.service`
+6. Write summary PDF (paid column from Postgres via `overview-paid-label`)
 7. Notify via `notification.service` (Telegram PDF + Slack text)
-8. Optional: create calendar events via `google-calendar.service`
+8. Optional: calendar events via `google-calendar.service` → `lib/soa/google-calendar.ts`
 
 ## Due Entries
 
 - Key: `issuerId` + normalized `cardLast4` + `dueDateYmd`
 - Keep latest due date when range runs overlap
 - `paidAt` suppresses reminder fingerprints
-- `overviewIsPaidLabel` logic for summary PDF "Is paid" column
+- `overviewIsPaidLabel` → `lib/soa/overview-paid-label.ts` (Postgres `due_entries`)
 
 ## Mark Paid
 
@@ -59,6 +59,7 @@ Side effects: update due entry, suppress/restore reminder fingerprints, patch ca
 ## Receipt AI validation
 
 - Gemini 2.5 Flash vision (multi-key rotation) + Groq fallback
+- API keys: **Settings only** (`ai_api_keys` table) — never `GEMINI_*` / `GROQ_*` env vars
 - Extract card last-4, amount, bank/wallet from PH e-wallet/bank screenshots
 - Amount must meet minimum due (or total when `RECEIPT_REQUIRE_TOTAL_DUE=1`)
 - Store uploads in Supabase Storage under `receipts/{userId}/`

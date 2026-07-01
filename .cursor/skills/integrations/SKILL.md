@@ -1,6 +1,6 @@
 ---
 name: integrations
-description: Third-party integrations for KameOps — Gmail, Google Calendar, Telegram Bot API, Slack webhooks. Use when connecting services, webhooks, or porting notify.ts / telegram-bot-listener.ts.
+description: Third-party integrations for KameOps — Gmail, Google Calendar, Telegram Bot API, Slack webhooks. Use when connecting services, webhooks, or porting CLI integration behavior.
 ---
 
 # Integrations Skill
@@ -50,10 +50,10 @@ async function getTelegramConfig(
 
 ## Webhook Routes
 
-| Route                         | Purpose                     |
-| ----------------------------- | --------------------------- |
-| `POST /api/webhooks/telegram` | Bot updates (paid, receipt) |
-| `GET /api/cron/reminders`     | Daily due reminders         |
+| Route                         | Purpose                                    |
+| ----------------------------- | ------------------------------------------ |
+| `POST /api/webhooks/telegram` | Bot updates (paid, receipt)                |
+| `GET /api/cron/dispatch`      | Run due `automation_jobs` (reminders, SOA) |
 
 Validate secrets on every cron/webhook request.
 
@@ -70,8 +70,7 @@ Validate secrets on every cron/webhook request.
 - Rotate tokens on disconnect
 - Rate-limit webhook endpoints
 
-## Legacy Reference
+## CLI Reference (parity testing)
 
-- `pay-credit-cards/src/notify.ts`
 - `pay-credit-cards/src/telegram-bot-listener.ts`
 - `pay-credit-cards/src/gmail-auth.ts`

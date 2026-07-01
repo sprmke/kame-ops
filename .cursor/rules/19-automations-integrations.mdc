@@ -7,7 +7,6 @@ globs:
   - '**/server/services/gmail*.ts'
   - '**/server/services/telegram*.ts'
   - '**/server/services/slack*.ts'
-  - '**/server/services/notification*.ts'
   - '**/server/jobs/**'
   - '**/app/api/cron/**'
   - '**/app/api/webhooks/**'
@@ -18,15 +17,15 @@ alwaysApply: false
 
 ## Scheduling
 
-**Target:** Supabase Cron (pg_cron) invoking secured HTTP routes or Edge Functions—not macOS launchd.
+**Production:** Vercel Cron (`* * * * *`) → `GET /api/cron/dispatch` with `CRON_SECRET`. The dispatcher runs due `automation_jobs` (per user timezone): `send_due_reminders` (default seeded daily 12:00 PM) and user-created `run_soa_pipeline` jobs—not macOS launchd.
 
 | Job type | Legacy CLI | KameOps |
 | -------- | ---------- | ------- |
 | SOA pipeline | `npm run start` / manual month | `run_soa_pipeline` automation or **Run SOA** UI |
-| Daily reminders | `send-reminders` at noon | `/api/cron/reminders` |
+| Due reminders | `send-reminders` (launchd) | Default `send_due_reminders` automation; edit schedule on **Automations**; window/interval on **Credit Cards** |
 | Telegram bot | long-polling daemon | **Webhook** at `/api/webhooks/telegram` |
 
-Cron routes must verify a secret (`CRON_SECRET` or Supabase service role header). Log every run to `automation_runs`.
+Cron routes must verify `CRON_SECRET`. Log every run to `automation_runs`.
 
 ## Integrations Model
 
@@ -39,19 +38,11 @@ Store per user in `integrations` table:
 | `telegram` | Bot token, chat id, web link |
 | `slack` | Incoming webhook URL |
 
-Use service abstractions—routers and UI never call Telegram/Slack APIs directly.
+Use service abstractions—routers and UI never call Telegram/Slack APIs directly. Outbound messages go through `notification.service.ts`.
 
-## Notification Service
+## Idempotency
 
-Single entry point for outbound messages:
-
-```typescript
-// notification.service.ts — conceptual
-sendReminder({ channels, telegramBody, slackBody, fingerprint });
-sendDocument({ channel: 'telegram', file, caption });
-```
-
-Idempotency: store `reminder_logs.fingerprint` before send (legacy `due-reminders-state.sent`).
+Reminder send fingerprints live in `reminder_logs` (Postgres idempotency).
 
 ## Telegram Webhook
 
@@ -64,10 +55,11 @@ Idempotency: store `reminder_logs.fingerprint` before send (legacy `due-reminder
 | Legacy | KameOps |
 | ------ | ------- |
 | Global `.env` tokens | Per-user integration records |
+| `GEMINI_*`, `GROQ_*` env | Settings → `ai_api_keys` (encrypted, per user) |
 | `CARDS_JSON` | `credit_cards` table |
 | `data/*.json` state | Postgres tables |
 
-Keep `.env` only for app secrets (Supabase, cron secret, AI keys)—not user card passwords.
+Keep `.env` only for app secrets (Supabase, cron secret)—not user card passwords or receipt AI keys.
 
 ## Failure Handling
 
