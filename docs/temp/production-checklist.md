@@ -20,7 +20,7 @@ See **`docs/temp/supabase-setup.md`** for the full walkthrough.
 - [ ] Set production env vars (see below)
 - [ ] Remove `SKIP_ENV_VALIDATION` in production
 - [ ] Deploy and verify `/login` + `/dashboard`
-- [ ] Cron jobs auto-configured via `apps/web/vercel.json`
+- [ ] Schedule automation dispatch via **Supabase pg_cron** (see **`docs/temp/scheduled-jobs-and-testing.md`**) — not `vercel.json` on Hobby
 
 ### Telegram
 
@@ -71,13 +71,15 @@ See **`docs/temp/supabase-setup.md`** for the full walkthrough.
 | `SUPABASE_STORAGE_BUCKET_PRIVATE` | Receipts, SOA PDFs                      |
 | `NEXT_PUBLIC_APP_URL`             | Public app URL                          |
 
-## Cron schedule (vercel.json)
+## Automation dispatch (Supabase pg_cron)
 
-| Route                | Schedule (UTC) | Notes                                       |
-| -------------------- | -------------- | ------------------------------------------- |
-| `/api/cron/dispatch` | `* * * * *`    | Every minute; runs due per-user automations |
+| Target                                            | Schedule (UTC) | Notes                                                                                                    |
+| ------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------- |
+| `GET /api/cron/dispatch` on `NEXT_PUBLIC_APP_URL` | `* * * * *`    | Every minute via **`pg_cron` + `pg_net`** in Supabase; see **`docs/temp/scheduled-jobs-and-testing.md`** |
 
-Cron requests must include: `Authorization: Bearer <CRON_SECRET>` (Vercel Cron adds this automatically when configured).
+Not configured in `vercel.json` (Vercel Hobby allows at most one cron per day).
+
+Cron requests must include: `Authorization: Bearer <CRON_SECRET>` (stored in Supabase Vault as `kame_ops_cron_secret`).
 
 User automations use friendly schedules (daily/weekly/monthly + time) stored in `automation_jobs.config.scheduleConfig`, evaluated in each user's timezone (`users.timezone`, default `Asia/Manila`).
 

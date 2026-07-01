@@ -1,12 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "bun install --linker hoisted",
-  "crons": [
-    {
-      "path": "/api/cron/dispatch",
-      "schedule": "* * * * *"
-    }
-  ],
   "functions": {
     "src/app/api/cron/dispatch/route.ts": {
       "maxDuration": 300

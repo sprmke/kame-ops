@@ -50,10 +50,10 @@ async function getTelegramConfig(
 
 ## Webhook Routes
 
-| Route                         | Purpose                                    |
-| ----------------------------- | ------------------------------------------ |
-| `POST /api/webhooks/telegram` | Bot updates (paid, receipt)                |
-| `GET /api/cron/dispatch`      | Run due `automation_jobs` (reminders, SOA) |
+| Route                         | Purpose                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------- |
+| `POST /api/webhooks/telegram` | Bot updates (paid, receipt)                                                           |
+| `GET /api/cron/dispatch`      | Run due `automation_jobs` (reminders, SOA); production: Supabase pg_cron every minute |
 
 Validate secrets on every cron/webhook request.
 

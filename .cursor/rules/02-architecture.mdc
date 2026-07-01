@@ -111,7 +111,7 @@ src/server/
 │   ├── receipt.service.ts
 │   ├── receipt-validation.service.ts
 │   └── storage.service.ts
-└── app/api/cron/dispatch/          # Vercel Cron → dispatchDueJobs()
+└── app/api/cron/dispatch/          # Supabase pg_cron → dispatchDueJobs()
 ```
 
 ## Credit Cards Module Boundaries

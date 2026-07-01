@@ -47,11 +47,11 @@
 ## Production readiness (in progress)
 
 - [x] CI workflow (lint, type-check, test, build)
-- [x] `vercel.json` cron + function timeouts
+- [x] `vercel.json` function timeouts (dispatch `maxDuration`)
 - [x] Production env validation
 - [x] Vitest unit tests (starting)
 - [x] Google-only auth (email/password removed)
-- [ ] Supabase Cron dashboard (Vercel Cron configured in repo)
+- [x] Supabase pg_cron for `/api/cron/dispatch` — `docs/temp/scheduled-jobs-and-testing.md`
 
 ## Phase 8 — Migration ✅
 

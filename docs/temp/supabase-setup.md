@@ -147,6 +147,7 @@ Also set:
 - `AUTH_URL` → same
 - Remove `SKIP_ENV_VALIDATION`
 - Add production `AUTH_SECRET`, `ENCRYPTION_KEY`, `CRON_SECRET`
+- After first deploy: enable automation dispatch — **`docs/temp/scheduled-jobs-and-testing.md`** (Vault + pg_cron)
 
 Add your production URL to Google OAuth redirect URIs.
 
