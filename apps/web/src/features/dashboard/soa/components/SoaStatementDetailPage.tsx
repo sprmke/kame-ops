@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { useMemo, useState } from "react";
-import Link from "next/link";
-import type { inferRouterOutputs } from "@trpc/server";
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import type { inferRouterOutputs } from '@trpc/server';
 import {
   ArrowLeft,
   Calendar,
@@ -12,40 +12,40 @@ import {
   Sparkles,
   TrendingDown,
   TrendingUp,
-} from "lucide-react";
+} from 'lucide-react';
 
-import { DashboardPageHeader } from "@/components/shared/DashboardPageHeader";
-import { SoaStatementDetailContentSkeleton } from "@/components/shared/skeletons";
-import { StatCard } from "@/components/shared/StatCard";
-import { StatusBadge } from "@/components/shared/StatusBadge";
-import { Button } from "@/components/ui/button";
-import { Card, CardHeader } from "@/components/ui/card";
-import { ROUTES } from "@/config/routes";
-import { api } from "@/lib/api/client";
-import type { AppRouter } from "@/server/routers/_app";
-import { formatPhpAmount } from "@/lib/utils/format-money";
-import { isStatementMarkedPaid } from "@/lib/soa/paid-status";
+import { DashboardPageHeader } from '@/components/shared/DashboardPageHeader';
+import { SoaStatementDetailContentSkeleton } from '@/components/shared/skeletons';
+import { StatCard } from '@/components/shared/StatCard';
+import { StatusBadge } from '@/components/shared/StatusBadge';
+import { Button } from '@/components/ui/button';
+import { Card, CardHeader } from '@/components/ui/card';
+import { ROUTES } from '@/config/routes';
+import { api } from '@/lib/api/client';
+import type { AppRouter } from '@/server/routers/_app';
+import { formatPhpAmount } from '@/lib/utils/format-money';
+import { isStatementMarkedPaid } from '@/lib/soa/paid-status';
 
 import {
   CategorizeWithAiProvider,
   useCategorizeWithAiActions,
-} from "./CategorizeWithAiProvider";
-import { SoaPdfPreview } from "./SoaPdfPreview";
-import { SoaTransactionList } from "./SoaTransactionList";
-import { CardBankLabel } from "@/lib/credit-cards/CardBankLabel";
-import { resolveCardAccent } from "@/lib/credit-cards/card-accent";
+} from './CategorizeWithAiProvider';
+import { SoaPdfPreview } from './SoaPdfPreview';
+import { SoaTransactionList } from './SoaTransactionList';
+import { CardBankLabel } from '@/lib/credit-cards/CardBankLabel';
+import { resolveCardAccent } from '@/lib/credit-cards/card-accent';
 
 import {
   daysUntilDue,
   dueCountdownLabel,
   formatDisplayAmount,
   periodLabel,
-} from "../lib/soa-utils";
+} from '../lib/soa-utils';
 import {
   classifyTransaction,
   parseTransactionAmount,
   sumTransactionsByKind,
-} from "../lib/transaction-utils";
+} from '../lib/transaction-utils';
 
 type SoaStatementDetailPageProps = {
   periodId: string;
@@ -53,7 +53,7 @@ type SoaStatementDetailPageProps = {
 };
 
 type SoaStatementDetail = NonNullable<
-  inferRouterOutputs<AppRouter>["soa"]["getStatement"]
+  inferRouterOutputs<AppRouter>['soa']['getStatement']
 >;
 
 export function SoaStatementDetailPage({
@@ -108,8 +108,8 @@ function SoaStatementDetailBody({
   statement,
 }: {
   periodId: string;
-  period: SoaStatementDetail["period"];
-  statement: SoaStatementDetail["statement"];
+  period: SoaStatementDetail['period'];
+  statement: SoaStatementDetail['statement'];
 }) {
   const { data: dues } = api.reminders.listDue.useQuery({ unpaidOnly: false });
   const categorize = useCategorizeWithAiActions();
@@ -139,14 +139,14 @@ function SoaStatementDetailBody({
     const transactions = statement.transactions ?? [];
     const charges = transactions.reduce((sum, t) => {
       const kind = classifyTransaction(t.description, t.amount);
-      if (kind === "purchase" || kind === "interest" || kind === "fee") {
+      if (kind === 'purchase' || kind === 'interest' || kind === 'fee') {
         return sum + parseTransactionAmount(t.amount);
       }
       return sum;
     }, 0);
-    const credits = sumTransactionsByKind(transactions, ["credit", "payment"]);
-    const interest = sumTransactionsByKind(transactions, ["interest"]);
-    const fees = sumTransactionsByKind(transactions, ["fee"]);
+    const credits = sumTransactionsByKind(transactions, ['credit', 'payment']);
+    const interest = sumTransactionsByKind(transactions, ['interest']);
+    const fees = sumTransactionsByKind(transactions, ['fee']);
 
     return { charges, credits, interest, fees, count: transactions.length };
   }, [statement.transactions]);
@@ -156,17 +156,17 @@ function SoaStatementDetailBody({
   const countdown = dueCountdownLabel(days);
   const hasPdf =
     !!statement.pdfFileName &&
-    statement.pdfFileName !== "—" &&
+    statement.pdfFileName !== '—' &&
     !statement.soaUnavailable;
 
   const urgencyVariant =
     paid || days === null
-      ? ("muted" as const)
+      ? ('muted' as const)
       : days < 0
-        ? ("destructive" as const)
+        ? ('destructive' as const)
         : days <= 4
-          ? ("warning" as const)
-          : ("default" as const);
+          ? ('warning' as const)
+          : ('default' as const);
 
   const stmtMonthLabel = periodLabel(
     statement.statementMonth,
@@ -267,13 +267,13 @@ function SoaStatementDetailBody({
                 <Calendar className="w-3 h-3" />
                 Due
               </p>
-              <p className="font-medium">{statement.dueDate ?? "—"}</p>
+              <p className="font-medium">{statement.dueDate ?? '—'}</p>
             </div>
             <div>
               <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                 Statement date
               </p>
-              <p className="font-medium">{statement.statementDate ?? "—"}</p>
+              <p className="font-medium">{statement.statementDate ?? '—'}</p>
             </div>
           </div>
         </CardHeader>
@@ -307,7 +307,7 @@ function SoaStatementDetailBody({
           <h2 className="text-lg font-semibold font-display">Transactions</h2>
           {txStats.count > 0 && (
             <p className="text-sm tabular-nums text-muted-foreground">
-              {txStats.count} {txStats.count === 1 ? "line" : "lines"}
+              {txStats.count} {txStats.count === 1 ? 'line' : 'lines'}
             </p>
           )}
         </div>

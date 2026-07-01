@@ -46,8 +46,8 @@ export async function deleteReceiptsForDueEntry(
   userId: string,
   entry: DueEntryRow,
 ): Promise<number> {
-  const [enriched] = await enrichDueEntriesWithSoaPeriod(userId, [entry]);
-  const due = enriched ?? entry;
+  const [due] = await enrichDueEntriesWithSoaPeriod(userId, [entry]);
+  if (!due) return 0;
 
   const dueCandidate = {
     id: due.id,
