@@ -1,0 +1,7 @@
+- Onboarding/setup flow for new users
+- Support multiple gmail
+- Make slack notification message configurable via settings
+- Support multiple payment receipt uploads and validation
+- Fix run soa incorrect progress issue
+- Improve transactions table to support search, sort, pagination, filtering
+- Allow editing category rules

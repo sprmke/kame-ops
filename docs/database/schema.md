@@ -7,10 +7,12 @@
 - `users` — profile extension for Supabase Auth users
 - `credit_cards` — card credentials (encrypted PDF password), optional `soa_subject` (Gmail SOA search), `color` (#RRGGBB accent)
 - `soa_statements`, `soa_transactions` — parsed SOA data
+- `user_transaction_categories` — per-user custom category slugs/labels (e.g. AI-created)
 - `due_entries` — payment due tracking
 - `receipts` — uploaded receipt images + AI validation fields
 - `reminders`, `reminder_logs` — generic reminder engine
 - `integrations` — Gmail, Telegram, Slack, Calendar per user
+- `ai_api_keys` — encrypted Gemini/Groq API keys per user (receipt AI)
 - `automation_jobs`, `automation_runs` — cron definitions and logs
 - `notification_channels` — user notification preferences
 - `activity_log` — audit trail

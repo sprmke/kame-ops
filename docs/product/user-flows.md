@@ -18,10 +18,19 @@
 5. Mark paid via UI, Telegram, or receipt photo
 6. Reminders stop; calendar shows paid
 
+## Reminders & schedule
+
+1. Open **Reminders** → **Schedule** (payment reminders + SOA Gmail check) and **Due dates** (cards in window)
+2. Toggle a job, edit daily time, or run now
+3. Mark paid/unpaid on due cards; upload receipt from mark-paid flow
+
 ## Automation management
 
-1. Open **Automations** → see jobs (SOA pipeline, reminders)
-2. Toggle job, view run history, retry failed run
+Managed on **Reminders** (Schedule section). `/dashboard/automations` redirects there.
+
+1. Payment reminders — daily check for cards in reminder window
+2. SOA Gmail check — daily fetch/parse pipeline
+3. Toggle job, view last run status, retry with Run now
 
 ## Receipt upload
 

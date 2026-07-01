@@ -73,11 +73,13 @@ See **`docs/temp/supabase-setup.md`** for the full walkthrough.
 
 ## Cron schedule (vercel.json)
 
-| Route                 | Schedule (UTC) | Local (Asia/Manila) |
-| --------------------- | -------------- | ------------------- |
-| `/api/cron/reminders` | `0 4 * * *`    | Daily 12:00 PM      |
+| Route                | Schedule (UTC) | Notes                                       |
+| -------------------- | -------------- | ------------------------------------------- |
+| `/api/cron/dispatch` | `* * * * *`    | Every minute; runs due per-user automations |
 
 Cron requests must include: `Authorization: Bearer <CRON_SECRET>` (Vercel Cron adds this automatically when configured).
+
+User automations use friendly schedules (daily/weekly/monthly + time) stored in `automation_jobs.config.scheduleConfig`, evaluated in each user's timezone (`users.timezone`, default `Asia/Manila`).
 
 ## CI
 

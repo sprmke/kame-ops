@@ -20,7 +20,7 @@
 
 - [x] Due list with paid/unpaid sections
 - [x] Send reminders + cron route
-- [x] Integration secrets applied before legacy runs
+- [x] Integration secrets applied before SOA pipeline runs
 
 ## Phase 4 — Automations ✅
 
