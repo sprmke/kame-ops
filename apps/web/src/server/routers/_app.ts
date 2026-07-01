@@ -1,5 +1,6 @@
 import { router } from "@/server/trpc";
 
+import { aiKeysRouter } from "./ai-keys";
 import { automationsRouter } from "./automations";
 import { creditCardsRouter } from "./credit-cards";
 import { integrationsRouter } from "./integrations";
@@ -16,6 +17,7 @@ export const appRouter = router({
   transactionCategories: transactionCategoriesRouter,
   reminders: remindersRouter,
   integrations: integrationsRouter,
+  aiKeys: aiKeysRouter,
   automations: automationsRouter,
   receipts: receiptsRouter,
 });

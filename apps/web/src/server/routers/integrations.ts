@@ -1,11 +1,16 @@
 import { z } from "zod";
 
 import { protectedProcedure, router } from "@/server/trpc";
+import { gmailService } from "@/server/services/gmail.service";
 import { integrationService } from "@/server/services/integration.service";
 
 export const integrationsRouter = router({
   list: protectedProcedure.query(({ ctx }) =>
     integrationService.list(ctx.user.id),
+  ),
+
+  checkGoogleAuth: protectedProcedure.query(({ ctx }) =>
+    gmailService.checkAuthStatus(ctx.user.id),
   ),
 
   getFormConfigs: protectedProcedure.query(({ ctx }) =>
@@ -23,16 +28,4 @@ export const integrationsRouter = router({
     .mutation(({ ctx, input }) =>
       integrationService.upsert(ctx.user.id, input),
     ),
-
-  receiptAiStatus: protectedProcedure.query(async () => {
-    const { getReceiptAiSecretsStatus } =
-      await import("@/server/services/receipt-validation.service");
-    return getReceiptAiSecretsStatus();
-  }),
-
-  verifyReceiptAi: protectedProcedure.mutation(async () => {
-    const { verifyReceiptAiIntegration } =
-      await import("@/server/services/receipt-validation.service");
-    return verifyReceiptAiIntegration();
-  }),
 });

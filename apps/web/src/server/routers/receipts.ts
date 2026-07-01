@@ -38,4 +38,16 @@ export const receiptsRouter = router({
     .mutation(({ ctx, input }) =>
       receiptService.markPaidFromReceiptId(ctx.user.id, input.receiptId),
     ),
+
+  revalidateWithAi: protectedProcedure
+    .input(z.object({ receiptId: z.string().uuid() }))
+    .mutation(({ ctx, input }) =>
+      receiptService.revalidateWithAi(ctx.user.id, input.receiptId),
+    ),
+
+  delete: protectedProcedure
+    .input(z.object({ receiptId: z.string().uuid() }))
+    .mutation(({ ctx, input }) =>
+      receiptService.delete(ctx.user.id, input.receiptId),
+    ),
 });

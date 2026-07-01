@@ -1,21 +1,33 @@
 import { z } from "zod";
 
-import {
-  TRANSACTION_CATEGORY_OPTIONS,
-  TRANSACTION_CATEGORY_SLUGS,
-} from "@/lib/transactions/categories";
 import { protectedProcedure, router } from "@/server/trpc";
+import { aiCategorizeProgressService } from "@/server/services/ai-categorize-progress.service";
+import { transactionCategoryAiService } from "@/server/services/transaction-category-ai.service";
 import { transactionCategoryService } from "@/server/services/transaction-category.service";
 
-const categorySlugSchema = z.enum(
-  TRANSACTION_CATEGORY_SLUGS as [
-    (typeof TRANSACTION_CATEGORY_SLUGS)[number],
-    ...(typeof TRANSACTION_CATEGORY_SLUGS)[number][],
-  ],
-);
+const categorySlugInput = z.string().min(1).max(32);
+const processIdInput = z.string().uuid().optional();
 
 export const transactionCategoriesRouter = router({
-  listOptions: protectedProcedure.query(() => TRANSACTION_CATEGORY_OPTIONS),
+  listOptions: protectedProcedure.query(({ ctx }) =>
+    transactionCategoryService.listOptions(ctx.user.id),
+  ),
+
+  listUserCategories: protectedProcedure.query(({ ctx }) =>
+    transactionCategoryService.listUserCategories(ctx.user.id),
+  ),
+
+  createCategory: protectedProcedure
+    .input(z.object({ label: z.string().min(2).max(64) }))
+    .mutation(({ ctx, input }) =>
+      transactionCategoryService.createCategory(ctx.user.id, input.label),
+    ),
+
+  deleteCategory: protectedProcedure
+    .input(z.object({ slug: categorySlugInput }))
+    .mutation(({ ctx, input }) =>
+      transactionCategoryService.deleteCategory(ctx.user.id, input.slug),
+    ),
 
   listRules: protectedProcedure.query(({ ctx }) =>
     transactionCategoryService.listRules(ctx.user.id),
@@ -25,7 +37,7 @@ export const transactionCategoriesRouter = router({
     .input(
       z.object({
         keyword: z.string().min(2).max(128),
-        categorySlug: categorySlugSchema,
+        categorySlug: categorySlugInput,
         priority: z.number().int().min(0).max(1000).optional(),
       }),
     )
@@ -41,7 +53,7 @@ export const transactionCategoriesRouter = router({
       z.object({
         ruleId: z.string().uuid(),
         keyword: z.string().min(2).max(128).optional(),
-        categorySlug: categorySlugSchema.optional(),
+        categorySlug: categorySlugInput.optional(),
         priority: z.number().int().min(0).max(1000).optional(),
       }),
     )
@@ -60,7 +72,7 @@ export const transactionCategoriesRouter = router({
     .input(
       z.object({
         transactionId: z.string().uuid(),
-        categorySlug: categorySlugSchema,
+        categorySlug: categorySlugInput,
         learn: z.boolean().optional(),
       }),
     )
@@ -70,5 +82,45 @@ export const transactionCategoriesRouter = router({
         input.transactionId,
         input,
       ),
+    ),
+
+  categorizeStatementWithAi: protectedProcedure
+    .input(
+      z.object({
+        statementId: z.string().uuid(),
+        scope: z.enum(["all", "unknown_only"]),
+        processId: processIdInput,
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      transactionCategoryAiService.categorizeStatementWithAi(
+        ctx.user.id,
+        input.statementId,
+        input.scope,
+        input.processId,
+      ),
+    ),
+
+  categorizePeriodWithAi: protectedProcedure
+    .input(
+      z.object({
+        periodId: z.string().uuid(),
+        scope: z.enum(["all", "unknown_only"]),
+        processId: processIdInput,
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      transactionCategoryAiService.categorizePeriodWithAi(
+        ctx.user.id,
+        input.periodId,
+        input.scope,
+        input.processId,
+      ),
+    ),
+
+  getCategorizeProgress: protectedProcedure
+    .input(z.object({ processId: z.string().uuid() }))
+    .query(({ ctx, input }) =>
+      aiCategorizeProgressService.getSnapshot(ctx.user.id, input.processId),
     ),
 });
