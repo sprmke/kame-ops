@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, ExternalLink, FileText, Loader2, X } from "lucide-react";
+import { Download, ExternalLink, FileText, X } from "lucide-react";
 
+import { PdfPreviewSkeleton } from "@/components/shared/skeletons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -93,12 +94,15 @@ export function SoaPdfPreview({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="flex max-h-[92vh] max-w-5xl flex-col gap-0 overflow-hidden p-0 [&>button.absolute]:hidden">
-        <div className="flex items-center gap-3 border-b border-border px-4 py-3">
-          <DialogTitle className="min-w-0 flex-1 truncate font-display text-base">
+      <DialogContent
+        showCloseButton={false}
+        className="flex h-[min(92dvh,900px)] max-h-[92dvh] w-[calc(100%-1rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0 sm:w-full sm:p-0"
+      >
+        <div className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-4 py-2.5 sm:flex-nowrap sm:px-5">
+          <DialogTitle className="min-w-0 flex-1 truncate text-left font-display text-base font-semibold leading-none">
             {title}
           </DialogTitle>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             {pdfUrl && (
               <>
                 {downloadHref && !loading && (
@@ -118,7 +122,7 @@ export function SoaPdfPreview({
               </>
             )}
             <DialogClose asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
+              <Button variant="ghost" size="icon" className="h-9 w-9">
                 <X className="h-4 w-4" />
                 <span className="sr-only">Close</span>
               </Button>
@@ -133,9 +137,7 @@ export function SoaPdfPreview({
               PDF unavailable
             </div>
           ) : loading ? (
-            <div className="flex h-[70vh] items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
+            <PdfPreviewSkeleton />
           ) : failed || !blobUrl ? (
             <div className="flex h-[70vh] flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
               <FileText className="h-8 w-8 opacity-50" />

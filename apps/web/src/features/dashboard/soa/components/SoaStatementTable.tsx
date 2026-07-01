@@ -6,6 +6,7 @@ import {
   ClickableTableRow,
   TableRowActions,
 } from "@/components/shared/ClickableTableRow";
+import { TableCard } from "@/components/shared/TableCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,16 +30,13 @@ import {
   periodLabel,
   type SoaStatement,
 } from "../lib/soa-utils";
+import { isStatementMarkedPaid } from "@/lib/soa/paid-status";
+import type { DueEntryPaidMatchInput } from "@/lib/soa/paid-status";
 
 type SoaStatementTableProps = {
   periodId: string;
   statements: SoaStatement[];
-  paidLookup: Set<string>;
-  dueEntryKey: (
-    issuerId: string,
-    cardLast4: string,
-    dueDateYmd: string | null,
-  ) => string;
+  paidDues: DueEntryPaidMatchInput[];
   onPreviewSource: (statement: SoaStatement) => void;
   showPeriodColumn?: boolean;
 };
@@ -46,13 +44,12 @@ type SoaStatementTableProps = {
 export function SoaStatementTable({
   periodId,
   statements,
-  paidLookup,
-  dueEntryKey: dueKey,
+  paidDues,
   onPreviewSource,
   showPeriodColumn = false,
 }: SoaStatementTableProps) {
   return (
-    <div className="overflow-hidden rounded-lg border border-border/80">
+    <TableCard>
       <Table>
         <TableHeader>
           <TableRow>
@@ -68,13 +65,7 @@ export function SoaStatementTable({
         </TableHeader>
         <TableBody>
           {statements.map((statement) => {
-            const paid = paidLookup.has(
-              dueKey(
-                statement.issuerId,
-                statement.cardLast4,
-                statement.dueDateYmd,
-              ),
-            );
+            const paid = isStatementMarkedPaid(statement, paidDues);
             const days = daysUntilDue(statement.dueDateYmd);
             const countdown = dueCountdownLabel(days);
             const accent = resolveCardAccent(
@@ -149,7 +140,7 @@ export function SoaStatementTable({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8"
+                      className="shrink-0"
                       aria-label="Preview source PDF"
                       onClick={() => onPreviewSource(statement)}
                     >
@@ -162,6 +153,6 @@ export function SoaStatementTable({
           })}
         </TableBody>
       </Table>
-    </div>
+    </TableCard>
   );
 }

@@ -15,11 +15,13 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DashboardPageHeader } from "@/components/shared/DashboardPageHeader";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { ListViewToolbar } from "@/components/shared/ListViewToolbar";
-import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
+import { ViewModeLayout } from "@/components/shared/ViewModeLayout";
+import { SoaListContentSkeleton } from "@/components/shared/skeletons";
 import { StatCard } from "@/components/shared/StatCard";
 import { Button } from "@/components/ui/button";
 import { ROUTES } from "@/config/routes";
 import { api } from "@/lib/api/client";
+import { startNavigationProgress } from "@/lib/navigation-progress";
 import { usePersistedViewMode } from "@/hooks/use-persisted-view-mode";
 import { useListPagination } from "@/lib/hooks/use-list-pagination";
 import { formatPhpAmount } from "@/lib/utils/format-money";
@@ -51,15 +53,18 @@ export function SoaListPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const { openRun, runDialogProps } = useSoaRunDialog({
-    onRunSuccess: () => {
+    onRunSuccess: (result) => {
       void utils.soa.listPeriods.invalidate();
       void utils.overview.stats.invalidate();
+      if (result.periodId) {
+        void utils.soa.getPeriod.prefetch({ periodId: result.periodId });
+        void utils.reminders.listDue.prefetch({ unpaidOnly: false });
+      }
     },
     onAfterRunComplete: (periodId) => {
       if (periodId) {
-        void utils.soa.getPeriod.prefetch({ periodId }).then(() => {
-          router.push(ROUTES.dashboard.soaPeriod(periodId));
-        });
+        startNavigationProgress();
+        router.push(ROUTES.dashboard.soaPeriod(periodId));
       }
     },
   });
@@ -111,9 +116,7 @@ export function SoaListPage() {
       />
 
       {isLoading ? (
-        <div className="flex justify-center py-16">
-          <LoadingSpinner size="lg" />
-        </div>
+        <SoaListContentSkeleton />
       ) : !periods?.length ? (
         <EmptyState
           icon={<FileText className="h-6 w-6 text-muted-foreground" />}
@@ -172,26 +175,30 @@ export function SoaListPage() {
             viewMode={viewMode}
             onViewModeChange={setViewMode}
           />
-          {viewMode === "table" ? (
-            <SoaPeriodTable
-              periods={pagination.items}
-              onRerun={openRerun}
-              onEdit={setEditId}
-              onDelete={setDeleteId}
-            />
-          ) : (
-            <div className="grid auto-rows-fr gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {pagination.items.map((period) => (
-                <SoaPeriodCard
-                  key={period.id}
-                  period={period}
-                  onRerun={openRerun}
-                  onEdit={setEditId}
-                  onDelete={setDeleteId}
-                />
-              ))}
-            </div>
-          )}
+          <ViewModeLayout
+            viewMode={viewMode}
+            table={
+              <SoaPeriodTable
+                periods={pagination.items}
+                onRerun={openRerun}
+                onEdit={setEditId}
+                onDelete={setDeleteId}
+              />
+            }
+            grid={
+              <div className="grid auto-rows-fr gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {pagination.items.map((period) => (
+                  <SoaPeriodCard
+                    key={period.id}
+                    period={period}
+                    onRerun={openRerun}
+                    onEdit={setEditId}
+                    onDelete={setDeleteId}
+                  />
+                ))}
+              </div>
+            }
+          />
         </>
       )}
     </div>

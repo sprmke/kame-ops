@@ -1,197 +1,41 @@
 "use client";
 
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { useEffect, useRef, useState } from "react";
+import { AlertCircle, Lightbulb, Sparkles } from "lucide-react";
 
 import { StatCard } from "@/components/shared/StatCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils/cn";
 import { formatPhpAmount } from "@/lib/utils/format-money";
 
+import { CategorySpendBreakdown } from "./CategorySpendBreakdown";
+import { CategorySpendDonut, CategorySpendLegend } from "./CategorySpendDonut";
 import {
-  aggregateCategorySpend,
-  countUnanalyzed,
-  type CategorizedTx,
-} from "../lib/category-analytics";
+  SoaPeriodSpendByCategoryCard,
+  SoaPeriodSummaryCard,
+} from "./SoaPeriodOverviewCards";
+import { useCategorizeWithAiActions } from "./CategorizeWithAiProvider";
+import {
+  computePeriodOverviewStats,
+  flattenStatementTransactions,
+} from "../lib/period-overview-stats";
 import type { SoaStatement } from "../lib/soa-utils";
+import { CANNOT_ANALYZE_SLUG } from "@/lib/transactions/categories";
 
-const CHART_COLORS = [
-  "hsl(var(--chart-1))",
-  "hsl(var(--chart-2))",
-  "hsl(var(--chart-3))",
-  "hsl(var(--chart-4))",
-  "hsl(var(--chart-5))",
-  "hsl(var(--primary))",
-];
+import { aggregateCategorySpend } from "../lib/category-analytics";
 
-function buildPieData(categoryRows: ReturnType<typeof aggregateCategorySpend>) {
-  const top = categoryRows.slice(0, 5);
-  const restTotal = categoryRows
-    .slice(5)
-    .reduce((sum, row) => sum + row.total, 0);
-
-  const slices = top.map((row) => ({
-    name: row.label,
-    value: row.total,
-  }));
-
-  if (restTotal > 0) {
-    slices.push({ name: "Other", value: restTotal });
-  }
-
-  return slices;
-}
-
-function flattenTransactions(statements: SoaStatement[]): CategorizedTx[] {
-  return statements.flatMap((s) =>
-    (s.transactions ?? []).map((t) => ({
-      id: t.id,
-      description: t.description,
-      amount: t.amount,
-      categorySlug: t.categorySlug,
-      categoryLabel: t.categoryLabel,
-    })),
-  );
-}
-
-type SoaPeriodOverviewTabProps = {
-  statements: SoaStatement[];
-  totalDue: number;
-  cardCount: number;
-};
-
-export function SoaPeriodOverviewTab({
-  statements,
-  totalDue,
-  cardCount,
-}: SoaPeriodOverviewTabProps) {
-  const transactions = flattenTransactions(statements);
-  const categoryRows = aggregateCategorySpend(transactions);
-  const unanalyzed = countUnanalyzed(transactions);
-  const spendTotal = categoryRows.reduce((s, r) => s + r.total, 0);
-
-  const pieData = buildPieData(categoryRows);
-
-  return (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard title="Spend tracked" value={formatPhpAmount(spendTotal)} />
-        <StatCard title="Transactions" value={transactions.length} />
-        <StatCard title="Categories" value={categoryRows.length} />
-        <StatCard title="Cannot analyze" value={unanalyzed} />
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Spend by category</CardTitle>
-          </CardHeader>
-          <CardContent className="h-72">
-            {pieData.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius="52%"
-                    outerRadius="78%"
-                    paddingAngle={0}
-                    stroke="none"
-                    isAnimationActive={false}
-                  >
-                    {pieData.map((entry, i) => (
-                      <Cell
-                        key={entry.name}
-                        fill={CHART_COLORS[i % CHART_COLORS.length]}
-                        stroke="none"
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      background: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                      color: "hsl(var(--card-foreground))",
-                    }}
-                    itemStyle={{ color: "hsl(var(--foreground))" }}
-                    labelStyle={{ color: "hsl(var(--foreground))" }}
-                    formatter={(value: number, name: string) => [
-                      formatPhpAmount(value),
-                      name,
-                    ]}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                No categorized spend yet.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Period summary</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Cards</span>
-              <span className="font-medium tabular-nums">{cardCount}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Total due</span>
-              <span className="font-medium tabular-nums">
-                {formatPhpAmount(totalDue)}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Top category</span>
-              <span className="font-medium">
-                {categoryRows[0]?.label ?? "—"}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-export function SoaPeriodAnalyticsTab({
-  statements,
-}: {
-  statements: SoaStatement[];
-}) {
-  const transactions = flattenTransactions(statements);
-  const categoryRows = aggregateCategorySpend(transactions);
-  const unanalyzed = countUnanalyzed(transactions);
-
-  const barData = categoryRows.map((r) => ({
-    name: r.label,
-    total: r.total,
-    count: r.count,
-  }));
-
+function buildAnalyticsTips(
+  categoryRows: ReturnType<typeof aggregateCategorySpend>,
+  unanalyzed: number,
+): string[] {
   const tips: string[] = [];
+
   if (unanalyzed > 0) {
     tips.push(
       `Categorize ${unanalyzed} transaction${unanalyzed === 1 ? "" : "s"} marked “Cannot analyze” to improve charts.`,
     );
   }
+
   const top = categoryRows[0];
   if (top && top.slug === "dining") {
     tips.push("Dining is your top spend — consider a monthly food budget cap.");
@@ -206,72 +50,216 @@ export function SoaPeriodAnalyticsTab({
       "Interest or fees posted — paying total due avoids finance charges.",
     );
   }
+
   tips.push(
     "Add keyword rules in Settings when you recategorize merchants — future SOA runs will match automatically.",
   );
 
+  return tips;
+}
+
+type SoaPeriodOverviewTabProps = {
+  statements: SoaStatement[];
+  totalPaid: number;
+  outstandingDue: number;
+  grossStatementDue: number;
+  grossMinimumDue: number;
+  minimumRemaining: number;
+  minimumMetCardCount: number;
+  cardCount: number;
+  paidCardCount: number;
+  nextDueYmd: string | null;
+};
+
+export function SoaPeriodOverviewTab({
+  statements,
+  totalPaid,
+  outstandingDue,
+  grossStatementDue,
+  grossMinimumDue,
+  minimumRemaining,
+  minimumMetCardCount,
+  cardCount,
+  paidCardCount,
+  nextDueYmd,
+}: SoaPeriodOverviewTabProps) {
+  const transactions = flattenStatementTransactions(statements);
+  const {
+    categoryRows,
+    analyzedRows,
+    spendTotal,
+    unanalyzed,
+    topCategory,
+    topCategoryShare,
+    interestFeesTotal,
+  } = computePeriodOverviewStats(transactions);
+
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Category breakdown</CardTitle>
-        </CardHeader>
-        <CardContent className="h-80">
-          {barData.length ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={barData}
-                margin={{ top: 8, right: 8, left: 0, bottom: 48 }}
-              >
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  className="stroke-border"
-                />
-                <XAxis
-                  dataKey="name"
-                  tick={{ fontSize: 10 }}
-                  angle={-30}
-                  textAnchor="end"
-                  height={60}
-                />
-                <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip
-                  contentStyle={{
-                    background: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "8px",
-                  }}
-                  formatter={(value: number) => formatPhpAmount(value)}
-                />
-                <Bar
-                  dataKey="total"
-                  fill="hsl(var(--primary))"
-                  radius={[4, 4, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              Categorize transactions to see analytics.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard title="Spend tracked" value={formatPhpAmount(spendTotal)} />
+        <StatCard title="Transactions" value={transactions.length} />
+        <StatCard title="Categories" value={categoryRows.length} />
+        <StatCard title="Cannot analyze" value={unanalyzed} />
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Tips</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ul className="space-y-2 text-sm text-muted-foreground">
-            {tips.map((tip) => (
-              <li key={tip} className="list-inside list-disc">
-                {tip}
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <SoaPeriodSpendByCategoryCard
+          rows={analyzedRows}
+          spendTotal={spendTotal}
+        />
+        <SoaPeriodSummaryCard
+          totalPaid={totalPaid}
+          outstandingDue={outstandingDue}
+          grossStatementDue={grossStatementDue}
+          grossMinimumDue={grossMinimumDue}
+          minimumRemaining={minimumRemaining}
+          minimumMetCardCount={minimumMetCardCount}
+          cardCount={cardCount}
+          paidCardCount={paidCardCount}
+          nextDueYmd={nextDueYmd}
+          spendTotal={spendTotal}
+          topCategory={
+            topCategory
+              ? { label: topCategory.label, share: topCategoryShare }
+              : undefined
+          }
+          interestFeesTotal={interestFeesTotal}
+          unanalyzedCount={unanalyzed}
+        />
+      </div>
+    </div>
+  );
+}
+
+export function SoaPeriodAnalyticsTab({
+  statements,
+}: {
+  statements: SoaStatement[];
+}) {
+  const categorize = useCategorizeWithAiActions();
+  const transactions = flattenStatementTransactions(statements);
+  const { categoryRows, analyzedRows, spendTotal, unanalyzed } =
+    computePeriodOverviewStats(transactions);
+  const analyzedSpend = analyzedRows.reduce((sum, row) => sum + row.total, 0);
+  const tips = buildAnalyticsTips(categoryRows, unanalyzed);
+
+  const [animateUpdate, setAnimateUpdate] = useState(false);
+  const unanalyzedAtStartRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (categorize.isPending) {
+      unanalyzedAtStartRef.current = unanalyzed;
+      return undefined;
+    }
+
+    if (
+      unanalyzedAtStartRef.current !== null &&
+      unanalyzed < unanalyzedAtStartRef.current
+    ) {
+      setAnimateUpdate(true);
+      unanalyzedAtStartRef.current = null;
+      const timer = window.setTimeout(() => setAnimateUpdate(false), 900);
+      return () => window.clearTimeout(timer);
+    }
+
+    if (!categorize.isPending) {
+      unanalyzedAtStartRef.current = null;
+    }
+
+    return undefined;
+  }, [categorize.isPending, unanalyzed]);
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-6 xl:grid-cols-5">
+        <Card className="border-border/80 xl:col-span-3">
+          <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-4">
+            <CardTitle className="font-display text-base">
+              Category breakdown
+            </CardTitle>
+            <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
+              {formatPhpAmount(spendTotal)}
+            </span>
+          </CardHeader>
+          <CardContent>
+            <CategorySpendBreakdown
+              rows={categoryRows}
+              spendTotal={spendTotal}
+              isAnalyzing={categorize.isPending}
+              animateUpdate={animateUpdate}
+            />
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/80 xl:col-span-2">
+          <CardHeader>
+            <CardTitle className="font-display text-base">
+              Distribution
+            </CardTitle>
+          </CardHeader>
+          <CardContent
+            className={cn(
+              "transition-opacity duration-700 ease-out",
+              animateUpdate && "opacity-90",
+            )}
+          >
+            <CategorySpendDonut
+              rows={analyzedRows}
+              spendTotal={analyzedSpend || spendTotal}
+            />
+            <CategorySpendLegend rows={analyzedRows} />
+          </CardContent>
+        </Card>
+      </div>
+
+      {tips.length > 0 && (
+        <Card className="border-border/80">
+          <CardHeader className="pb-3">
+            <CardTitle className="font-display text-base">Tips</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ul className="divide-y divide-border/60">
+              {tips.map((tip, index) => {
+                const isAction = index === 0 && unanalyzed > 0;
+                if (isAction) {
+                  return (
+                    <li key={tip} className="py-3 first:pt-0 last:pb-0">
+                      <button
+                        type="button"
+                        disabled={categorize.isPending}
+                        onClick={() => categorize.analyzeUnanalyzed()}
+                        className={cn(
+                          "flex w-full gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors",
+                          "border-warning/25 bg-warning/5 hover:bg-warning/10",
+                          "disabled:pointer-events-none disabled:opacity-60",
+                        )}
+                      >
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                        <span className="flex-1 text-sm leading-relaxed text-muted-foreground">
+                          {tip}
+                        </span>
+                        <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                      </button>
+                    </li>
+                  );
+                }
+                return (
+                  <li
+                    key={tip}
+                    className="flex gap-3 py-3 first:pt-0 last:pb-0"
+                  >
+                    <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      {tip}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Calendar, MessageCircle, Slack } from "lucide-react";
+import { Calendar, HelpCircle, MessageCircle, Slack } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +15,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { api } from "@/lib/api/client";
+import { WORKFLOW_DONE_DISMISS_MS } from "@/lib/constants/workflow-ui";
 import { cn } from "@/lib/utils/cn";
 
 import { useRunSoaProgress } from "../hooks/use-run-soa-progress";
@@ -44,6 +51,9 @@ type RunSoaDialogProps = {
 
 const now = new Date();
 
+const GOOGLE_CALENDAR_HINT =
+  "Events are created when a card's due date is in the current month or later—including due days that already passed this month.";
+
 function defaultValues(): RunSoaFormValues {
   return {
     mode: "single",
@@ -53,8 +63,8 @@ function defaultValues(): RunSoaFormValues {
     toYear: now.getFullYear(),
     monthCount: 4,
     rangeStyle: "explicit",
-    notifyTelegram: true,
-    notifySlack: true,
+    notifyTelegram: false,
+    notifySlack: false,
     createCalendar: false,
   };
 }
@@ -137,7 +147,7 @@ export function RunSoaDialog({
     const timer = window.setTimeout(() => {
       setRunningValues(null);
       onRunComplete?.();
-    }, 1200);
+    }, WORKFLOW_DONE_DISMISS_MS);
 
     return () => window.clearTimeout(timer);
   }, [runSucceeded, isPending, showProgress, onRunComplete]);
@@ -173,7 +183,7 @@ export function RunSoaDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="max-h-[90vh] max-w-lg overflow-x-hidden overflow-y-auto"
+        className="max-h-[90vh] max-w-lg overflow-y-auto"
         onPointerDownOutside={(e) => {
           if (isPending || (runSucceeded && showProgress)) e.preventDefault();
         }}
@@ -221,7 +231,7 @@ export function RunSoaDialog({
                 onValueChange={(v: string) =>
                   patch("mode", v as "single" | "range")
                 }
-                className="grid grid-cols-2 gap-2"
+                className="grid grid-cols-1 gap-2 sm:grid-cols-2"
               >
                 <label
                   className={cn(
@@ -245,7 +255,7 @@ export function RunSoaDialog({
             </div>
 
             {form.mode === "single" ? (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <StatementMonthSelect
                   id="single-month"
                   value={form.fromMonth}
@@ -281,7 +291,7 @@ export function RunSoaDialog({
                 </RadioGroup>
 
                 {form.rangeStyle === "explicit" ? (
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <StatementMonthSelect
                       label="From month"
                       value={form.fromMonth}
@@ -314,7 +324,7 @@ export function RunSoaDialog({
                     </div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <div className="space-y-2">
                       <Label>N Months</Label>
                       <Input
@@ -376,7 +386,28 @@ export function RunSoaDialog({
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-sm">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
-                  Google Calendar
+                  <span className="flex items-center gap-1.5">
+                    Google Calendar
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex rounded-sm text-muted-foreground transition-colors hover:text-foreground"
+                            aria-label="About Google Calendar"
+                          >
+                            <HelpCircle className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          className="max-w-xs text-xs leading-relaxed"
+                        >
+                          {GOOGLE_CALENDAR_HINT}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </span>
                 </div>
                 <Switch
                   checked={form.createCalendar}
