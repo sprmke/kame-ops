@@ -178,6 +178,7 @@ export const creditCardService = {
       orderBy: (t, { asc }) => [asc(t.issuer), asc(t.last4)],
     });
     return cards.map((c) => ({
+      id: c.id,
       issuer: c.issuer,
       last4: c.last4,
       label: c.label ?? `${c.issuer} •••• ${c.last4}`,
