@@ -1,9 +1,20 @@
+export type ReceiptAiSkipReason = "no_keys" | "unavailable" | "no_image";
+
+export const AI_SKIP_NO_KEYS_MESSAGE = "No AI keys configured";
+
 export type ReceiptAiVerdict =
   | "valid"
   | "likely_valid"
   | "unclear"
   | "invalid"
   | "skipped";
+
+export function isReceiptAiPassed(
+  verdict: ReceiptAiVerdict | string | null | undefined,
+): boolean {
+  const v = String(verdict ?? "").toLowerCase();
+  return v === "valid" || v === "likely_valid";
+}
 
 export type ReceiptAiProvider = "gemini" | "groq";
 
@@ -27,6 +38,7 @@ export type CreditCardReceiptAiResult = {
   extraction: CreditCardReceiptExtraction;
   aiModelError?: string;
   provider?: ReceiptAiProvider;
+  skipReason?: ReceiptAiSkipReason;
 };
 
 export type ReceiptPaymentStatus =
@@ -49,22 +61,4 @@ export type ReceiptDueContext = {
   dueDateYmd: string;
   minimumDue: string;
   totalDue: string;
-};
-
-export type GeminiIntegrationVerifyResult = {
-  apiKeyConfigured: boolean;
-  model: string;
-  ok: boolean;
-  latencyMs?: number;
-  statusCode?: number;
-  error?: string;
-  geminiKeysCount?: number;
-  groqConfigured?: boolean;
-};
-
-export type ReceiptAiSecretsStatus = {
-  geminiApiKeyConfigured: boolean;
-  geminiKeysCount: number;
-  groqApiKeyConfigured: boolean;
-  model: string;
 };
