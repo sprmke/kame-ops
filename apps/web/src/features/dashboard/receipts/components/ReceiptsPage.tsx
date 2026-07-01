@@ -1,48 +1,62 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Receipt, Upload } from "lucide-react";
 import { toast } from "sonner";
 
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DashboardPageHeader } from "@/components/shared/DashboardPageHeader";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
-import { StatusBadge } from "@/components/shared/StatusBadge";
+import { ReceiptsContentSkeleton } from "@/components/shared/skeletons";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  AI_SKIP_NO_KEYS_MESSAGE,
+  isReceiptAiSkippedNoKeys,
+} from "@/lib/receipts/ai-skip";
 import { api } from "@/lib/api/client";
+import { useReceiptUploadFlow } from "@/hooks/use-receipt-upload-flow";
+import {
+  dedupeReceiptsForDisplay,
+  groupReceipts,
+  mergeReceiptFromRevalidation,
+  receiptGroupPaidSummary,
+  type ReceiptGroupMode,
+  type ReceiptListItem,
+  type ReceiptMonthDueContext,
+} from "../lib/receipt-utils";
 
-import {
-  ReceiptUploadProgressDialog,
-  type ReceiptUploadSettled,
-} from "./ReceiptUploadProgressDialog";
-import {
-  paymentStatusLabel,
-  ReceiptAiVerdictBadge,
-} from "./ReceiptAiVerdictBadge";
+import { ReceiptCard } from "./ReceiptCard";
+import { ReceiptGroupHeader } from "./ReceiptGroupHeader";
+import { ReceiptGroupToggle } from "./ReceiptGroupToggle";
+import { ReceiptPreviewDialog } from "./ReceiptPreviewDialog";
+import { ReceiptUploadProgressDialog } from "@/components/shared/ReceiptUploadProgressDialog";
+
+const GROUP_MODE_KEY = "kame-ops:receipts-group-mode";
 
 export function ReceiptsPage() {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [selectedDueEntryId, setSelectedDueEntryId] = useState<string>("");
-  const [progressOpen, setProgressOpen] = useState(false);
-  const [activeProcessId, setActiveProcessId] = useState<string | null>(null);
-  const [uploadSettled, setUploadSettled] =
-    useState<ReceiptUploadSettled>(null);
-  const [uploadErrorMessage, setUploadErrorMessage] = useState<string | null>(
+  const [groupMode, setGroupMode] = useState<ReceiptGroupMode>("month");
+  const [previewReceipt, setPreviewReceipt] = useState<ReceiptListItem | null>(
     null,
   );
-  const [isUploading, setIsUploading] = useState(false);
+  const [deleteReceipt, setDeleteReceipt] = useState<ReceiptListItem | null>(
+    null,
+  );
   const utils = api.useUtils();
 
+  useEffect(() => {
+    const stored = localStorage.getItem(GROUP_MODE_KEY);
+    if (stored === "month" || stored === "card") {
+      setGroupMode(stored);
+    }
+  }, []);
+
+  function handleGroupModeChange(mode: ReceiptGroupMode) {
+    setGroupMode(mode);
+    localStorage.setItem(GROUP_MODE_KEY, mode);
+  }
+
   const { data: receipts, isLoading } = api.receipts.list.useQuery();
-  const { data: unpaidDues } = api.receipts.unpaidDueEntries.useQuery();
+  const { data: dues } = api.reminders.listDue.useQuery({ unpaidOnly: false });
   const { data: integrations } = api.integrations.list.useQuery();
 
   const connected = useMemo(
@@ -50,122 +64,96 @@ export function ReceiptsPage() {
     [integrations],
   );
 
-  const uploadOptions = useMemo(
-    () => ({
-      markPaid: true,
-      updateCalendar:
-        connected.has("gmail") || connected.has("google_calendar"),
-    }),
-    [connected],
+  const receiptUpload = useReceiptUploadFlow(connected);
+
+  const receiptItems = (receipts ?? []) as ReceiptListItem[];
+
+  const dueForGrouping = useMemo((): ReceiptMonthDueContext[] => {
+    return (dues ?? []).map((due) => ({
+      id: due.id,
+      issuerId: due.issuerId,
+      cardLast4: due.cardLast4,
+      dueDateYmd: due.dueDateYmd,
+      statementPeriodKey: due.statementPeriodKey,
+      statementPeriodLabel: due.statementPeriodLabel,
+    }));
+  }, [dues]);
+
+  const visibleReceipts = useMemo(
+    () => dedupeReceiptsForDisplay(receiptItems, dueForGrouping),
+    [receiptItems, dueForGrouping],
   );
 
-  const validateAndMarkPaid = api.receipts.validateAndMarkPaid.useMutation({
-    onSuccess: (result) => {
-      if (result.payment.ok) {
-        setUploadSettled("success");
-        toast.success(
-          `Payment confirmed — •••• ${result.receipt.parsedCardLast4 ?? "????"}`,
-        );
-      } else if (result.payment.code === "validate_only") {
-        setUploadSettled("success");
-        toast.message("Receipt validated");
-      } else if (result.payment.code === "ai_error") {
-        setUploadErrorMessage(result.payment.reason);
-        setUploadSettled("error");
-        toast.error("AI validation unavailable", {
-          description: result.payment.reason,
-        });
-      } else {
-        setUploadErrorMessage(result.payment.reason);
-        setUploadSettled("error");
-        toast.error(result.payment.reason);
-      }
-      void utils.receipts.list.invalidate();
-      void utils.receipts.unpaidDueEntries.invalidate();
-      void utils.reminders.listDue.invalidate();
-      void utils.reminders.status.invalidate();
-      setIsUploading(false);
-      setSelectedDueEntryId("");
-    },
-    onError: (e) => {
-      setUploadErrorMessage(e.message);
-      setUploadSettled("error");
-      toast.error(e.message);
-      setIsUploading(false);
-    },
-  });
+  const groups = useMemo(
+    () => groupReceipts(visibleReceipts, groupMode, dueForGrouping),
+    [visibleReceipts, groupMode, dueForGrouping],
+  );
 
   const confirmMarkPaid = api.receipts.confirmMarkPaid.useMutation({
     onSuccess: () => {
       toast.success("Marked paid");
       void utils.receipts.list.invalidate();
-      void utils.receipts.unpaidDueEntries.invalidate();
       void utils.reminders.listDue.invalidate();
+      void utils.overview.stats.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  async function handleFile(file: File) {
-    const processId = crypto.randomUUID();
-    setActiveProcessId(processId);
-    setUploadSettled(null);
-    setUploadErrorMessage(null);
-    setProgressOpen(true);
-    setIsUploading(true);
-
-    const form = new FormData();
-    form.append("file", file);
-    form.append("processId", processId);
-    form.append("markPaid", "true");
-    form.append(
-      "updateCalendar",
-      uploadOptions.updateCalendar ? "true" : "false",
-    );
-
-    try {
-      const res = await fetch("/api/receipts/upload", {
-        method: "POST",
-        body: form,
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        throw new Error(body?.error ?? "Upload failed");
+  const revalidateWithAi = api.receipts.revalidateWithAi.useMutation({
+    onSuccess: (result, variables) => {
+      if (isReceiptAiSkippedNoKeys(result.ai)) {
+        toast.error(AI_SKIP_NO_KEYS_MESSAGE);
+        return;
       }
-      const { storagePath } = (await res.json()) as { storagePath: string };
-      validateAndMarkPaid.mutate({
-        storagePath,
-        originalFileName: file.name,
-        dueEntryId: selectedDueEntryId || undefined,
-        markPaid: true,
-        processId,
+
+      if (result.ai.verdict === "skipped") {
+        toast.message("AI validation skipped", {
+          description: result.ai.summary,
+        });
+        return;
+      }
+
+      if (result.ai.aiModelError) {
+        toast.error("AI validation unavailable", {
+          description: result.ai.aiModelError,
+        });
+      } else {
+        toast.success("Receipt re-validated");
+      }
+
+      setPreviewReceipt((prev) => {
+        if (!prev || prev.id !== variables.receiptId) return prev;
+        return mergeReceiptFromRevalidation(prev, result.receipt);
       });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Upload failed";
-      setUploadErrorMessage(message);
-      setUploadSettled("error");
-      toast.error(message);
-      setIsUploading(false);
-    }
+
+      utils.receipts.list.setData(undefined, (old) => {
+        if (!old) return old;
+        return old.map((row) =>
+          row.id === variables.receiptId
+            ? mergeReceiptFromRevalidation(row, result.receipt)
+            : row,
+        );
+      });
+
+      void utils.receipts.list.invalidate();
+      void utils.overview.stats.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  function handleRevalidate(receiptId: string) {
+    revalidateWithAi.mutate({ receiptId });
   }
 
-  function handleProgressComplete() {
-    setProgressOpen(false);
-    setActiveProcessId(null);
-    setUploadSettled(null);
-    setUploadErrorMessage(null);
-  }
-
-  function handleProgressOpenChange(open: boolean) {
-    if (!open && (isUploading || validateAndMarkPaid.isPending)) return;
-    if (!open && uploadSettled === "success") return;
-    if (!open) {
-      handleProgressComplete();
-    } else {
-      setProgressOpen(open);
-    }
-  }
+  const deleteReceiptMutation = api.receipts.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Receipt removed");
+      setDeleteReceipt(null);
+      void utils.receipts.list.invalidate();
+      void utils.overview.stats.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   return (
     <div className="space-y-8">
@@ -173,41 +161,16 @@ export function ReceiptsPage() {
         title="Receipts"
         actions={
           <>
-            {unpaidDues && unpaidDues.length > 0 ? (
-              <Select
-                value={selectedDueEntryId || "__auto__"}
-                onValueChange={(v) =>
-                  setSelectedDueEntryId(v === "__auto__" ? "" : v)
-                }
-              >
-                <SelectTrigger className="w-[220px]">
-                  <SelectValue placeholder="Target due" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__auto__">Auto-match card</SelectItem>
-                  {unpaidDues.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>
-                      {d.cardDisplayLabel ?? d.bankLabel} •••• {d.cardLast4} —{" "}
-                      {d.dueDateYmd}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : null}
             <input
-              ref={fileRef}
+              ref={receiptUpload.fileRef}
               type="file"
               accept="image/*,application/pdf"
               className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void handleFile(file);
-                e.target.value = "";
-              }}
+              onChange={receiptUpload.handleFileInputChange}
             />
             <Button
-              onClick={() => fileRef.current?.click()}
-              disabled={isUploading || validateAndMarkPaid.isPending}
+              onClick={() => receiptUpload.triggerFilePicker()}
+              disabled={receiptUpload.isPending}
             >
               <Upload className="mr-2 h-4 w-4" />
               Upload receipt
@@ -217,69 +180,97 @@ export function ReceiptsPage() {
       />
 
       <ReceiptUploadProgressDialog
-        open={progressOpen}
-        onOpenChange={handleProgressOpenChange}
-        processId={activeProcessId}
-        options={uploadOptions}
-        isPending={isUploading || validateAndMarkPaid.isPending}
-        settled={uploadSettled}
-        errorMessage={uploadErrorMessage}
-        onComplete={handleProgressComplete}
+        open={receiptUpload.progressOpen}
+        onOpenChange={receiptUpload.handleProgressOpenChange}
+        processId={receiptUpload.activeProcessId}
+        options={receiptUpload.uploadOptions}
+        isPending={receiptUpload.isPending}
+        settled={receiptUpload.uploadSettled}
+        errorMessage={receiptUpload.uploadErrorMessage}
+        onComplete={receiptUpload.handleProgressComplete}
+      />
+
+      <ReceiptPreviewDialog
+        open={previewReceipt !== null}
+        onOpenChange={(open) => {
+          if (!open) setPreviewReceipt(null);
+        }}
+        receipt={previewReceipt}
+        onDelete={setDeleteReceipt}
+        onMarkPaid={(receiptId) => confirmMarkPaid.mutate({ receiptId })}
+        isMarkPaidPending={confirmMarkPaid.isPending}
+        onRevalidate={handleRevalidate}
+        isRevalidatePending={revalidateWithAi.isPending}
+      />
+
+      <ConfirmDialog
+        open={deleteReceipt !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteReceipt(null);
+        }}
+        title="Remove receipt?"
+        description="This deletes the uploaded file. Paid status on the due entry is kept."
+        confirmLabel="Remove"
+        variant="destructive"
+        isLoading={deleteReceiptMutation.isPending}
+        onConfirm={() => {
+          if (deleteReceipt) {
+            deleteReceiptMutation.mutate({ receiptId: deleteReceipt.id });
+          }
+        }}
       />
 
       {isLoading ? (
-        <div className="flex justify-center py-16">
-          <LoadingSpinner size="lg" />
-        </div>
-      ) : !receipts?.length ? (
+        <ReceiptsContentSkeleton />
+      ) : !visibleReceipts.length ? (
         <EmptyState
           icon={<Receipt className="h-6 w-6 text-muted-foreground" />}
           title="No receipts"
           message="Upload a payment screenshot to validate and mark SOA paid."
         />
       ) : (
-        <div className="grid gap-3 md:grid-cols-2">
-          {receipts.map((r) => (
-            <Card key={r.id}>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="truncate text-sm font-medium">
-                    {r.originalFileName ?? "Receipt"}
-                  </CardTitle>
-                  <StatusBadge
-                    label={paymentStatusLabel(r.paymentStatus)}
-                    variant={
-                      r.paymentStatus === "marked_paid" ? "success" : "muted"
+        <div className="space-y-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground tabular-nums">
+                {visibleReceipts.length}
+              </span>{" "}
+              {visibleReceipts.length === 1 ? "receipt" : "receipts"}
+            </p>
+            <ReceiptGroupToggle
+              value={groupMode}
+              onChange={handleGroupModeChange}
+              className="w-full sm:w-auto"
+            />
+          </div>
+
+          {groups.map((group) => (
+            <section key={group.key} className="space-y-4">
+              <ReceiptGroupHeader
+                label={group.label}
+                showPaidSummary={groupMode === "month"}
+                paidSummary={
+                  groupMode === "month"
+                    ? receiptGroupPaidSummary(group.items)
+                    : undefined
+                }
+              />
+              <div className="grid gap-3 md:grid-cols-2">
+                {group.items.map((receipt) => (
+                  <ReceiptCard
+                    key={receipt.id}
+                    receipt={receipt}
+                    onView={setPreviewReceipt}
+                    onDelete={setDeleteReceipt}
+                    onRevalidate={(item) => handleRevalidate(item.id)}
+                    isRevalidatePending={
+                      revalidateWithAi.isPending &&
+                      revalidateWithAi.variables?.receiptId === receipt.id
                     }
                   />
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                {r.aiVerdict ? (
-                  <ReceiptAiVerdictBadge
-                    verdict={r.aiVerdict}
-                    summary={r.aiSummary}
-                  />
-                ) : null}
-                <div className="space-y-1 text-muted-foreground">
-                  {r.parsedCardLast4 && <p>Card •••• {r.parsedCardLast4}</p>}
-                  {r.parsedAmountRaw && <p>Amount {r.parsedAmountRaw}</p>}
-                  {r.bankDetected && <p>{r.bankDetected}</p>}
-                </div>
-                {r.paymentStatus === "pending" &&
-                r.aiVerdict &&
-                r.aiVerdict !== "invalid" ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={confirmMarkPaid.isPending}
-                    onClick={() => confirmMarkPaid.mutate({ receiptId: r.id })}
-                  >
-                    Mark paid
-                  </Button>
-                ) : null}
-              </CardContent>
-            </Card>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       )}
