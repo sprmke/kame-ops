@@ -47,7 +47,7 @@
 ## Production readiness (in progress)
 
 - [x] CI workflow (lint, type-check, test, build)
-- [x] `vercel.json` function timeouts (dispatch `maxDuration`)
+- [x] Route `maxDuration` in App Router `route.ts` files (not `vercel.json#functions`)
 - [x] Production env validation
 - [x] Vitest unit tests (starting)
 - [x] Google-only auth (email/password removed)

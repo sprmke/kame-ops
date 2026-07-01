@@ -3,6 +3,8 @@ import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { createTRPCContext } from "@/server/context";
 import { appRouter } from "@/server/routers/_app";
 
+export const maxDuration = 300;
+
 const handler = (req: Request) =>
   fetchRequestHandler({
     endpoint: "/api/trpc",

@@ -12,6 +12,8 @@ import { downloadTelegramFile } from "@/lib/integrations/telegram-files";
 import { integrationService } from "@/server/services/integration.service";
 import { markPaidService } from "@/server/services/mark-paid.service";
 
+export const maxDuration = 60;
+
 type TgPhotoSize = { file_id: string; width: number; height: number };
 type TgDocument = { file_id: string; mime_type?: string };
 type TgMessage = {

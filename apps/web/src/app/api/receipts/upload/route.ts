@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth/auth-config";
 import { ReceiptUploadProgressReporter } from "@/server/services/receipt-upload-progress.service";
 import { storageService } from "@/server/services/storage.service";
 
+export const maxDuration = 60;
+
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set([
   "image/jpeg",

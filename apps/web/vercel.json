@@ -1,18 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "bun install --linker hoisted",
-  "functions": {
-    "src/app/api/cron/dispatch/route.ts": {
-      "maxDuration": 300
-    },
-    "src/app/api/receipts/upload/route.ts": {
-      "maxDuration": 60
-    },
-    "src/app/api/webhooks/telegram/route.ts": {
-      "maxDuration": 60
-    },
-    "src/app/api/trpc/[trpc]/route.ts": {
-      "maxDuration": 300
-    }
-  }
+  "installCommand": "cd ../.. && bun install --linker hoisted"
 }

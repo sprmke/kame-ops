@@ -16,7 +16,9 @@ See **`docs/temp/supabase-setup.md`** for the full walkthrough.
 
 ### Vercel
 
-- [ ] Link repo; set root directory to `apps/web`
+- [ ] **One project only** — e.g. `kame-ops-web` or `kame-ops`; delete or ignore duplicates to avoid env/domain drift
+- [ ] Link repo `sprmke/kame-ops`; **Root Directory** = `apps/web` (not repo root)
+- [ ] Framework Preset = **Next.js** (auto when root is correct)
 - [ ] Set production env vars (see below)
 - [ ] Remove `SKIP_ENV_VALIDATION` in production
 - [ ] Deploy and verify `/login` + `/dashboard`
@@ -82,6 +84,24 @@ Not configured in `vercel.json` (Vercel Hobby allows at most one cron per day).
 Cron requests must include: `Authorization: Bearer <CRON_SECRET>` (stored in Supabase Vault as `kame_ops_cron_secret`).
 
 User automations use friendly schedules (daily/weekly/monthly + time) stored in `automation_jobs.config.scheduleConfig`, evaluated in each user's timezone (`users.timezone`, default `Asia/Manila`).
+
+## Troubleshooting deploys
+
+### Build succeeds then: `No Output Directory named "public"`
+
+Vercel **Root Directory** is the repo root instead of `apps/web`. Turbo builds Next.js under `apps/web/.next`, but Vercel looks for a static `public` folder at the root.
+
+**Fix:** Project → **Settings → General → Root Directory** → `apps/web` → Save → Redeploy.
+
+Do **not** set Output Directory to `public` manually.
+
+### `functions` pattern doesn't match Serverless Functions
+
+`vercel.json` used Pages Router-style `functions` paths. App Router limits use `export const maxDuration` in each `route.ts` instead. Do not add a `functions` block for `src/app/api/**` routes.
+
+### Two Vercel projects (`kame-ops` vs `kame-ops-web`)
+
+Use **one** production project. Copy env vars and domain to the project with **Root Directory = `apps/web`**. The other can be deleted or left unused.
 
 ## CI
 
