@@ -171,8 +171,8 @@ export const creditCardService = {
     return plain;
   },
 
-  /** Cards formatted for legacy SOA runner */
-  async listForLegacy(userId: string) {
+  /** Cards formatted for SOA pipeline env (CARDS_JSON) */
+  async listForSoaPipeline(userId: string) {
     const cards = await db.query.creditCards.findMany({
       where: and(eq(creditCards.userId, userId), isNull(creditCards.deletedAt)),
       orderBy: (t, { asc }) => [asc(t.issuer), asc(t.last4)],

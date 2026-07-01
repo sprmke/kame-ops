@@ -1,19 +1,23 @@
 import "server-only";
 
+import type { AiApiKeyVerifyResult } from "@/lib/ai/types";
 import type {
   CreditCardReceiptAiResult,
   CreditCardReceiptExtraction,
-  GeminiIntegrationVerifyResult,
   ReceiptAiProvider,
-  ReceiptAiSecretsStatus,
   ReceiptAiVerdict,
   ReceiptDueContext,
   ReceiptKnownCard,
 } from "@/lib/receipts/types";
+import {
+  AI_SKIP_NO_KEYS_MESSAGE,
+  skippedReceiptAi,
+} from "@/lib/receipts/ai-skip";
+import { aiApiKeyService } from "./ai-api-key.service";
 
 export const GEMINI_MODEL = "gemini-2.5-flash";
+export const GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-const GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 const GROQ_SUPPORTED_MIME_TYPES = new Set([
@@ -23,51 +27,14 @@ const GROQ_SUPPORTED_MIME_TYPES = new Set([
   "image/webp",
 ]);
 
-let geminiKeyIndex = 0;
-
-function getGeminiApiKeys(): string[] {
-  const multi = process.env.GEMINI_API_KEYS?.trim();
-  if (multi) {
-    return multi
-      .split(",")
-      .map((k) => k.trim())
-      .filter(Boolean);
-  }
-  const single = process.env.GEMINI_API_KEY?.trim();
-  return single ? [single] : [];
-}
-
-function getGroqApiKey(): string | null {
-  return process.env.GROQ_API_KEY?.trim() || null;
-}
+const geminiKeyIndexByUser = new Map<string, number>();
 
 function shouldTryNextProvider(status: number): boolean {
   return status === 429 || status === 403 || status >= 500;
 }
 
-function skipped(
-  summary = "AI validation unavailable",
-): CreditCardReceiptAiResult {
-  return {
-    verdict: "skipped",
-    confidence: null,
-    summary,
-    hasAmount: false,
-    hasDate: false,
-    hasReference: false,
-    isCreditCardPayment: false,
-    extraction: {},
-  };
-}
-
-function aiModelFailure(
-  summary: string,
-  detail?: string,
-): CreditCardReceiptAiResult {
-  return {
-    ...skipped(summary),
-    aiModelError: detail ?? summary,
-  };
+function skipped(summary = "AI validation unavailable") {
+  return skippedReceiptAi(summary, "unavailable");
 }
 
 function normalizeVerdict(raw: unknown): ReceiptAiVerdict {
@@ -275,8 +242,8 @@ async function tryGeminiKey(
         return null;
       }
       const detail = parseGeminiApiError(res.status, errText);
-      console.error(`[${logTag}] Gemini API error:`, res.status, errText);
-      return aiModelFailure("AI validation failed", detail);
+      console.warn(`[${logTag}] Gemini API error (${res.status}):`, detail);
+      return null;
     }
 
     const body = (await res.json()) as {
@@ -287,10 +254,8 @@ async function tryGeminiKey(
     const text = body.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     const parsed = parseAiJson(text, "Receipt analyzed.");
     if (!parsed) {
-      return aiModelFailure(
-        "AI validation returned unreadable result",
-        "The AI model returned a response we could not parse. Try again.",
-      );
+      console.warn(`[${logTag}] Gemini returned unreadable JSON, trying next…`);
+      return null;
     }
 
     return { ...parsed, provider: "gemini" satisfies ReceiptAiProvider };
@@ -351,11 +316,8 @@ async function tryGroq(
         console.warn(`[${logTag}] Groq rate-limited/error (${res.status})`);
         return null;
       }
-      console.error(`[${logTag}] Groq API error:`, res.status, errText);
-      return aiModelFailure(
-        "AI validation failed (fallback)",
-        `Groq returned ${res.status}`,
-      );
+      console.warn(`[${logTag}] Groq API error (${res.status})`);
+      return null;
     }
 
     const body = (await res.json()) as {
@@ -364,10 +326,8 @@ async function tryGroq(
     const text = body.choices?.[0]?.message?.content ?? "";
     const parsed = parseAiJson(text, "Receipt analyzed.");
     if (!parsed) {
-      return aiModelFailure(
-        "AI validation returned unreadable result",
-        "Fallback AI model returned a response we could not parse.",
-      );
+      console.warn(`[${logTag}] Groq returned unreadable JSON, trying next…`);
+      return null;
     }
 
     return { ...parsed, provider: "groq" satisfies ReceiptAiProvider };
@@ -378,27 +338,30 @@ async function tryGroq(
 }
 
 async function callVisionProviders(
+  userId: string,
   prompt: string,
   imageBytes: Uint8Array,
   mimeType: string,
   logTag: string,
 ): Promise<CreditCardReceiptAiResult> {
-  const geminiKeys = getGeminiApiKeys();
-  const groqKey = getGroqApiKey();
+  // User-scoped keys from Settings only (ai_api_keys) — no process.env fallback.
+  const { gemini: geminiKeys, groq: groqKeys } =
+    await aiApiKeyService.getUserKeysSnapshot(userId);
 
-  if (geminiKeys.length === 0 && !groqKey) {
+  if (geminiKeys.length === 0 && groqKeys.length === 0) {
     console.warn(`[${logTag}] No AI API keys configured — skipping`);
-    return skipped();
+    return skippedReceiptAi(AI_SKIP_NO_KEYS_MESSAGE, "no_keys");
   }
   if (!imageBytes?.length) {
-    return skipped("No image data to validate");
+    return skippedReceiptAi("No image data to validate", "no_image");
   }
 
   const safeMime = normalizeVisionMimeType(mimeType);
   const base64 = bytesToBase64(imageBytes);
 
   if (geminiKeys.length > 0) {
-    const startIdx = geminiKeyIndex % geminiKeys.length;
+    const startIdx =
+      (geminiKeyIndexByUser.get(userId) ?? 0) % geminiKeys.length;
     for (let i = 0; i < geminiKeys.length; i++) {
       const idx = (startIdx + i) % geminiKeys.length;
       const result = await tryGeminiKey(
@@ -409,7 +372,7 @@ async function callVisionProviders(
         logTag,
       );
       if (result) {
-        geminiKeyIndex = (idx + 1) % geminiKeys.length;
+        geminiKeyIndexByUser.set(userId, (idx + 1) % geminiKeys.length);
         return result;
       }
     }
@@ -418,21 +381,15 @@ async function callVisionProviders(
     );
   }
 
-  if (groqKey) {
-    const result = await tryGroq(groqKey, prompt, base64, safeMime, logTag);
-    if (result) return result;
+  if (groqKeys.length > 0) {
+    for (const groqKey of groqKeys) {
+      const result = await tryGroq(groqKey, prompt, base64, safeMime, logTag);
+      if (result) return result;
+    }
   }
 
-  const providers = [];
-  if (geminiKeys.length > 0) {
-    providers.push(
-      `Gemini (${geminiKeys.length} key${geminiKeys.length > 1 ? "s" : ""})`,
-    );
-  }
-  if (groqKey) providers.push("Groq");
-  const detail = `All AI providers exhausted: ${providers.join(", ")}. Try again later.`;
-  console.error(`[${logTag}] ${detail}`);
-  return aiModelFailure("AI validation temporarily unavailable", detail);
+  console.warn(`[${logTag}] All AI providers exhausted`);
+  return skipped();
 }
 
 export function shouldPersistReceiptValidation(
@@ -461,6 +418,7 @@ export function formatReceiptVerdictLabel(
 }
 
 export async function validateCreditCardReceiptImage(
+  userId: string,
   imageBytes: Uint8Array,
   mimeType: string,
   opts: {
@@ -473,6 +431,7 @@ export async function validateCreditCardReceiptImage(
     opts.dueContext,
   );
   return callVisionProviders(
+    userId,
     prompt,
     imageBytes,
     mimeType,
@@ -480,38 +439,26 @@ export async function validateCreditCardReceiptImage(
   );
 }
 
-export type { GeminiIntegrationVerifyResult, ReceiptAiSecretsStatus };
-
-export function getReceiptAiSecretsStatus(): ReceiptAiSecretsStatus {
-  const keys = getGeminiApiKeys();
-  return {
-    geminiApiKeyConfigured: keys.length > 0,
-    geminiKeysCount: keys.length,
-    groqApiKeyConfigured: !!getGroqApiKey(),
-    model: GEMINI_MODEL,
-  };
+function parseGroqApiError(status: number, errText: string): string {
+  let message = `Groq API returned ${status}`;
+  try {
+    const parsed = JSON.parse(errText) as { error?: { message?: string } };
+    if (parsed.error?.message) message = parsed.error.message;
+  } catch {
+    if (errText.trim()) message = errText.trim().slice(0, 240);
+  }
+  return message;
 }
 
-export async function verifyReceiptAiIntegration(): Promise<GeminiIntegrationVerifyResult> {
-  const keys = getGeminiApiKeys();
-  const groqKey = getGroqApiKey();
-  const base: GeminiIntegrationVerifyResult = {
-    apiKeyConfigured: keys.length > 0,
+export async function verifyGeminiApiKey(
+  apiKey: string,
+): Promise<AiApiKeyVerifyResult> {
+  const base: AiApiKeyVerifyResult = {
+    provider: "gemini",
     model: GEMINI_MODEL,
     ok: false,
-    geminiKeysCount: keys.length,
-    groqConfigured: !!groqKey,
   };
 
-  if (keys.length === 0) {
-    return {
-      ...base,
-      error:
-        "No Gemini API keys configured (set GEMINI_API_KEYS or GEMINI_API_KEY)",
-    };
-  }
-
-  const apiKey = keys[0]!;
   const started = Date.now();
   try {
     const res = await fetch(`${GEMINI_URL}?key=${encodeURIComponent(apiKey)}`, {
@@ -534,6 +481,56 @@ export async function verifyReceiptAiIntegration(): Promise<GeminiIntegrationVer
         latencyMs,
         statusCode,
         error: parseGeminiApiError(statusCode, errText),
+      };
+    }
+
+    await res.json().catch(() => ({}));
+    return { ...base, ok: true, latencyMs, statusCode };
+  } catch (err) {
+    return {
+      ...base,
+      latencyMs: Date.now() - started,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export async function verifyGroqApiKey(
+  apiKey: string,
+): Promise<AiApiKeyVerifyResult> {
+  const base: AiApiKeyVerifyResult = {
+    provider: "groq",
+    model: GROQ_MODEL,
+    ok: false,
+  };
+
+  const started = Date.now();
+  try {
+    const res = await fetch(GROQ_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        messages: [{ role: "user", content: "Reply with exactly: ok" }],
+        temperature: 0,
+        max_tokens: 8,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    const latencyMs = Date.now() - started;
+    const statusCode = res.status;
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      return {
+        ...base,
+        latencyMs,
+        statusCode,
+        error: parseGroqApiError(statusCode, errText),
       };
     }
 

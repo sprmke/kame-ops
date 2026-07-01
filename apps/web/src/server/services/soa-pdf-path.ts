@@ -4,13 +4,13 @@ import { tmpdir } from "os";
 
 import { UNLOCKED_PDF_PREFIX } from "@/server/services/pdf-unlock.service";
 
-/** Canonical per-user work dir (matches prepareLegacyRuntime). */
+/** Canonical per-user work dir (matches prepareSoaWorkdir). */
 export function soaWorkDir(userId: string): string {
   return join(tmpdir(), `kame-ops-${userId}`);
 }
 
 /**
- * Candidate work dirs for SOA PDFs on disk (matches prepareLegacyRuntime).
+ * Candidate work dirs for SOA PDFs on disk (matches prepareSoaWorkdir).
  */
 export function soaWorkDirCandidates(userId: string): string[] {
   const candidates: string[] = [];

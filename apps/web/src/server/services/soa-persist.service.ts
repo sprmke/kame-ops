@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { creditCards, soaStatements, soaTransactions } from "@/lib/db/schema";
+import { soaStatementSourceKey } from "@/lib/soa/statement-identity";
 
 import {
   categorizeTransaction,
@@ -97,6 +98,46 @@ export const soaPersistService = {
 
 type PersistRowResult = "saved" | "updated" | "skipped" | "unavailable";
 
+function statementSourceWhere(row: SoaRow) {
+  const sourceKey = soaStatementSourceKey(row);
+  if (!sourceKey) return undefined;
+
+  if (sourceKey.startsWith("msg:")) {
+    return eq(soaStatements.sourceMessageId, sourceKey.slice("msg:".length));
+  }
+
+  return eq(soaStatements.pdfFileName, sourceKey.slice("pdf:".length));
+}
+
+export function soaStatementLookupWhere(
+  userId: string,
+  row: Pick<
+    SoaRow,
+    "issuerId" | "cardLast4" | "sourceMessageId" | "pdfFileName"
+  >,
+  period: { month: number; year: number },
+) {
+  const sourceWhere = statementSourceWhere(row as SoaRow);
+
+  if (sourceWhere) {
+    return and(
+      eq(soaStatements.userId, userId),
+      eq(soaStatements.issuerId, row.issuerId),
+      eq(soaStatements.statementMonth, period.month),
+      eq(soaStatements.statementYear, period.year),
+      sourceWhere,
+    );
+  }
+
+  return and(
+    eq(soaStatements.userId, userId),
+    eq(soaStatements.issuerId, row.issuerId),
+    eq(soaStatements.cardLast4, row.cardLast4),
+    eq(soaStatements.statementMonth, period.month),
+    eq(soaStatements.statementYear, period.year),
+  );
+}
+
 async function persistOneRow(
   userId: string,
   row: SoaRow,
@@ -125,13 +166,7 @@ async function persistOneRow(
   };
 
   const existing = await db.query.soaStatements.findFirst({
-    where: and(
-      eq(soaStatements.userId, userId),
-      eq(soaStatements.issuerId, row.issuerId),
-      eq(soaStatements.cardLast4, row.cardLast4),
-      eq(soaStatements.statementMonth, period.month),
-      eq(soaStatements.statementYear, period.year),
-    ),
+    where: soaStatementLookupWhere(userId, row, period),
   });
 
   let statement = existing;
@@ -139,7 +174,11 @@ async function persistOneRow(
   if (existing) {
     const [row_] = await db
       .update(soaStatements)
-      .set(statementValues)
+      .set({
+        ...statementValues,
+        cardLast4: row.cardLast4,
+        creditCardId: creditCard?.id ?? null,
+      })
       .where(eq(soaStatements.id, existing.id))
       .returning();
     statement = row_ ?? existing;
@@ -164,10 +203,14 @@ async function persistOneRow(
   if (!statement) return "skipped";
 
   if (row.transactions?.length) {
-    const rules = await transactionCategoryService.getRulesForUser(userId);
+    const [rules, customLabels] = await Promise.all([
+      transactionCategoryService.getRulesForUser(userId),
+      transactionCategoryService.getCustomLabelMap(userId),
+    ]);
+    const customSlugs = new Set(customLabels.keys());
     await db.insert(soaTransactions).values(
       row.transactions.map((t) => {
-        const categorized = categorizeTransaction(t, rules);
+        const categorized = categorizeTransaction(t, rules, customSlugs);
         return {
           soaStatementId: statement.id,
           date: t.date,

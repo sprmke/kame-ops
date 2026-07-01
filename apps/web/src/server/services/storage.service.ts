@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -133,6 +133,36 @@ export const storageService = {
       return await readFile(storagePath);
     } catch {
       return null;
+    }
+  },
+
+  /** Remove a private object (no-op when already missing). */
+  async deletePrivate(storagePath: string): Promise<void> {
+    if (!storagePath) return;
+
+    if (storagePath.startsWith(LOCAL_PREFIX)) {
+      try {
+        await unlink(storagePath.slice(LOCAL_PREFIX.length));
+      } catch {
+        // already removed
+      }
+      return;
+    }
+
+    if (storagePath.startsWith(SUPABASE_PREFIX)) {
+      if (!isSupabaseConfigured()) return;
+      const objectKey = storagePath.slice(SUPABASE_PREFIX.length);
+      const supabase = getSupabaseAdmin();
+      await supabase.storage
+        .from(env.SUPABASE_STORAGE_BUCKET_PRIVATE!)
+        .remove([objectKey]);
+      return;
+    }
+
+    try {
+      await unlink(storagePath);
+    } catch {
+      // already removed
     }
   },
 

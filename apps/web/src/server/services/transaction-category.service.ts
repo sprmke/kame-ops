@@ -5,14 +5,18 @@ import {
   soaStatements,
   soaTransactions,
   transactionCategoryRules,
+  userTransactionCategories,
 } from "@/lib/db/schema";
 import {
   BUILTIN_CATEGORY_RULES,
   CANNOT_ANALYZE_SLUG,
   categoryLabel,
+  isKnownCategorySlug,
+  isValidCategorySlug,
+  slugifyUserCategoryLabel,
+  TRANSACTION_CATEGORY_OPTIONS,
   type CategorySource,
   extractMerchantKeyword,
-  isValidCategorySlug,
   normalizeKeyword,
   type TransactionCategorySlug,
 } from "@/lib/transactions/categories";
@@ -62,14 +66,15 @@ function resolveFromRules(
   description: string,
   amount: string,
   userRules: RuleRow[],
-): { slug: TransactionCategorySlug; source: CategorySource } | null {
+  customSlugs?: ReadonlySet<string>,
+): { slug: string; source: CategorySource } | null {
   const sorted = [...userRules].sort(
     (a, b) =>
       b.priority - a.priority || b.updatedAt.getTime() - a.updatedAt.getTime(),
   );
 
   for (const rule of sorted) {
-    if (!isValidCategorySlug(rule.categorySlug)) continue;
+    if (!isKnownCategorySlug(rule.categorySlug, customSlugs)) continue;
     if (matchKeyword(description, rule.keyword)) {
       return { slug: rule.categorySlug, source: "rule" };
     }
@@ -90,37 +95,174 @@ function resolveFromRules(
   return null;
 }
 
+function isAllowedCategorySlugForUser(
+  slug: string,
+  customSlugs?: ReadonlySet<string>,
+): boolean {
+  return isValidCategorySlug(slug) || Boolean(customSlugs?.has(slug));
+}
+
 export function categorizeTransaction(
   tx: TxInput,
   userRules: RuleRow[],
+  customSlugs?: ReadonlySet<string>,
 ): CategorizedTransaction {
   if (
     tx.categorySource === "manual" &&
     tx.categorySlug &&
-    isValidCategorySlug(tx.categorySlug)
+    isAllowedCategorySlugForUser(tx.categorySlug, customSlugs)
   ) {
     return {
       ...tx,
-      categorySlug: tx.categorySlug,
+      categorySlug: tx.categorySlug as TransactionCategorySlug,
       categorySource: "manual",
       categoryLabel: categoryLabel(tx.categorySlug),
     };
   }
 
-  const matched = resolveFromRules(tx.description, tx.amount, userRules);
+  const matched = resolveFromRules(
+    tx.description,
+    tx.amount,
+    userRules,
+    customSlugs,
+  );
   const slug = matched?.slug ?? CANNOT_ANALYZE_SLUG;
   const source: CategorySource =
     slug === CANNOT_ANALYZE_SLUG ? "system" : matched!.source;
 
   return {
     ...tx,
-    categorySlug: slug,
+    categorySlug: slug as TransactionCategorySlug,
     categorySource: source,
     categoryLabel: categoryLabel(slug),
   };
 }
 
 export const transactionCategoryService = {
+  async listUserCategories(userId: string) {
+    return db.query.userTransactionCategories.findMany({
+      where: eq(userTransactionCategories.userId, userId),
+      orderBy: (t, { asc }) => [asc(t.label)],
+    });
+  },
+
+  async listOptions(userId: string) {
+    const custom = await this.listUserCategories(userId);
+    const builtIn = TRANSACTION_CATEGORY_OPTIONS.filter(
+      (opt) => opt.slug !== CANNOT_ANALYZE_SLUG,
+    );
+    const unknown = TRANSACTION_CATEGORY_OPTIONS.find(
+      (opt) => opt.slug === CANNOT_ANALYZE_SLUG,
+    );
+    return [
+      ...builtIn.map((opt) => ({ ...opt, isCustom: false as const })),
+      ...custom.map((row) => ({
+        slug: row.slug,
+        label: row.label,
+        isCustom: true as const,
+      })),
+      ...(unknown ? [{ ...unknown, isCustom: false as const }] : []),
+    ];
+  },
+
+  async createCategory(userId: string, label: string) {
+    return this.ensureUserCategory(userId, label);
+  },
+
+  async deleteCategory(userId: string, slug: string) {
+    if (isValidCategorySlug(slug)) {
+      throw new Error("Built-in categories cannot be deleted");
+    }
+
+    const row = await db.query.userTransactionCategories.findFirst({
+      where: and(
+        eq(userTransactionCategories.userId, userId),
+        eq(userTransactionCategories.slug, slug),
+      ),
+    });
+    if (!row) throw new Error("Category not found");
+
+    await db
+      .delete(transactionCategoryRules)
+      .where(
+        and(
+          eq(transactionCategoryRules.userId, userId),
+          eq(transactionCategoryRules.categorySlug, slug),
+        ),
+      );
+
+    await db
+      .delete(userTransactionCategories)
+      .where(
+        and(
+          eq(userTransactionCategories.userId, userId),
+          eq(userTransactionCategories.slug, slug),
+        ),
+      );
+
+    return row;
+  },
+
+  async ensureUserCategory(userId: string, label: string) {
+    const trimmed = label.trim().slice(0, 64);
+    if (trimmed.length < 2) {
+      throw new Error("Category label is too short");
+    }
+
+    const existingByLabel = await db.query.userTransactionCategories.findFirst({
+      where: and(
+        eq(userTransactionCategories.userId, userId),
+        eq(userTransactionCategories.label, trimmed),
+      ),
+    });
+    if (existingByLabel) return existingByLabel;
+
+    let baseSlug = slugifyUserCategoryLabel(trimmed);
+    let slug = baseSlug;
+    let attempt = 0;
+    while (attempt < 20) {
+      if (
+        !isValidCategorySlug(slug) &&
+        !(await db.query.userTransactionCategories.findFirst({
+          where: and(
+            eq(userTransactionCategories.userId, userId),
+            eq(userTransactionCategories.slug, slug),
+          ),
+        }))
+      ) {
+        break;
+      }
+      attempt += 1;
+      slug = `${baseSlug.slice(0, 28)}_${attempt}`;
+    }
+
+    const [created] = await db
+      .insert(userTransactionCategories)
+      .values({
+        userId,
+        slug,
+        label: trimmed,
+      })
+      .returning();
+    return created!;
+  },
+
+  async isAllowedCategorySlug(userId: string, slug: string) {
+    if (isValidCategorySlug(slug)) return true;
+    const custom = await db.query.userTransactionCategories.findFirst({
+      where: and(
+        eq(userTransactionCategories.userId, userId),
+        eq(userTransactionCategories.slug, slug),
+      ),
+    });
+    return Boolean(custom);
+  },
+
+  async getCustomLabelMap(userId: string) {
+    const rows = await this.listUserCategories(userId);
+    return new Map(rows.map((row) => [row.slug, row.label]));
+  },
+
   async listRules(userId: string) {
     return db.query.transactionCategoryRules.findMany({
       where: eq(transactionCategoryRules.userId, userId),
@@ -139,7 +281,7 @@ export const transactionCategoryService = {
     userId: string,
     input: {
       keyword: string;
-      categorySlug: TransactionCategorySlug;
+      categorySlug: string;
       priority?: number;
       source?: "user" | "learned";
     },
@@ -147,7 +289,11 @@ export const transactionCategoryService = {
     const keyword = normalizeKeyword(input.keyword);
     if (!keyword) throw new Error("Keyword is required");
     if (!isValidCategorySlug(input.categorySlug)) {
-      throw new Error("Invalid category");
+      const allowed = await this.isAllowedCategorySlug(
+        userId,
+        input.categorySlug,
+      );
+      if (!allowed) throw new Error("Invalid category");
     }
 
     const existing = await db.query.transactionCategoryRules.findFirst({
@@ -188,13 +334,17 @@ export const transactionCategoryService = {
     ruleId: string,
     input: {
       keyword?: string;
-      categorySlug?: TransactionCategorySlug;
+      categorySlug?: string;
       priority?: number;
     },
   ) {
     const keyword = input.keyword ? normalizeKeyword(input.keyword) : undefined;
     if (input.categorySlug && !isValidCategorySlug(input.categorySlug)) {
-      throw new Error("Invalid category");
+      const allowed = await this.isAllowedCategorySlug(
+        userId,
+        input.categorySlug,
+      );
+      if (!allowed) throw new Error("Invalid category");
     }
 
     const [updated] = await db
@@ -230,8 +380,11 @@ export const transactionCategoryService = {
   categorizeMany(
     transactions: TxInput[],
     userRules: RuleRow[],
+    customSlugs?: ReadonlySet<string>,
   ): CategorizedTransaction[] {
-    return transactions.map((tx) => categorizeTransaction(tx, userRules));
+    return transactions.map((tx) =>
+      categorizeTransaction(tx, userRules, customSlugs),
+    );
   },
 
   async enrichTransactions<T extends TxInput>(
@@ -239,22 +392,32 @@ export const transactionCategoryService = {
     transactions: T[],
   ): Promise<(T & CategorizedTransaction)[]> {
     const rules = await this.getRulesForUser(userId);
-    return transactions.map((tx) => ({
-      ...tx,
-      ...categorizeTransaction(tx, rules),
-    }));
+    const customLabels = await this.getCustomLabelMap(userId);
+    const customSlugs = new Set(customLabels.keys());
+    return transactions.map((tx) => {
+      const categorized = categorizeTransaction(tx, rules, customSlugs);
+      return {
+        ...tx,
+        ...categorized,
+        categoryLabel: categoryLabel(categorized.categorySlug, customLabels),
+      };
+    });
   },
 
   async updateTransactionCategory(
     userId: string,
     transactionId: string,
     input: {
-      categorySlug: TransactionCategorySlug;
+      categorySlug: string;
       learn?: boolean;
     },
   ) {
     if (!isValidCategorySlug(input.categorySlug)) {
-      throw new Error("Invalid category");
+      const allowed = await this.isAllowedCategorySlug(
+        userId,
+        input.categorySlug,
+      );
+      if (!allowed) throw new Error("Invalid category");
     }
 
     const tx = await db.query.soaTransactions.findFirst({
@@ -288,7 +451,10 @@ export const transactionCategoryService = {
 
     return {
       ...updated!,
-      categoryLabel: categoryLabel(input.categorySlug),
+      categoryLabel: categoryLabel(
+        input.categorySlug,
+        await this.getCustomLabelMap(userId),
+      ),
     };
   },
 
@@ -303,11 +469,13 @@ export const transactionCategoryService = {
     if (!statement) return { updated: 0 };
 
     const rules = await this.getRulesForUser(userId);
+    const customLabels = await this.getCustomLabelMap(userId);
+    const customSlugs = new Set(customLabels.keys());
     let updated = 0;
 
     for (const tx of statement.transactions) {
       if (tx.categorySource === "manual") continue;
-      const result = categorizeTransaction(tx, rules);
+      const result = categorizeTransaction(tx, rules, customSlugs);
       if (
         result.categorySlug !== tx.categorySlug ||
         result.categorySource !== tx.categorySource

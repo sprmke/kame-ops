@@ -4,10 +4,14 @@ import { google } from "googleapis";
 
 import { env } from "@/env";
 import { googleOAuthRedirectUri } from "@/lib/auth/google-oauth-uri";
+import { isGoogleReconnectRequiredMessage } from "@/lib/auth/google-reconnect";
 import { GOOGLE_OAUTH_SCOPES } from "@/lib/auth/google-scopes";
 import { db } from "@/lib/db";
 import { accounts } from "@/lib/db/schema";
-import { formatGoogleAuthError } from "@/server/legacy/pay-credit-cards/google-oauth";
+import {
+  formatGoogleAuthError,
+  isInvalidGrantError,
+} from "@/lib/google/google-oauth";
 import { integrationService } from "@/server/services/integration.service";
 
 export type GoogleOAuthTokens = {
@@ -22,6 +26,29 @@ export const gmailService = {
   async isConnected(userId: string): Promise<boolean> {
     const tokens = await this.getTokensForUser(userId);
     return !!tokens?.refresh_token;
+  },
+
+  async checkAuthStatus(
+    userId: string,
+  ): Promise<
+    { ok: true } | { ok: false; requiresReconnect: true; message: string }
+  > {
+    try {
+      await this.applyTokensToEnv(userId);
+      return { ok: true };
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error ?? "Unknown error");
+      if (
+        isInvalidGrantError(error) ||
+        isGoogleReconnectRequiredMessage(message)
+      ) {
+        return { ok: false, requiresReconnect: true, message };
+      }
+      return { ok: true };
+    }
   },
 
   async getTokensForUser(userId: string): Promise<GoogleOAuthTokens | null> {
@@ -124,7 +151,7 @@ export const gmailService = {
   },
 
   /**
-   * Bridge DB tokens into process.env for legacy pay-credit-cards Gmail/Calendar clients.
+   * Bridge DB tokens into process.env for lib/soa Gmail and Calendar clients.
    * Refreshes the access token when a refresh token is available.
    */
   async applyTokensToEnv(userId: string): Promise<void> {
@@ -204,8 +231,7 @@ export const gmailService = {
         (s) => s.includes("gmail") && scope?.includes(s),
       );
 
-    const { getGmailClient } =
-      await import("@/server/legacy/pay-credit-cards/gmail");
+    const { getGmailClient } = await import("@/lib/soa/gmail-fetch");
     const gmail = await getGmailClient();
     const profile = await gmail.users.getProfile({ userId: "me" });
 

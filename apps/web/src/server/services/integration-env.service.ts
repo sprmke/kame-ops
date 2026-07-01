@@ -1,6 +1,6 @@
 import { integrationService } from "./integration.service";
 
-/** Apply per-user integration secrets to process.env for legacy notify/gmail runners. */
+/** Apply per-user integration secrets to process.env for lib/soa runners. */
 export async function applyIntegrationsToEnv(userId: string): Promise<void> {
   const telegram = await integrationService.getConfig<{
     botToken?: string;

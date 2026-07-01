@@ -2,19 +2,22 @@ import { desc, eq, inArray, and } from "drizzle-orm";
 import { access, readFile } from "fs/promises";
 import { basename } from "path";
 
+import { buildOverviewPaidLabelFn } from "@/lib/soa/overview-paid-label";
+import { soaStatementIdentityKey } from "@/lib/soa/statement-identity";
 import { db } from "@/lib/db";
-import { soaPeriods, soaStatements } from "@/lib/db/schema";
+import { dueEntries, soaPeriods, soaStatements } from "@/lib/db/schema";
 import { creditCardService } from "./credit-card.service";
-import { dueSyncService } from "./due-sync.service";
+import { dueEntryUpsertService } from "./due-entry-upsert.service";
 import { gmailService } from "./gmail.service";
+import { googleCalendarService } from "./google-calendar.service";
 import { integrationService } from "./integration.service";
-import { prepareLegacyRuntime } from "./legacy-runtime.service";
+import { notificationService } from "./notification.service";
+import { prepareSoaWorkdir } from "./soa-workdir.service";
+import { soaPeriodService, type SoaPeriodMode } from "./soa-period.service";
 import {
-  soaPeriodService,
-  isMultiMonthPeriod,
-  type SoaPeriodMode,
-} from "./soa-period.service";
-import { soaPersistService } from "./soa-persist.service";
+  soaPersistService,
+  soaStatementLookupWhere,
+} from "./soa-persist.service";
 import {
   resolveDownloadedPdfPath,
   resolveMonthlySummaryPdfPath,
@@ -57,8 +60,7 @@ async function resolveRunPeriodBounds(input: RunSoaPipelineInput): Promise<{
     input.monthCount &&
     input.monthCount > 1
   ) {
-    const { lastNMonthsEndingAt } =
-      await import("@/server/legacy/pay-credit-cards/month");
+    const { lastNMonthsEndingAt } = await import("@/lib/soa/month");
     const contexts = lastNMonthsEndingAt(
       String(input.toMonth),
       String(input.toYear),
@@ -107,8 +109,8 @@ export function defaultRunSoaInput(): RunSoaPipelineInput {
     fromYear: year,
     toMonth: month,
     toYear: year,
-    notifyTelegram: true,
-    notifySlack: true,
+    notifyTelegram: false,
+    notifySlack: false,
     createCalendar: false,
   };
 }
@@ -126,9 +128,7 @@ type SoaMonthResult = {
   month: number;
   year: number;
   rows: Awaited<
-    ReturnType<
-      typeof import("@/server/legacy/pay-credit-cards/soa-run").runSoaSingleMonth
-    >
+    ReturnType<typeof import("@/lib/soa/run").runSoaSingleMonth>
   >["rows"];
   summaryPath: string;
   gmailSearches: SoaGmailSearchLog[];
@@ -144,6 +144,11 @@ function buildSoaGmailWarning(options: {
   mailboxEmail: string | null;
   connectedEmail: string | null;
   hasGmailReadScope: boolean;
+  calendar?: {
+    created: number;
+    error?: string;
+    notice?: string;
+  } | null;
 }): string | undefined {
   const {
     parsedCount,
@@ -155,6 +160,7 @@ function buildSoaGmailWarning(options: {
     mailboxEmail,
     connectedEmail,
     hasGmailReadScope,
+    calendar,
   } = options;
 
   const parseWarning = soaDiagnosticsService.formatParseFailureWarning({
@@ -164,50 +170,53 @@ function buildSoaGmailWarning(options: {
     parseErrors,
   });
 
+  let warning: string | undefined;
+
   if (parsedCount > 0) {
-    return parseWarning;
+    warning = parseWarning;
+  } else {
+    const totalMessages = gmailSearches.reduce((n, s) => n + s.messageCount, 0);
+    const totalPdfs = gmailSearches.reduce((n, s) => n + s.pdfCount, 0);
+    const mailbox = mailboxEmail ?? "unknown mailbox";
+
+    if (!hasGmailReadScope) {
+      warning = `Gmail token for ${mailbox} is missing gmail.readonly scope. Sign out and sign in again with Google on this environment.`;
+    } else if (
+      connectedEmail &&
+      mailboxEmail &&
+      connectedEmail.toLowerCase() !== mailboxEmail.toLowerCase()
+    ) {
+      warning = `Gmail OAuth reads ${mailbox} but Settings shows ${connectedEmail}. Sign in again on this site to reconnect the correct account.`;
+    } else if (parseWarning) {
+      warning = parseWarning;
+    } else if (totalMessages === 0) {
+      const sample = gmailSearches[0]?.query;
+      const queryHint = sample ? ` Sample query: ${sample}` : "";
+      warning = `Gmail (${mailbox}) returned 0 messages for your cards this period.${queryHint} If SOAs exist in another inbox, reconnect Google here.`;
+    } else if (totalPdfs === 0 && unavailable > 0) {
+      warning = `No SOA emails found for your cards this period; ${unavailable} card(s) marked unavailable. Check SOA subject and Gmail month offset on each card.`;
+    } else if (unavailable > 0) {
+      warning = `${unavailable} card(s) marked unavailable — no matching SOA email in Gmail for this period. Try Gmail month offset −1 or set a custom SOA subject on the card.`;
+    } else if (totalPdfs === 0) {
+      warning = `Gmail (${mailbox}) found ${totalMessages} message(s) but no PDF attachments for your cards this period.`;
+    } else {
+      warning =
+        "No statement PDFs parsed for this period. Try Gmail month offset −1 on cards if SOAs arrive early.";
+    }
   }
 
-  const totalMessages = gmailSearches.reduce((n, s) => n + s.messageCount, 0);
-  const totalPdfs = gmailSearches.reduce((n, s) => n + s.pdfCount, 0);
-  const mailbox = mailboxEmail ?? "unknown mailbox";
-
-  if (!hasGmailReadScope) {
-    return `Gmail token for ${mailbox} is missing gmail.readonly scope. Sign out and sign in again with Google on this environment.`;
+  if (calendar?.error) {
+    return warning ? `${warning} ${calendar.error}` : calendar.error;
+  }
+  if (calendar && calendar.created === 0 && calendar.notice) {
+    return warning ? `${warning} ${calendar.notice}` : calendar.notice;
   }
 
-  if (
-    connectedEmail &&
-    mailboxEmail &&
-    connectedEmail.toLowerCase() !== mailboxEmail.toLowerCase()
-  ) {
-    return `Gmail OAuth reads ${mailbox} but Integrations shows ${connectedEmail}. Sign in again on this site to reconnect the correct account.`;
-  }
-
-  if (parseWarning) return parseWarning;
-
-  if (totalMessages === 0) {
-    const sample = gmailSearches[0]?.query;
-    const queryHint = sample ? ` Sample query: ${sample}` : "";
-    return `Gmail (${mailbox}) returned 0 messages for your cards this period.${queryHint} If SOAs exist in another inbox, reconnect Google here.`;
-  }
-
-  if (totalPdfs === 0 && unavailable > 0) {
-    return `No SOA emails found for your cards this period; ${unavailable} card(s) marked unavailable. Check SOA subject and Gmail month offset on each card.`;
-  }
-
-  if (unavailable > 0) {
-    return `${unavailable} card(s) marked unavailable — no matching SOA email in Gmail for this period. Try Gmail month offset −1 or set a custom SOA subject on the card.`;
-  }
-
-  if (totalPdfs === 0) {
-    return `Gmail (${mailbox}) found ${totalMessages} message(s) but no PDF attachments for your cards this period.`;
-  }
-
-  return "No statement PDFs parsed for this period. Try Gmail month offset −1 on cards if SOAs arrive early.";
+  return warning;
 }
 
 async function runSoaDetailedInService(
+  userId: string,
   input: RunSoaPipelineInput,
   reporter: SoaRunProgressReporter | null,
 ): Promise<{
@@ -219,24 +228,24 @@ async function runSoaDetailedInService(
   downloadedPdfCount: number;
   parseErrors: SoaParseFailureDetail[];
 }> {
-  const { runSoaSingleMonth } =
-    await import("@/server/legacy/pay-credit-cards/soa-run");
+  const { runSoaSingleMonth } = await import("@/lib/soa/run");
   const { writeSummaryPdf, writeRangeSummaryPdf } =
-    await import("@/server/legacy/pay-credit-cards/summary-pdf");
+    await import("@/lib/soa/summary-pdf");
   const { enumerateMonthsInclusive, lastNMonthsEndingAt } =
-    await import("@/server/legacy/pay-credit-cards/month");
-  const { upsertDuesFromSoaRows } =
-    await import("@/server/legacy/pay-credit-cards/due-reminders-state");
-  const { ensureDirs } =
-    await import("@/server/legacy/pay-credit-cards/config");
-  const path = await import("node:path");
-  const fs = await import("node:fs");
+    await import("@/lib/soa/month");
+  const { upsertFromSoaRows } = dueEntryUpsertService;
+
+  async function paidLabelForRows() {
+    const dues = await db.query.dueEntries.findMany({
+      where: eq(dueEntries.userId, userId),
+    });
+    return buildOverviewPaidLabelFn(dues);
+  }
 
   if (input.mode === "single") {
     const month = String(input.fromMonth);
     const year = String(input.fromYear);
-    const { buildMonthContext } =
-      await import("@/server/legacy/pay-credit-cards/month");
+    const { buildMonthContext } = await import("@/lib/soa/month");
     const ctx = buildMonthContext(month, year);
     const monthLabel = `${ctx.monthLong} ${ctx.year}`;
     await reporter?.setGmailProgress(0, monthLabel);
@@ -255,11 +264,18 @@ async function runSoaDetailedInService(
     });
     await reporter?.completeStep("gmail");
     await reporter?.completeStep("parse");
+    await upsertFromSoaRows(userId, r.rows);
+    const resolvePaidLabel = await paidLabelForRows();
     const title = `${r.ctx.monthLong} ${r.ctx.year}`;
     await reporter?.activate("summary", title);
-    await writeSummaryPdf(r.rows, r.summaryPath, title, title);
+    await writeSummaryPdf(
+      r.rows,
+      r.summaryPath,
+      title,
+      title,
+      resolvePaidLabel,
+    );
     await reporter?.completeStep("summary");
-    upsertDuesFromSoaRows(r.rows);
     return {
       months: [
         {
@@ -306,6 +322,10 @@ async function runSoaDetailedInService(
   let downloadedPdfCount = 0;
   const parseErrors: SoaParseFailureDetail[] = [];
 
+  const { ensureDirs } = await import("@/lib/soa/config");
+  const path = await import("node:path");
+  const fs = await import("node:fs");
+
   for (let i = 0; i < contexts.length; i++) {
     const g = contexts[i]!;
     const month = String(g.monthIndex0 + 1);
@@ -325,8 +345,16 @@ async function runSoaDetailedInService(
           }
         : undefined,
     });
+    await upsertFromSoaRows(userId, r.rows);
+    const resolvePaidLabel = await paidLabelForRows();
     const title = `${g.monthLong} ${g.year}`;
-    await writeSummaryPdf(r.rows, r.summaryPath, title, title);
+    await writeSummaryPdf(
+      r.rows,
+      r.summaryPath,
+      title,
+      title,
+      resolvePaidLabel,
+    );
     parseFailures += r.parseFailures;
     downloadedPdfCount += r.downloadedPdfCount;
     parseErrors.push(...r.parseErrors);
@@ -361,11 +389,16 @@ async function runSoaDetailedInService(
   );
   const rangeTitle = `${first.monthLong} ${first.year} through ${last.monthLong} ${last.year}`;
   await reporter?.activate("summary", rangeTitle);
-  await writeRangeSummaryPdf(rangeParts, rangePdfPath, rangeTitle);
+  const rangePaidLabel = await paidLabelForRows();
+  await writeRangeSummaryPdf(
+    rangeParts,
+    rangePdfPath,
+    rangeTitle,
+    rangePaidLabel,
+  );
   await reporter?.completeStep("summary");
 
   const allRows = months.flatMap((m) => m.rows);
-  upsertDuesFromSoaRows(allRows);
 
   const gmailSearches = months.flatMap((m) => m.gmailSearches);
 
@@ -439,13 +472,10 @@ async function persistRunPdfs(
           pdfStoragePath: storagePath,
         })
         .where(
-          and(
-            eq(soaStatements.userId, userId),
-            eq(soaStatements.issuerId, row.issuerId),
-            eq(soaStatements.cardLast4, row.cardLast4),
-            eq(soaStatements.statementMonth, monthResult.month),
-            eq(soaStatements.statementYear, monthResult.year),
-          ),
+          soaStatementLookupWhere(userId, row, {
+            month: monthResult.month,
+            year: monthResult.year,
+          }),
         );
       uploaded += 1;
       await reporter?.setUploadProgress(uploaded, uploadTargets.length);
@@ -537,7 +567,7 @@ export const soaService = {
           : `${input.fromMonth}/${input.fromYear}–${input.toMonth}/${input.toYear}`;
       soaDiagnosticsService.logRunStart(userId, periodLabel, preflight);
 
-      const workDir = await prepareLegacyRuntime(userId);
+      const workDir = await prepareSoaWorkdir(userId);
 
       let gmailMailbox: Awaited<
         ReturnType<typeof gmailService.getActiveMailboxProfile>
@@ -561,23 +591,21 @@ export const soaService = {
         createCalendar: input.createCalendar,
       });
 
-      const detailed = await runSoaDetailedInService(input, reporter);
+      const detailed = await runSoaDetailedInService(userId, input, reporter);
 
       let notify: { telegram: boolean; slack: boolean; error?: string } | null =
         null;
       if (input.notifyTelegram || input.notifySlack) {
         try {
-          const { notifySummaryPdf } =
-            await import("@/server/legacy/pay-credit-cards/notify");
-          const { isNotifyConfigured } =
-            await import("@/server/legacy/pay-credit-cards/config");
-          if (isNotifyConfigured()) {
+          const configured = await notificationService.isConfigured(userId);
+          if (configured) {
             if (input.notifyTelegram) {
               await reporter?.activate("telegram", "Sending to Telegram");
             } else if (input.notifySlack) {
               await reporter?.activate("slack", "Sending to Slack");
             }
-            const result = await notifySummaryPdf(
+            const result = await notificationService.notifySummaryPdf(
+              userId,
               detailed.notifyPdfPath,
               "SOA summary (automated)",
               {
@@ -605,22 +633,20 @@ export const soaService = {
       let calendar: {
         created: number;
         deleted: number;
+        notice?: string;
         error?: string;
       } | null = null;
       if (input.createCalendar) {
         try {
           await reporter?.activate("calendar", "Syncing Google Calendar");
-          const { createDueDateCalendarEvents } =
-            await import("@/server/legacy/pay-credit-cards/google-calendar");
-          const { calendarConfig } =
-            await import("@/server/legacy/pay-credit-cards/config");
-          const calResult = await createDueDateCalendarEvents(
+          const calResult = await googleCalendarService.createDueDateEvents(
+            userId,
             detailed.allRows,
-            calendarConfig.calendarId,
           );
           calendar = {
             created: calResult.created,
             deleted: calResult.deleted,
+            notice: calResult.notice,
           };
           await reporter?.completeStep("calendar");
         } catch (error) {
@@ -650,11 +676,10 @@ export const soaService = {
 
       await persistRunPdfs(userId, workDir, period.id, detailed, reporter);
 
-      const sync = await dueSyncService.syncFromLegacyFile(userId, workDir);
-
-      if (isMultiMonthPeriod(input)) {
-        await soaPeriodService.pruneRedundantSinglePeriods(userId);
-      }
+      const dueUpsert = await dueEntryUpsertService.upsertFromSoaRows(
+        userId,
+        detailed.allRows,
+      );
 
       const statementCount = saved + updated;
       const parsedCount = detailed.allRows.filter(
@@ -671,6 +696,7 @@ export const soaService = {
         mailboxEmail: gmailMailbox?.email ?? null,
         connectedEmail: gmailIntegration?.email ?? null,
         hasGmailReadScope: gmailMailbox?.hasGmailReadScope ?? true,
+        calendar,
       });
 
       const diagnostics = {
@@ -720,7 +746,9 @@ export const soaService = {
             }
           : null,
         gmailSearches: detailed.gmailSearches,
-        sync,
+        sync: {
+          synced: dueUpsert.added + dueUpsert.updated,
+        },
         persisted: { saved, updated, unavailable },
         calendar,
         notify,
@@ -745,7 +773,14 @@ export const soaService = {
     const seen = new Set<string>();
 
     for (const row of rows) {
-      const key = `${row.issuerId}:${row.cardLast4}:${row.statementYear}:${row.statementMonth}`;
+      const key = soaStatementIdentityKey({
+        issuerId: row.issuerId,
+        cardLast4: row.cardLast4,
+        statementYear: row.statementYear,
+        statementMonth: row.statementMonth,
+        sourceMessageId: row.sourceMessageId,
+        pdfFileName: row.pdfFileName,
+      });
       if (seen.has(key)) continue;
       seen.add(key);
       keepIds.add(row.id);
@@ -803,7 +838,7 @@ export const soaService = {
       return buffer;
     }
 
-    const cards = await creditCardService.listForLegacy(userId);
+    const cards = await creditCardService.listForSoaPipeline(userId);
     const creds = cards.filter(
       (c) =>
         c.issuer.toLowerCase() === stmt.issuerId.toLowerCase() &&

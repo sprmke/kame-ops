@@ -1,20 +1,37 @@
 import "server-only";
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 import { db } from "@/lib/db";
-import { creditCards, dueEntries, receipts } from "@/lib/db/schema";
+import {
+  creditCards,
+  dueEntries,
+  receipts,
+  soaStatements,
+} from "@/lib/db/schema";
 import type { CreditCardReceiptAiResult } from "@/lib/receipts/types";
+import {
+  AI_SKIP_NO_KEYS_MESSAGE,
+  isReceiptAiSkipped,
+  isReceiptAiSkippedNoKeys,
+  skippedReceiptAi,
+} from "@/lib/receipts/ai-skip";
 import { creditCardService } from "./credit-card.service";
-import { dueSyncService } from "./due-sync.service";
-import { prepareLegacyRuntime } from "./legacy-runtime.service";
+import {
+  markPaidService,
+  receiptPaymentFailureMessage,
+  buildReceiptConfirmationMessage,
+} from "./mark-paid.service";
+import { aiApiKeyService } from "./ai-api-key.service";
 import {
   shouldPersistReceiptValidation,
   validateCreditCardReceiptImage,
 } from "./receipt-validation.service";
 import { ReceiptUploadProgressReporter } from "./receipt-upload-progress.service";
 import { storageService } from "./storage.service";
+import { enrichDueEntriesWithSoaPeriod } from "./due-statement-period.service";
+import { matchReceiptToDue } from "@/lib/receipts/match-due";
 
 function mimeFromPath(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase();
@@ -23,6 +40,36 @@ function mimeFromPath(path: string): string {
   if (ext === "webp") return "image/webp";
   if (ext === "gif") return "image/gif";
   return "image/jpeg";
+}
+
+type ReceiptValidationRow = {
+  aiVerdict: string | null;
+  aiSummary: string | null;
+  aiAnalysis: {
+    confidence?: number | null;
+    hasAmount?: boolean;
+    hasDate?: boolean;
+    hasReference?: boolean;
+    isCreditCardPayment?: boolean;
+    paymentDate?: string;
+    referenceNumber?: string;
+    aiModelError?: string;
+  } | null;
+};
+
+function shouldApplyRevalidationResult(
+  ai: CreditCardReceiptAiResult,
+  row: ReceiptValidationRow,
+): boolean {
+  if (!shouldPersistReceiptValidation(ai)) return false;
+  if (
+    ai.verdict === "skipped" &&
+    row.aiVerdict &&
+    row.aiVerdict !== "skipped"
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function aiToParsedReceipt(ai: CreditCardReceiptAiResult) {
@@ -55,13 +102,149 @@ export type ReceiptProcessResult = {
       };
 };
 
+type ReceiptRow = typeof receipts.$inferSelect;
+
+function dueStatementKey(
+  issuerId: string,
+  cardLast4: string,
+  dueDateYmd: string,
+): string {
+  return `${issuerId}:${cardLast4}:${dueDateYmd}`;
+}
+
+async function loadStatementDateByDueKey(userId: string) {
+  const rows = await db.query.soaStatements.findMany({
+    where: eq(soaStatements.userId, userId),
+    columns: {
+      issuerId: true,
+      cardLast4: true,
+      dueDateYmd: true,
+      statementDate: true,
+    },
+  });
+
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    if (!row.dueDateYmd || !row.statementDate || row.statementDate === "—") {
+      continue;
+    }
+    map.set(
+      dueStatementKey(row.issuerId, row.cardLast4, row.dueDateYmd),
+      row.statementDate,
+    );
+  }
+  return map;
+}
+
 export const receiptService = {
-  async list(userId: string, limit = 50) {
-    return db.query.receipts.findMany({
+  async list(userId: string, limit = 100) {
+    const rows = await db.query.receipts.findMany({
       where: eq(receipts.userId, userId),
       orderBy: (t, { desc }) => [desc(t.createdAt)],
       limit,
     });
+
+    const dueEntryIds = rows
+      .map((row) => row.dueEntryId)
+      .filter((id): id is string => Boolean(id));
+
+    const [linkedDues, allDues] = await Promise.all([
+      dueEntryIds.length > 0
+        ? db.query.dueEntries.findMany({
+            where: and(
+              eq(dueEntries.userId, userId),
+              inArray(dueEntries.id, dueEntryIds),
+            ),
+          })
+        : Promise.resolve([]),
+      db.query.dueEntries.findMany({
+        where: eq(dueEntries.userId, userId),
+        orderBy: (t, { asc }) => [asc(t.dueDateYmd)],
+      }),
+    ]);
+
+    const enrichedDues = await enrichDueEntriesWithSoaPeriod(userId, allDues);
+    const enrichedById = new Map(enrichedDues.map((row) => [row.id, row]));
+    const dueCandidates = enrichedDues.map((row) => ({
+      id: row.id,
+      issuerId: row.issuerId,
+      cardLast4: row.cardLast4,
+      dueDateYmd: row.dueDateYmd,
+      statementPeriodKey: row.statementPeriodKey,
+      statementPeriodLabel: row.statementPeriodLabel,
+    }));
+
+    const dueById = new Map(linkedDues.map((row) => [row.id, row]));
+    const statementDateByDueKey = await loadStatementDateByDueKey(userId);
+
+    return rows.map((row) => {
+      const linked = row.dueEntryId ? dueById.get(row.dueEntryId) : undefined;
+      const matchedCandidate = matchReceiptToDue(dueCandidates, {
+        dueEntryId: linked?.id ?? row.dueEntryId,
+        parsedCardLast4: row.parsedCardLast4,
+        dueDateYmd: linked?.dueDateYmd ?? null,
+        aiAnalysis: row.aiAnalysis as
+          | { paymentDate?: string }
+          | null
+          | undefined,
+        createdAt: row.createdAt,
+      });
+      const due = matchedCandidate
+        ? enrichedById.get(matchedCandidate.id)
+        : undefined;
+      const statementDate =
+        due &&
+        statementDateByDueKey.get(
+          dueStatementKey(due.issuerId, due.cardLast4, due.dueDateYmd),
+        );
+
+      return {
+        ...row,
+        parsedAmount: row.parsedAmount ? Number(row.parsedAmount) : null,
+        cardDisplayLabel: due?.cardDisplayLabel ?? null,
+        bankLabel: due?.bankLabel ?? null,
+        dueEntryId: due?.id ?? row.dueEntryId ?? null,
+        dueDateYmd: due?.dueDateYmd ?? null,
+        statementDate: statementDate ?? null,
+        statementPeriodKey: due?.statementPeriodKey ?? null,
+        statementPeriodLabel: due?.statementPeriodLabel ?? null,
+        minimumDue: due?.minimumDue ?? null,
+        totalDue: due?.totalDue ?? null,
+      };
+    });
+  },
+
+  async getForUser(userId: string, receiptId: string) {
+    return db.query.receipts.findFirst({
+      where: and(eq(receipts.id, receiptId), eq(receipts.userId, userId)),
+    });
+  },
+
+  async delete(userId: string, receiptId: string) {
+    const row = await this.getForUser(userId, receiptId);
+    if (!row) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Receipt not found" });
+    }
+
+    if (row.dueEntryId) {
+      await db
+        .update(dueEntries)
+        .set({ receiptId: null })
+        .where(
+          and(
+            eq(dueEntries.id, row.dueEntryId),
+            eq(dueEntries.userId, userId),
+            eq(dueEntries.receiptId, receiptId),
+          ),
+        );
+    }
+
+    await storageService.deletePrivate(row.storagePath);
+    await db
+      .delete(receipts)
+      .where(and(eq(receipts.id, receiptId), eq(receipts.userId, userId)));
+
+    return { ok: true as const };
   },
 
   async listUnpaidDueEntries(userId: string) {
@@ -150,8 +333,39 @@ export const receiptService = {
     await reporter?.completeStep("prepare");
 
     const mimeType = mimeFromPath(input.originalFileName ?? input.storagePath);
+
+    if (!(await aiApiKeyService.hasConfiguredKeys(userId))) {
+      const ai = skippedReceiptAi(AI_SKIP_NO_KEYS_MESSAGE, "no_keys");
+      await reporter?.completeStep("validate");
+      await reporter?.activate("save", "Saving receipt details");
+
+      const [receiptRow] = await db
+        .insert(receipts)
+        .values({
+          userId,
+          storagePath: input.storagePath,
+          originalFileName: input.originalFileName,
+          aiVerdict: ai.verdict,
+          aiSummary: ai.summary,
+          paymentStatus: "pending",
+          status: "processed",
+        })
+        .returning();
+
+      await reporter?.complete();
+      return {
+        receipt: receiptRow!,
+        ai,
+        payment: {
+          ok: false,
+          reason: AI_SKIP_NO_KEYS_MESSAGE,
+          code: "ai_skipped_no_keys",
+        },
+      };
+    }
+
     await reporter?.activate("validate", "Analyzing receipt with AI");
-    const ai = await validateCreditCardReceiptImage(buffer, mimeType, {
+    const ai = await validateCreditCardReceiptImage(userId, buffer, mimeType, {
       knownCards,
       dueContext,
     });
@@ -191,6 +405,21 @@ export const receiptService = {
       .returning();
 
     await reporter?.completeStep("save");
+
+    if (isReceiptAiSkipped(ai)) {
+      await reporter?.complete();
+      return {
+        receipt: receiptRow!,
+        ai,
+        payment: {
+          ok: false,
+          reason: ai.summary,
+          code: isReceiptAiSkippedNoKeys(ai)
+            ? "ai_skipped_no_keys"
+            : "validate_only",
+        },
+      };
+    }
 
     if (ai.aiModelError) {
       await reporter?.fail(ai.aiModelError);
@@ -235,10 +464,6 @@ export const receiptService = {
       };
     }
 
-    const workDir = await prepareLegacyRuntime(userId);
-    const { markCardPaidFromReceipt } =
-      await import("@/server/legacy/pay-credit-cards/mark-paid");
-
     const parsed = aiToParsedReceipt(ai);
     await reporter?.activate(
       "mark_paid",
@@ -246,8 +471,9 @@ export const receiptService = {
         ? `Card •••• ${parsed.cardLast4}`
         : "Matching payment to due date",
     );
-    const payResult = await markCardPaidFromReceipt(parsed, {
+    const payResult = await markPaidService.markFromReceipt(userId, parsed, {
       caption: input.caption,
+      dueEntryId: input.dueEntryId,
     });
 
     if (!payResult.ok) {
@@ -256,13 +482,13 @@ export const receiptService = {
         .set({ paymentStatus: "rejected" })
         .where(eq(receipts.id, receiptRow!.id));
 
-      await reporter?.fail(paymentFailureMessage(payResult));
+      await reporter?.fail(receiptPaymentFailureMessage(payResult));
       return {
         receipt: receiptRow!,
         ai,
         payment: {
           ok: false,
-          reason: paymentFailureMessage(payResult),
+          reason: receiptPaymentFailureMessage(payResult),
           code: payResult.reason,
         },
       };
@@ -289,35 +515,20 @@ export const receiptService = {
       await reporter?.completeStep("calendar");
     }
 
-    const matchedEntry = await db.query.dueEntries.findFirst({
-      where: and(
-        eq(dueEntries.userId, userId),
-        eq(dueEntries.cardLast4, payResult.entry.cardLast4),
-        eq(dueEntries.dueDateYmd, payResult.entry.dueDateYMD),
-      ),
-    });
-
-    if (matchedEntry) {
-      await db
-        .update(dueEntries)
-        .set({
-          paidAt: new Date(),
-          paidAmount: String(payResult.amountPaid),
-          receiptId: receiptRow!.id,
-        })
-        .where(eq(dueEntries.id, matchedEntry.id));
-    }
+    await db
+      .update(dueEntries)
+      .set({ receiptId: receiptRow!.id })
+      .where(eq(dueEntries.id, payResult.entry.id));
 
     await db
       .update(receipts)
       .set({
         paymentStatus: "marked_paid",
-        dueEntryId: matchedEntry?.id,
+        dueEntryId: payResult.entry.id,
       })
       .where(eq(receipts.id, receiptRow!.id));
 
-    await reporter?.activate("sync", "Syncing paid status");
-    await dueSyncService.syncFromLegacyFile(userId, workDir);
+    await reporter?.activate("sync", "Saving");
     await reporter?.completeStep("sync");
     await reporter?.complete();
 
@@ -330,7 +541,7 @@ export const receiptService = {
       ai,
       payment: {
         ok: true,
-        dueEntryId: matchedEntry?.id ?? "",
+        dueEntryId: payResult.entry.id,
         amountPaid: payResult.amountPaid,
         belowTotalDue: payResult.belowTotalDue,
         remindersSuppressed: payResult.remindersSuppressed,
@@ -380,48 +591,217 @@ export const receiptService = {
       });
     }
 
-    const workDir = await prepareLegacyRuntime(userId);
-    const { markCardPaidFromReceipt } =
-      await import("@/server/legacy/pay-credit-cards/mark-paid");
-
-    const payResult = await markCardPaidFromReceipt(aiToParsedReceipt(ai));
+    const payResult = await markPaidService.markFromReceipt(
+      userId,
+      aiToParsedReceipt(ai),
+    );
     if (!payResult.ok) {
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: paymentFailureMessage(payResult),
+        message: receiptPaymentFailureMessage(payResult),
       });
     }
 
-    const matchedEntry = await db.query.dueEntries.findFirst({
-      where: and(
-        eq(dueEntries.userId, userId),
-        eq(dueEntries.cardLast4, payResult.entry.cardLast4),
-        eq(dueEntries.dueDateYmd, payResult.entry.dueDateYMD),
-      ),
-    });
-
-    if (matchedEntry) {
-      await db
-        .update(dueEntries)
-        .set({
-          paidAt: new Date(),
-          paidAmount: String(payResult.amountPaid),
-          receiptId: row.id,
-        })
-        .where(eq(dueEntries.id, matchedEntry.id));
-    }
+    await db
+      .update(dueEntries)
+      .set({ receiptId: row.id })
+      .where(eq(dueEntries.id, payResult.entry.id));
 
     await db
       .update(receipts)
       .set({
         paymentStatus: "marked_paid",
-        dueEntryId: matchedEntry?.id,
+        dueEntryId: payResult.entry.id,
       })
       .where(eq(receipts.id, row.id));
 
-    await dueSyncService.syncFromLegacyFile(userId, workDir);
+    return { ok: true as const, dueEntryId: payResult.entry.id };
+  },
 
-    return { ok: true as const, dueEntryId: matchedEntry?.id };
+  async revalidateWithAi(userId: string, receiptId: string) {
+    const row = await db.query.receipts.findFirst({
+      where: and(eq(receipts.id, receiptId), eq(receipts.userId, userId)),
+    });
+    if (!row) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Receipt not found" });
+    }
+
+    if (!(await aiApiKeyService.hasConfiguredKeys(userId))) {
+      const ai = skippedReceiptAi(AI_SKIP_NO_KEYS_MESSAGE, "no_keys");
+      return {
+        receipt: row,
+        ai,
+        paymentStatus: row.paymentStatus ?? "pending",
+      };
+    }
+
+    const buffer = await storageService.readPrivate(row.storagePath);
+    if (!buffer?.length) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Could not read receipt file",
+      });
+    }
+
+    const cards = await creditCardService.list(userId);
+    const knownCards = cards.map((c) => ({
+      last4: c.last4,
+      issuerId: c.issuer,
+      bankLabel: c.issuer,
+      displayLabel: c.label,
+    }));
+
+    let dueContext:
+      | {
+          cardLast4: string;
+          issuerId: string;
+          bankLabel: string;
+          dueDateYmd: string;
+          minimumDue: string;
+          totalDue: string;
+        }
+      | undefined;
+
+    if (row.dueEntryId) {
+      const due = await db.query.dueEntries.findFirst({
+        where: and(
+          eq(dueEntries.id, row.dueEntryId),
+          eq(dueEntries.userId, userId),
+        ),
+      });
+      if (due) {
+        dueContext = {
+          cardLast4: due.cardLast4,
+          issuerId: due.issuerId,
+          bankLabel: due.bankLabel,
+          dueDateYmd: due.dueDateYmd,
+          minimumDue: due.minimumDue,
+          totalDue: due.totalDue,
+        };
+      }
+    } else {
+      const allDues = await db.query.dueEntries.findMany({
+        where: eq(dueEntries.userId, userId),
+        orderBy: (t, { asc }) => [asc(t.dueDateYmd)],
+      });
+      const enrichedDues = await enrichDueEntriesWithSoaPeriod(userId, allDues);
+      const matched = matchReceiptToDue(
+        enrichedDues.map((due) => ({
+          id: due.id,
+          issuerId: due.issuerId,
+          cardLast4: due.cardLast4,
+          dueDateYmd: due.dueDateYmd,
+          statementPeriodKey: due.statementPeriodKey,
+          statementPeriodLabel: due.statementPeriodLabel,
+        })),
+        {
+          dueEntryId: row.dueEntryId,
+          parsedCardLast4: row.parsedCardLast4,
+          dueDateYmd: null,
+          aiAnalysis: row.aiAnalysis as
+            | { paymentDate?: string }
+            | null
+            | undefined,
+          createdAt: row.createdAt,
+        },
+      );
+      const fullDue = matched
+        ? enrichedDues.find((due) => due.id === matched.id)
+        : undefined;
+      if (fullDue) {
+        dueContext = {
+          cardLast4: fullDue.cardLast4,
+          issuerId: fullDue.issuerId,
+          bankLabel: fullDue.bankLabel,
+          dueDateYmd: fullDue.dueDateYmd,
+          minimumDue: fullDue.minimumDue,
+          totalDue: fullDue.totalDue,
+        };
+      }
+    }
+
+    const mimeType = mimeFromPath(row.originalFileName ?? row.storagePath);
+    const ai = await validateCreditCardReceiptImage(userId, buffer, mimeType, {
+      knownCards,
+      dueContext,
+    });
+
+    if (isReceiptAiSkippedNoKeys(ai)) {
+      return {
+        receipt: row,
+        ai,
+        paymentStatus: row.paymentStatus ?? "pending",
+      };
+    }
+
+    const extraction = ai.extraction;
+    const preserveMarkedPaid = row.paymentStatus === "marked_paid";
+    const applyValidation = shouldApplyRevalidationResult(ai, row);
+    const paymentStatus = preserveMarkedPaid
+      ? "marked_paid"
+      : applyValidation
+        ? ai.verdict === "invalid"
+          ? "rejected"
+          : "pending"
+        : (row.paymentStatus ?? "pending");
+
+    const nextAiAnalysis = applyValidation
+      ? {
+          confidence: ai.confidence,
+          hasAmount: ai.hasAmount,
+          hasDate: ai.hasDate,
+          hasReference: ai.hasReference,
+          isCreditCardPayment: ai.isCreditCardPayment,
+          paymentDate: extraction.paymentDate,
+          referenceNumber: extraction.referenceNumber,
+          aiModelError: ai.aiModelError,
+        }
+      : {
+          ...(row.aiAnalysis ?? {}),
+          aiModelError: ai.aiModelError ?? row.aiAnalysis?.aiModelError,
+        };
+
+    const [updated] = await db
+      .update(receipts)
+      .set({
+        parsedCardLast4: applyValidation
+          ? extraction.cardLast4
+          : row.parsedCardLast4,
+        parsedAmount: applyValidation
+          ? extraction.amount != null
+            ? String(extraction.amount)
+            : null
+          : row.parsedAmount,
+        parsedAmountRaw: applyValidation
+          ? extraction.amountRaw
+          : row.parsedAmountRaw,
+        bankDetected: applyValidation
+          ? extraction.bankOrWallet
+          : row.bankDetected,
+        aiVerdict: applyValidation ? ai.verdict : row.aiVerdict,
+        aiSummary: applyValidation ? ai.summary : row.aiSummary,
+        aiProvider: applyValidation ? ai.provider : row.aiProvider,
+        aiAnalysis: nextAiAnalysis,
+        paymentStatus,
+        status:
+          ai.aiModelError && !applyValidation
+            ? row.status
+            : ai.aiModelError
+              ? "error"
+              : "processed",
+      })
+      .where(and(eq(receipts.id, receiptId), eq(receipts.userId, userId)))
+      .returning();
+
+    if (!updated) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Receipt not found" });
+    }
+
+    return {
+      receipt: updated,
+      ai,
+      paymentStatus,
+    };
   },
 
   async processTelegramReceipt(
@@ -440,43 +820,32 @@ export const receiptService = {
       displayLabel: c.label,
     }));
 
-    const ai = await validateCreditCardReceiptImage(imageBytes, mimeType, {
-      knownCards,
-    });
+    const ai = await validateCreditCardReceiptImage(
+      userId,
+      imageBytes,
+      mimeType,
+      {
+        knownCards,
+      },
+    );
+
+    if (isReceiptAiSkipped(ai)) {
+      return {
+        ai,
+        payResult: null,
+        message: ai.summary,
+      };
+    }
 
     if (ai.aiModelError) {
       return { ai, payResult: null, error: ai.aiModelError };
     }
 
-    await prepareLegacyRuntime(userId);
-    const { markCardPaidFromReceipt, buildReceiptConfirmationMessage } =
-      await import("@/server/legacy/pay-credit-cards/mark-paid");
-
-    const payResult = await markCardPaidFromReceipt(aiToParsedReceipt(ai), {
-      caption,
-    });
-
-    if (payResult.ok) {
-      const workDir = process.env.DATA_DIR!;
-      await dueSyncService.syncFromLegacyFile(userId, workDir);
-
-      const matchedEntry = await db.query.dueEntries.findFirst({
-        where: and(
-          eq(dueEntries.userId, userId),
-          eq(dueEntries.cardLast4, payResult.entry.cardLast4),
-          eq(dueEntries.dueDateYmd, payResult.entry.dueDateYMD),
-        ),
-      });
-      if (matchedEntry) {
-        await db
-          .update(dueEntries)
-          .set({
-            paidAt: new Date(),
-            paidAmount: String(payResult.amountPaid),
-          })
-          .where(eq(dueEntries.id, matchedEntry.id));
-      }
-    }
+    const payResult = await markPaidService.markFromReceipt(
+      userId,
+      aiToParsedReceipt(ai),
+      { caption },
+    );
 
     return {
       ai,
@@ -485,31 +854,3 @@ export const receiptService = {
     };
   },
 };
-
-function paymentFailureMessage(
-  result: Extract<
-    Awaited<
-      ReturnType<
-        typeof import("@/server/legacy/pay-credit-cards/mark-paid").markCardPaidFromReceipt
-      >
-    >,
-    { ok: false }
-  >,
-): string {
-  switch (result.reason) {
-    case "no_card_detected":
-      return "Card number not detected on receipt";
-    case "no_amount_detected":
-      return "Payment amount not detected on receipt";
-    case "no_due_entry":
-      return "No matching due entry — run SOA first";
-    case "already_paid":
-      return "This card is already marked paid";
-    case "ambiguous_card":
-      return "Multiple cards match — add a month caption";
-    case "amount_below_minimum":
-      return "Amount is below minimum due";
-    default:
-      return "Could not confirm payment";
-  }
-}

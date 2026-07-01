@@ -1,90 +1,134 @@
-import { and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
-import { db } from "@/lib/db";
-import { dueEntries } from "@/lib/db/schema";
-import { dueSyncService } from "./due-sync.service";
-import { prepareLegacyRuntime } from "./legacy-runtime.service";
+import { DueActionProgressReporter } from "./due-action-progress.service";
+import { markPaidService } from "./mark-paid.service";
+import { deleteReceiptsForDueEntry } from "./receipt-cleanup.service";
 
 export const dueEntryService = {
-  async markPaid(userId: string, dueEntryId: string) {
-    const entry = await db.query.dueEntries.findFirst({
-      where: and(eq(dueEntries.id, dueEntryId), eq(dueEntries.userId, userId)),
-    });
-    if (!entry) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Due entry not found",
-      });
+  async markPaid(userId: string, dueEntryId: string, processId?: string) {
+    let reporter: DueActionProgressReporter | null = null;
+    if (processId) {
+      reporter = await DueActionProgressReporter.create(
+        userId,
+        processId,
+        "mark_paid",
+      );
+      await reporter.activate("prepare", "Loading due entry");
     }
 
-    const workDir = await prepareLegacyRuntime(userId);
-    const monthYM = entry.dueDateYmd.slice(0, 7);
+    try {
+      await reporter?.completeStep("prepare");
+      await reporter?.activate("mark", "Updating paid status");
 
-    const { markCardPaid } =
-      await import("@/server/legacy/pay-credit-cards/mark-paid");
-    const result = await markCardPaid(entry.cardLast4, monthYM, false);
+      const result = await markPaidService.markByDueEntryId(userId, dueEntryId);
 
-    if (!result.ok) {
-      if (result.reason === "not_found") {
-        await db
-          .update(dueEntries)
-          .set({ paidAt: new Date() })
-          .where(eq(dueEntries.id, dueEntryId));
-        await dueSyncService.syncFromLegacyFile(userId, workDir);
-        return { ok: true, mode: "db_only" as const };
+      if (!result.ok) {
+        await reporter?.fail("Due entry not found");
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Due entry not found",
+        });
       }
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message:
-          result.reason === "ambiguous"
-            ? "Multiple cards match this last-4. Use a more specific entry."
-            : "Could not mark as paid",
-      });
+
+      await reporter?.completeStep("mark");
+      await reporter?.activate(
+        "reminders",
+        result.remindersSuppressed > 0
+          ? `${result.remindersSuppressed} reminder(s) silenced`
+          : "Updating reminder status",
+      );
+      await reporter?.completeStep("reminders");
+      await reporter?.activate("sync", "Saving");
+      await reporter?.completeStep("sync");
+      await reporter?.complete();
+
+      return {
+        ok: true,
+        mode: "full" as const,
+        remindersSuppressed: result.remindersSuppressed,
+        calendarUpdated: result.calendarUpdated,
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      await reporter?.fail(message);
+      throw error;
+    } finally {
+      await reporter?.flush();
     }
-
-    await db
-      .update(dueEntries)
-      .set({ paidAt: new Date() })
-      .where(eq(dueEntries.id, dueEntryId));
-
-    await dueSyncService.syncFromLegacyFile(userId, workDir);
-    return {
-      ok: true,
-      mode: "full" as const,
-      remindersSuppressed: result.remindersSuppressed,
-    };
   },
 
-  async markUnpaid(userId: string, dueEntryId: string) {
-    const entry = await db.query.dueEntries.findFirst({
-      where: and(eq(dueEntries.id, dueEntryId), eq(dueEntries.userId, userId)),
-    });
-    if (!entry) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Due entry not found",
-      });
+  async markUnpaid(userId: string, dueEntryId: string, processId?: string) {
+    let reporter: DueActionProgressReporter | null = null;
+    if (processId) {
+      reporter = await DueActionProgressReporter.create(
+        userId,
+        processId,
+        "mark_unpaid",
+      );
+      await reporter.activate("prepare", "Loading due entry");
     }
 
-    const workDir = await prepareLegacyRuntime(userId);
-    const monthYM = entry.dueDateYmd.slice(0, 7);
+    try {
+      await reporter?.completeStep("prepare");
+      await reporter?.activate("mark", "Updating unpaid status");
 
-    const { markCardUnpaid } =
-      await import("@/server/legacy/pay-credit-cards/mark-paid");
-    const result = await markCardUnpaid(entry.cardLast4, monthYM, false);
+      const result = await markPaidService.markUnpaidByDueEntryId(
+        userId,
+        dueEntryId,
+        { skipReceiptRemoval: true },
+      );
 
-    await db
-      .update(dueEntries)
-      .set({ paidAt: null, paidAmount: null })
-      .where(eq(dueEntries.id, dueEntryId));
+      if (!result.ok) {
+        if (result.reason === "not_found") {
+          await reporter?.fail("Due entry not found");
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Due entry not found",
+          });
+        }
+        if (result.reason === "already_unpaid") {
+          await reporter?.complete();
+          return { ok: true, mode: "db_only" as const };
+        }
+        await reporter?.fail("Could not mark as unpaid");
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Could not mark as unpaid",
+        });
+      }
 
-    await dueSyncService.syncFromLegacyFile(userId, workDir);
+      await reporter?.completeStep("mark");
+      await reporter?.activate("receipt", "Removing payment receipt");
 
-    if (!result.ok && result.reason === "not_found") {
-      return { ok: true, mode: "db_only" as const };
+      const receiptsRemoved = await deleteReceiptsForDueEntry(
+        userId,
+        result.entry,
+      );
+
+      await reporter?.completeStep("receipt");
+      await reporter?.activate(
+        "sync",
+        receiptsRemoved > 0
+          ? `${receiptsRemoved} receipt(s) removed`
+          : "Saving",
+      );
+      await reporter?.completeStep("sync");
+      await reporter?.complete();
+
+      return {
+        ok: true,
+        mode: "full" as const,
+        remindersRestored: result.remindersRestored,
+        receiptsRemoved,
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      await reporter?.fail(message);
+      throw error;
+    } finally {
+      await reporter?.flush();
     }
-
-    return { ok: true, mode: "full" as const };
   },
 };

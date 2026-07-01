@@ -3,7 +3,7 @@ import "server-only";
 import { readFile } from "fs/promises";
 
 import { getQpdfModule } from "@/server/lib/qpdf-engine";
-import type { CardCredential } from "@/server/legacy/pay-credit-cards/types";
+import type { CardCredential } from "@/lib/soa/types";
 
 export const UNLOCKED_PDF_PREFIX = "unlocked-";
 
