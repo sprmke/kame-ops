@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
 
+import {
+  parsePaidMessage,
+  parseUnpaidMessage,
+} from "@/lib/mark-paid/parse-messages";
+import {
+  buildPaidConfirmationMessage,
+  buildUnpaidConfirmationMessage,
+} from "@/lib/mark-paid/messages";
+import { downloadTelegramFile } from "@/lib/integrations/telegram-files";
 import { integrationService } from "@/server/services/integration.service";
-import { prepareLegacyRuntime } from "@/server/services/legacy-runtime.service";
+import { markPaidService } from "@/server/services/mark-paid.service";
 
 type TgPhotoSize = { file_id: string; width: number; height: number };
 type TgDocument = { file_id: string; mime_type?: string };
@@ -50,8 +59,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, skipped: "no_bot_token" });
   }
 
-  await prepareLegacyRuntime(userId);
-
   if (msg.photo?.length) {
     const largest = pickLargestPhoto(msg.photo);
     if (largest) {
@@ -70,41 +77,33 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, skipped: "no_text" });
   }
 
-  const {
-    parsePaidMessage,
-    parseUnpaidMessage,
-    markCardPaid,
-    markCardUnpaid,
-    buildPaidConfirmationMessage,
-    buildUnpaidConfirmationMessage,
-  } = await import("@/server/legacy/pay-credit-cards/mark-paid");
-
-  const { dueSyncService } = await import("@/server/services/due-sync.service");
-  const workDir = process.env.DATA_DIR!;
-
   const paid = parsePaidMessage(text);
   if (paid) {
-    const result = await markCardPaid(paid.cardLast4, paid.monthYM);
-    await dueSyncService.syncFromLegacyFile(userId, workDir);
-    const reply =
-      result.ok === true
-        ? buildPaidConfirmationMessage(result)
-        : result.reason === "not_found"
-          ? `No due entry for •••• ${paid.cardLast4} in ${paid.monthYM}`
-          : "Multiple cards match — specify issuer in CLI";
-    await sendTelegramReply(botToken, msg.chat.id, reply);
+    const result = await markPaidService.markByCardAndMonth(
+      userId,
+      paid.cardLast4,
+      paid.monthYM,
+    );
+    await sendTelegramReply(
+      botToken,
+      msg.chat.id,
+      buildPaidConfirmationMessage(result),
+    );
     return NextResponse.json({ ok: true, action: "mark_paid" });
   }
 
   const unpaid = parseUnpaidMessage(text);
   if (unpaid) {
-    const result = await markCardUnpaid(unpaid.cardLast4, unpaid.monthYM);
-    await dueSyncService.syncFromLegacyFile(userId, workDir);
-    const reply =
-      result.ok === true
-        ? buildUnpaidConfirmationMessage(result)
-        : `Could not mark unpaid for •••• ${unpaid.cardLast4}`;
-    await sendTelegramReply(botToken, msg.chat.id, reply);
+    const result = await markPaidService.markUnpaidByCardAndMonth(
+      userId,
+      unpaid.cardLast4,
+      unpaid.monthYM,
+    );
+    await sendTelegramReply(
+      botToken,
+      msg.chat.id,
+      buildUnpaidConfirmationMessage(result),
+    );
     return NextResponse.json({ ok: true, action: "mark_unpaid" });
   }
 
@@ -140,8 +139,6 @@ async function handleReceiptPhoto(
     "⏳ Receipt received! Validating your payment…",
   );
 
-  const { downloadTelegramFile } =
-    await import("@/server/legacy/pay-credit-cards/receipt-utils");
   const { receiptService } = await import("@/server/services/receipt.service");
 
   let reply: string;
