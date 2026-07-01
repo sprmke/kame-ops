@@ -1,5 +1,5 @@
-import { RemindersPage } from "@/features/dashboard/reminders/components/RemindersPage";
+import { RemindersHubPage } from "@/components/dashboard/RemindersHubPage";
 
 export default function Page() {
-  return <RemindersPage />;
+  return <RemindersHubPage />;
 }
