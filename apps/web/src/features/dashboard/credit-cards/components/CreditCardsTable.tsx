@@ -6,6 +6,7 @@ import {
   ClickableTableRow,
   TableRowActions,
 } from "@/components/shared/ClickableTableRow";
+import { TableCard } from "@/components/shared/TableCard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,7 +53,7 @@ export function CreditCardsTable({
   onDelete,
 }: CreditCardsTableProps) {
   return (
-    <div className="overflow-hidden rounded-lg border border-border/80">
+    <TableCard>
       <Table>
         <TableHeader>
           <TableRow>
@@ -106,7 +107,7 @@ export function CreditCardsTable({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8"
+                        className="shrink-0"
                         aria-label="Card actions"
                       >
                         <MoreHorizontal className="h-4 w-4" />
@@ -133,6 +134,6 @@ export function CreditCardsTable({
           })}
         </TableBody>
       </Table>
-    </div>
+    </TableCard>
   );
 }
