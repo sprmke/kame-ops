@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { TransactionCategoryRulesContentSkeleton } from "@/components/shared/skeletons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -15,10 +16,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api } from "@/lib/api/client";
-import {
-  categoryLabel,
-  type TransactionCategorySlug,
-} from "@/lib/transactions/categories";
 
 export function TransactionCategoryRulesSettings() {
   const utils = api.useUtils();
@@ -27,8 +24,7 @@ export function TransactionCategoryRulesSettings() {
   const { data: options } = api.transactionCategories.listOptions.useQuery();
 
   const [keyword, setKeyword] = useState("");
-  const [categorySlug, setCategorySlug] =
-    useState<TransactionCategorySlug>("store_shopping");
+  const [categorySlug, setCategorySlug] = useState("store_shopping");
 
   const createRule = api.transactionCategories.createRule.useMutation({
     onSuccess: () => {
@@ -50,7 +46,7 @@ export function TransactionCategoryRulesSettings() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Transaction categories</CardTitle>
+        <CardTitle className="text-base">Category rules</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <form
@@ -67,10 +63,7 @@ export function TransactionCategoryRulesSettings() {
             onChange={(e) => setKeyword(e.target.value)}
             className="sm:flex-1"
           />
-          <Select
-            value={categorySlug}
-            onValueChange={(v) => setCategorySlug(v as TransactionCategorySlug)}
-          >
+          <Select value={categorySlug} onValueChange={setCategorySlug}>
             <SelectTrigger className="sm:w-[200px]">
               <SelectValue />
             </SelectTrigger>
@@ -94,11 +87,11 @@ export function TransactionCategoryRulesSettings() {
         </form>
 
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading rules…</p>
+          <TransactionCategoryRulesContentSkeleton />
         ) : !rules?.length ? (
           <p className="text-sm text-muted-foreground">No custom rules yet.</p>
         ) : (
-          <ul className="divide-y divide-border/60 rounded-lg border border-border/80">
+          <ul className="max-h-80 divide-y divide-border/60 overflow-y-auto rounded-lg border border-border/80">
             {rules.map((rule) => (
               <li
                 key={rule.id}
@@ -110,9 +103,8 @@ export function TransactionCategoryRulesSettings() {
                   </span>
                   <span className="mx-2 text-muted-foreground">→</span>
                   <span>
-                    {categoryLabel(
-                      rule.categorySlug as TransactionCategorySlug,
-                    )}
+                    {options?.find((o) => o.slug === rule.categorySlug)
+                      ?.label ?? rule.categorySlug}
                   </span>
                   {rule.source === "learned" && (
                     <span className="ml-2 text-xs text-muted-foreground">
@@ -123,7 +115,7 @@ export function TransactionCategoryRulesSettings() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 shrink-0"
+                  className="shrink-0"
                   aria-label="Delete rule"
                   onClick={() => deleteRule.mutate({ ruleId: rule.id })}
                 >
