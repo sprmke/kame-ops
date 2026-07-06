@@ -8,7 +8,7 @@ import {
   normalizeScheduleInput,
   readScheduleConfigFromJob,
   scheduleConfigToStorageString,
-  isScheduleDue,
+  isAutomationJobDue,
   type AutomationScheduleInput,
 } from "@/lib/automations/schedule";
 import { db } from "@/lib/db";
@@ -291,7 +291,12 @@ export const automationService = {
       const timezone = job.user?.timezone ?? "Asia/Manila";
       const scheduleConfig = readScheduleConfigFromJob(job);
 
-      if (!isScheduleDue(scheduleConfig, timezone, now, job.lastRunAt)) {
+      if (
+        !isAutomationJobDue(scheduleConfig, timezone, now, {
+          lastRunAt: job.lastRunAt,
+          nextRunAt: job.nextRunAt,
+        })
+      ) {
         results.push({
           jobId: job.id,
           userId: job.userId,

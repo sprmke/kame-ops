@@ -4,19 +4,19 @@
 --
 -- One-time Vault secrets (Supabase Dashboard → SQL Editor):
 --
---   SELECT vault.create_secret('https://kame-ops-web.vercel.app', 'kame_ops_app_url');
+--   SELECT vault.create_secret('https://kame-ops.vercel.app', 'kame_ops_app_url');
 --   SELECT vault.create_secret('<same value as CRON_SECRET in Vercel>', 'kame_ops_cron_secret');
 --
 -- Then run the sync at the bottom of this file (or: SELECT public.sync_kame_ops_automation_dispatch_cron_job();)
 
-CREATE EXTENSION IF NOT EXISTS pg_cron;
-CREATE EXTENSION IF NOT EXISTS pg_net;
+CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
 
 CREATE OR REPLACE FUNCTION public.sync_kame_ops_automation_dispatch_cron_job()
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, cron, vault, pg_temp
+SET search_path = public, extensions, cron, vault, pg_temp
 AS $fn$
 DECLARE
   r RECORD;

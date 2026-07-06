@@ -263,6 +263,29 @@ export function isScheduleDue(
   return true;
 }
 
+/** Whether an active job should run on this dispatch tick (includes overdue catch-up). */
+export function isAutomationJobDue(
+  config: AutomationScheduleConfig,
+  timeZone: string,
+  now: Date,
+  options?: {
+    lastRunAt?: Date | null;
+    nextRunAt?: Date | null;
+  },
+): boolean {
+  const lastRunAt = options?.lastRunAt;
+  const nextRunAt = options?.nextRunAt;
+
+  if (nextRunAt && nextRunAt.getTime() <= now.getTime()) {
+    if (lastRunAt && lastRunAt.getTime() >= nextRunAt.getTime()) {
+      return isScheduleDue(config, timeZone, now, lastRunAt);
+    }
+    return true;
+  }
+
+  return isScheduleDue(config, timeZone, now, lastRunAt);
+}
+
 function zonedLocalToUtc(
   parts: Omit<ZonedDateParts, "dayOfWeek">,
   timeZone: string,

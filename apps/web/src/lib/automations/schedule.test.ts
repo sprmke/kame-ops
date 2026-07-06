@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeNextRunAt,
   formatScheduleLabel,
+  isAutomationJobDue,
   isScheduleDue,
   normalizeScheduleInput,
   parseLegacyCronSchedule,
@@ -65,5 +66,42 @@ describe("automation schedule", () => {
     const from = new Date("2026-06-29T00:05:00.000Z");
     const next = computeNextRunAt(config, "Asia/Manila", from);
     expect(next.getTime()).toBeGreaterThan(from.getTime());
+  });
+
+  it("runs overdue jobs when nextRunAt is in the past", () => {
+    const config = normalizeScheduleInput({
+      frequency: "daily",
+      hour: 12,
+      minute: 0,
+    });
+    const now = new Date("2026-07-07T01:16:00.000+08:00");
+    const lastRunAt = new Date("2026-06-29T14:46:00.000+08:00");
+    const nextRunAt = new Date("2026-06-30T12:00:00.000+08:00");
+
+    expect(
+      isAutomationJobDue(config, "Asia/Manila", now, {
+        lastRunAt,
+        nextRunAt,
+      }),
+    ).toBe(true);
+    expect(isScheduleDue(config, "Asia/Manila", now, lastRunAt)).toBe(false);
+  });
+
+  it("skips overdue jobs already completed for the due window", () => {
+    const config = normalizeScheduleInput({
+      frequency: "daily",
+      hour: 12,
+      minute: 0,
+    });
+    const now = new Date("2026-07-07T12:30:00.000+08:00");
+    const lastRunAt = new Date("2026-07-07T12:01:00.000+08:00");
+    const nextRunAt = new Date("2026-07-07T12:00:00.000+08:00");
+
+    expect(
+      isAutomationJobDue(config, "Asia/Manila", now, {
+        lastRunAt,
+        nextRunAt,
+      }),
+    ).toBe(false);
   });
 });
