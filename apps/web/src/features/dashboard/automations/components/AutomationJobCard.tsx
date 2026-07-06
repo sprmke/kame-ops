@@ -160,7 +160,11 @@ export function AutomationJobCard({
         {job.nextRunAt && job.isActive && (
           <p className="text-xs text-muted-foreground">
             Next run{" "}
-            {formatDistanceToNow(new Date(job.nextRunAt), { addSuffix: true })}
+            {new Date(job.nextRunAt) <= new Date()
+              ? "now"
+              : formatDistanceToNow(new Date(job.nextRunAt), {
+                  addSuffix: true,
+                })}
           </p>
         )}
         {job.lastRunAt && (
