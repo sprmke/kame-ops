@@ -1,4 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "cd ../.. && bun install --linker hoisted"
+  "installCommand": "cd ../.. && bun install --linker hoisted",
+  "crons": [
+    {
+      "path": "/api/cron/dispatch",
+      "schedule": "0 4 * * *"
+    }
+  ]
 }
