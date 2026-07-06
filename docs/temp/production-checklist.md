@@ -22,7 +22,8 @@ See **`docs/temp/supabase-setup.md`** for the full walkthrough.
 - [ ] Set production env vars (see below)
 - [ ] Remove `SKIP_ENV_VALIDATION` in production
 - [ ] Deploy and verify `/login` + `/dashboard`
-- [ ] Schedule automation dispatch via **Supabase pg_cron** (see **`docs/temp/scheduled-jobs-and-testing.md`**) — not `vercel.json` on Hobby
+- [x] Schedule automation dispatch via **Supabase pg_cron** (see **`docs/temp/scheduled-jobs-and-testing.md`**) — Vault secrets + `sync_kame_ops_automation_dispatch_cron_job()` on project `elfgaejqxipbyylhwgxx`
+- [x] Vercel daily fallback cron in `apps/web/vercel.json` (`0 4 * * *` UTC)
 
 ### Telegram
 
@@ -79,7 +80,7 @@ See **`docs/temp/supabase-setup.md`** for the full walkthrough.
 | ------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------- |
 | `GET /api/cron/dispatch` on `NEXT_PUBLIC_APP_URL` | `* * * * *`    | Every minute via **`pg_cron` + `pg_net`** in Supabase; see **`docs/temp/scheduled-jobs-and-testing.md`** |
 
-Not configured in `vercel.json` (Vercel Hobby allows at most one cron per day).
+`apps/web/vercel.json` also schedules the same route **once daily** at `0 4 * * *` UTC (12:00 PM Manila) as a Hobby-plan fallback. Dispatcher runs overdue jobs when `next_run_at` is in the past.
 
 Cron requests must include: `Authorization: Bearer <CRON_SECRET>` (stored in Supabase Vault as `kame_ops_cron_secret`).
 

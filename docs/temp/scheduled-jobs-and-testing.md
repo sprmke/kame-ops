@@ -1,14 +1,15 @@
 # Scheduled jobs (Supabase pg_cron)
 
-KameOps runs due automations and payment reminders via **`GET /api/cron/dispatch`**. On **Vercel Hobby**, that route is **not** scheduled in `vercel.json` (sub-daily Vercel Cron requires Pro). Production uses **Supabase `pg_cron` + `pg_net`** instead.
+KameOps runs due automations and payment reminders via **`GET /api/cron/dispatch`**. Production uses **Supabase `pg_cron` + `pg_net`** (every minute). **Vercel Hobby** also has a **daily fallback** cron in `vercel.json` (`0 4 * * *` UTC = 12:00 PM Asia/Manila).
 
 ## What the dispatcher does
 
-Every minute, the cron job HTTP-calls your deployed app. The handler:
+Every minute (pg_cron) or once daily (Vercel fallback), the cron job HTTP-calls your deployed app. The handler:
 
 1. Verifies `Authorization: Bearer <CRON_SECRET>`
 2. Runs `automationService.dispatchDueJobs()` — evaluates each active `automation_jobs` row against the user's timezone schedule (daily / weekly / monthly + time)
-3. Runs `send_due_reminders` when due; respects per-card **reminder interval** (hourly, every 2h, etc.) via `reminder_logs`
+3. **Overdue catch-up:** if `next_run_at` is in the past and the job has not run since that due time, it runs immediately (not only at the exact scheduled minute)
+4. Runs `send_due_reminders` when due; respects per-card **reminder interval** (hourly, every 2h, etc.) via `reminder_logs`
 
 Manual **Run now** in the Automations UI still works without pg_cron.
 
@@ -28,7 +29,7 @@ create extension if not exists pg_net with schema extensions;
 Use the same values as Vercel env vars. No trailing slash on the app URL.
 
 ```sql
-select vault.create_secret('https://kame-ops-web.vercel.app', 'kame_ops_app_url');
+select vault.create_secret('https://kame-ops.vercel.app', 'kame_ops_app_url');
 select vault.create_secret('<CRON_SECRET from Vercel>', 'kame_ops_cron_secret');
 ```
 
@@ -70,18 +71,19 @@ Production:
 
 ```bash
 curl -sS -H "Authorization: Bearer $CRON_SECRET" \
-  "https://kame-ops-web.vercel.app/api/cron/dispatch"
+  "https://kame-ops.vercel.app/api/cron/dispatch"
 ```
 
 ## Troubleshooting
 
-| Symptom                          | Check                                                                                |
-| -------------------------------- | ------------------------------------------------------------------------------------ |
-| Deploy blocked on Vercel Hobby   | Ensure `crons` is **removed** from `apps/web/vercel.json`                            |
-| `401 Unauthorized` from dispatch | `kame_ops_cron_secret` in Vault must match Vercel `CRON_SECRET`                      |
-| Jobs never run at scheduled time | pg_cron must fire every minute; user schedule is timezone-aware (`users.timezone`)   |
-| `sync_…` returns missing Vault   | Create both `kame_ops_app_url` and `kame_ops_cron_secret` first                      |
-| Reminders only once per day      | Confirm minute cron is active; card interval &lt; 1440 needs frequent dispatch ticks |
+| Symptom                            | Check                                                                                                          |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Deploy blocked on Vercel Hobby     | `vercel.json` allows **one** daily cron (`0 4 * * *`); minute-level dispatch still needs Supabase pg_cron      |
+| Jobs stuck with "Next run" overdue | Deploy overdue catch-up (`isAutomationJobDue`); confirm pg_cron job is active; run dispatch manually to verify |
+| `401 Unauthorized` from dispatch   | `kame_ops_cron_secret` in Vault must match Vercel `CRON_SECRET`                                                |
+| Jobs never run at scheduled time   | pg_cron must fire every minute; user schedule is timezone-aware (`users.timezone`)                             |
+| `sync_…` returns missing Vault     | Create both `kame_ops_app_url` and `kame_ops_cron_secret` first                                                |
+| Reminders only once per day        | Confirm minute cron is active; card interval &lt; 1440 needs frequent dispatch ticks                           |
 
 ## Related
 

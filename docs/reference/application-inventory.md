@@ -41,15 +41,15 @@
 
 ## REST / webhooks
 
-| Route                         | Purpose                                                                                                                                                                    | Status      |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| `POST /api/auth/register`     | Removed — use Google sign-in                                                                                                                                               | —           |
-| `GET /api/cron/dispatch`      | Cron: run due `automation_jobs` + payment reminders (Bearer `CRON_SECRET`); triggered by **Supabase pg_cron** every minute — see `docs/temp/scheduled-jobs-and-testing.md` | Implemented |
-| `GET /api/health/engines`     | Local prod verify: pdf/qpdf engine status (localhost only)                                                                                                                 | Implemented |
-| `GET /api/soa/pdf`            | Stream SOA source or period summary PDF (auth); resolves storage paths or temp workdir                                                                                     | Implemented |
-| `POST /api/webhooks/telegram` | Telegram updates (text + receipt photos)                                                                                                                                   | Implemented |
-| `POST /api/receipts/upload`   | Receipt file upload (Supabase or local)                                                                                                                                    | Implemented |
-| `GET /api/receipts/file`      | Stream receipt image/PDF for authenticated user (`receiptId`)                                                                                                              | Implemented |
+| Route                         | Purpose                                                                                                                                                                                                                            | Status      |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| `POST /api/auth/register`     | Removed — use Google sign-in                                                                                                                                                                                                       | —           |
+| `GET /api/cron/dispatch`      | Cron: run due `automation_jobs` + payment reminders (Bearer `CRON_SECRET`); **Supabase pg_cron** every minute + Vercel daily fallback; overdue jobs run when `next_run_at` is past — see `docs/temp/scheduled-jobs-and-testing.md` | Implemented |
+| `GET /api/health/engines`     | Local prod verify: pdf/qpdf engine status (localhost only)                                                                                                                                                                         | Implemented |
+| `GET /api/soa/pdf`            | Stream SOA source or period summary PDF (auth); resolves storage paths or temp workdir                                                                                                                                             | Implemented |
+| `POST /api/webhooks/telegram` | Telegram updates (text + receipt photos)                                                                                                                                                                                           | Implemented |
+| `POST /api/receipts/upload`   | Receipt file upload (Supabase or local)                                                                                                                                                                                            | Implemented |
+| `GET /api/receipts/file`      | Stream receipt image/PDF for authenticated user (`receiptId`)                                                                                                                                                                      | Implemented |
 
 ## Database (Drizzle)
 
@@ -71,24 +71,24 @@
 
 ## Services (server)
 
-| Service                         | Purpose                                                                                                                                                       |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gmail.service.ts`              | Google OAuth tokens + env bridge for `lib/soa` Gmail fetch                                                                                                    |
-| `storage.service.ts`            | Supabase Storage uploads + local fallback                                                                                                                     |
-| `integration.service.ts`        | Encrypted per-user integrations                                                                                                                               |
-| `receipt-validation.service.ts` | Gemini/Groq vision validation — keys from `ai_api_keys` only (Settings)                                                                                       |
-| `receipt.service.ts`            | Receipt upload processing + mark paid                                                                                                                         |
-| `soa-workdir.service.ts`        | Per-user SOA workdir + `CARDS_JSON` / OAuth env for Gmail/PDF parse                                                                                           |
-| `mark-paid.service.ts`          | Native mark paid/unpaid/receipt (Postgres + `reminder_logs` + calendar)                                                                                       |
-| `due-entry-upsert.service.ts`   | Upsert `due_entries` from SOA rows (no JSON state file)                                                                                                       |
-| `due-entry-query.service.ts`    | Due entry lookup for mark-paid and receipts                                                                                                                   |
-| `google-calendar.service.ts`    | Per-user calendar ID + OAuth; wraps `lib/soa/google-calendar.ts`                                                                                              |
-| `notification.service.ts`       | Native Telegram/Slack sends via `integration.service`                                                                                                         |
-| `reminder-log.service.ts`       | `reminder_logs` idempotency                                                                                                                                   |
-| `send-due-reminders.service.ts` | Native due reminder dispatch                                                                                                                                  |
-| `default-automation.service.ts` | Idempotent seed of default payment reminders + SOA Gmail check jobs; dedupes managed job types; migrates non-daily reminder schedules to daily                |
-| `automation.service.ts`         | Job CRUD, dispatch, run-now; production cron via Supabase **pg_cron** → `/api/cron/dispatch`; `send_due_reminders` updates lock schedule to daily (time only) |
-| `overview.service.ts`           | Dashboard snapshot: current period mission data, shared spend/summary stats, reminder attention flags                                                         |
+| Service                         | Purpose                                                                                                                                                                                                                                       |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gmail.service.ts`              | Google OAuth tokens + env bridge for `lib/soa` Gmail fetch                                                                                                                                                                                    |
+| `storage.service.ts`            | Supabase Storage uploads + local fallback                                                                                                                                                                                                     |
+| `integration.service.ts`        | Encrypted per-user integrations                                                                                                                                                                                                               |
+| `receipt-validation.service.ts` | Gemini/Groq vision validation — keys from `ai_api_keys` only (Settings)                                                                                                                                                                       |
+| `receipt.service.ts`            | Receipt upload processing + mark paid                                                                                                                                                                                                         |
+| `soa-workdir.service.ts`        | Per-user SOA workdir + `CARDS_JSON` / OAuth env for Gmail/PDF parse                                                                                                                                                                           |
+| `mark-paid.service.ts`          | Native mark paid/unpaid/receipt (Postgres + `reminder_logs` + calendar)                                                                                                                                                                       |
+| `due-entry-upsert.service.ts`   | Upsert `due_entries` from SOA rows (no JSON state file)                                                                                                                                                                                       |
+| `due-entry-query.service.ts`    | Due entry lookup for mark-paid and receipts                                                                                                                                                                                                   |
+| `google-calendar.service.ts`    | Per-user calendar ID + OAuth; wraps `lib/soa/google-calendar.ts`                                                                                                                                                                              |
+| `notification.service.ts`       | Native Telegram/Slack sends via `integration.service`                                                                                                                                                                                         |
+| `reminder-log.service.ts`       | `reminder_logs` idempotency                                                                                                                                                                                                                   |
+| `send-due-reminders.service.ts` | Native due reminder dispatch                                                                                                                                                                                                                  |
+| `default-automation.service.ts` | Idempotent seed of default payment reminders + SOA Gmail check jobs; dedupes managed job types; migrates non-daily reminder schedules to daily                                                                                                |
+| `automation.service.ts`         | Job CRUD, dispatch (`isAutomationJobDue` + overdue `next_run_at` catch-up), run-now; production cron via Supabase **pg_cron** + Vercel daily fallback → `/api/cron/dispatch`; `send_due_reminders` updates lock schedule to daily (time only) |
+| `overview.service.ts`           | Dashboard snapshot: current period mission data, shared spend/summary stats, reminder attention flags                                                                                                                                         |
 
 SOA pipeline lives in **`src/lib/soa/`** (Gmail fetch, bank parsers, summary PDF, calendar). Mark-paid, reminders, and due sync are native in `server/services/`. Workdir: `/tmp/kame-ops-{userId}/`. See `docs/temp/pay-credit-cards-migration.md`.
 
