@@ -1,11 +1,9 @@
-import type { CreditCardReceiptAiResult } from "@/lib/receipts/types";
+import type {
+  CreditCardReceiptAiResult,
+  ReceiptKnownCard,
+} from "@/lib/receipts/types";
 
-export type KnownCardForGrouping = {
-  last4: string;
-  issuerId: string;
-  bankLabel: string;
-  displayLabel?: string;
-};
+export type KnownCardForGrouping = ReceiptKnownCard;
 
 export type ReceiptCardGroup = {
   key: string;
