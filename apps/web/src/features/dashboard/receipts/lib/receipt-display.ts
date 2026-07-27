@@ -67,7 +67,10 @@ export function buildReceiptPaymentCoverage(
   receipt: ReceiptListItem,
 ): ReceiptPaymentCoverage | null {
   const paidAmount =
-    receipt.parsedAmount ?? parsePhpAmount(receipt.parsedAmountRaw) ?? 0;
+    receipt.cumulativePaidForDue ??
+    receipt.parsedAmount ??
+    parsePhpAmount(receipt.parsedAmountRaw) ??
+    0;
   const totalDue = parsePhpAmount(receipt.totalDue);
   const minimumDue = parsePhpAmount(receipt.minimumDue);
 
@@ -89,15 +92,22 @@ export function buildReceiptPaymentCoverage(
 
   if (paidAmount > 0 && totalDue > 0) {
     progressPercent = Math.min(100, Math.round((paidAmount / totalDue) * 100));
-    if (paidAmount >= totalDue * 0.995) {
+    if (receipt.duePaymentCoverage === "full_paid" || paidAmount >= totalDue * 0.995) {
       coverageLabel = "full";
       coverageText = "Full statement due";
-    } else if (minimumDue > 0 && paidAmount >= minimumDue * 0.995) {
+    } else if (
+      receipt.duePaymentCoverage === "minimum_met" ||
+      (minimumDue > 0 && paidAmount >= minimumDue * 0.995)
+    ) {
       coverageLabel = "minimum";
-      coverageText = "Minimum due only";
+      coverageText = receipt.paymentSequenceLabel
+        ? `Minimum due met (${receipt.paymentSequenceLabel})`
+        : "Minimum due only";
     } else {
       coverageLabel = "below_minimum";
-      coverageText = "Below minimum due";
+      coverageText = receipt.paymentSequenceLabel
+        ? `Partial payment (${receipt.paymentSequenceLabel})`
+        : "Below minimum due";
     }
   } else if (paidAmount > 0) {
     coverageText = "Paid amount detected";
@@ -200,25 +210,30 @@ export function buildReceiptValidationChecks(
       id: "minimum_due",
       label: "Meets minimum due",
       state:
-        coverage && coverage.minimumDue > 0
-          ? coverage.paidAmount >= coverage.minimumDue * 0.995
-            ? "pass"
-            : coverage.paidAmount > 0
-              ? "fail"
-              : "unknown"
-          : "unknown",
+        receipt.duePaymentCoverage === "minimum_met" ||
+        receipt.duePaymentCoverage === "full_paid"
+          ? "pass"
+          : coverage && coverage.minimumDue > 0
+            ? coverage.paidAmount >= coverage.minimumDue * 0.995
+              ? "pass"
+              : coverage.paidAmount > 0
+                ? "fail"
+                : "unknown"
+            : "unknown",
     },
     {
       id: "full_due",
       label: "Full statement due paid",
       state:
-        coverage && coverage.totalDue > 0
-          ? coverage.paidAmount >= coverage.totalDue * 0.995
-            ? "pass"
-            : coverage.paidAmount > 0
-              ? "fail"
-              : "unknown"
-          : "unknown",
+        receipt.duePaymentCoverage === "full_paid"
+          ? "pass"
+          : coverage && coverage.totalDue > 0
+            ? coverage.paidAmount >= coverage.totalDue * 0.995
+              ? "pass"
+              : coverage.paidAmount > 0
+                ? "fail"
+                : "unknown"
+            : "unknown",
     },
     {
       id: "reference",

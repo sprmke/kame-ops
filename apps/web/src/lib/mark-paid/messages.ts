@@ -1,6 +1,9 @@
 import type { DueEntryRow } from "@/server/services/due-entry-query.service";
 import type { ParsedReceipt } from "@/lib/receipts/parsed-receipt";
-import { receiptRequiresTotalDue } from "@/lib/receipts/payment-threshold";
+import type {
+  DuePaymentCoverage,
+  PaymentSequence,
+} from "@/lib/receipts/partial-payment";
 
 export type MarkPaidResult =
   | {
@@ -49,8 +52,12 @@ export type ReceiptPayResult =
       entry: DueEntryRow;
       amountPaid: number;
       amountRaw: string;
+      cumulativePaid: number;
       minimumDueValue: number;
       totalDueValue: number;
+      coverage: DuePaymentCoverage;
+      paymentSequence: PaymentSequence;
+      thresholdMet: boolean;
       belowTotalDue: boolean;
       remindersSuppressed: number;
       calendarUpdated: number;
@@ -79,15 +86,6 @@ export type ReceiptPayResult =
       matches: DueEntryRow[];
       parsed: ParsedReceipt;
     }
-  | {
-      ok: false;
-      reason: "amount_below_minimum";
-      entry: DueEntryRow;
-      amountPaid: number;
-      amountRaw: string;
-      minimumDueValue: number;
-      parsed: ParsedReceipt;
-    };
 
 function cardLabel(entry: DueEntryRow): string {
   return entry.cardDisplayLabel ?? `${entry.bankLabel} ****${entry.cardLast4}`;
@@ -209,27 +207,39 @@ export function buildReceiptConfirmationMessage(
     const bullets: string[] = [
       `• Card: \`****${result.entry.cardLast4}\``,
       `• Due Date: ${result.entry.dueDate}`,
-      `• Amount paid: *${formatPeso(result.amountPaid)}*`,
+      `• This receipt: *${formatPeso(result.amountPaid)}*`,
+      `• Total recorded: *${formatPeso(result.cumulativePaid)}* (${result.paymentSequence.label})`,
       `• Min due: ${formatPeso(result.minimumDueValue)}`,
       `• Total due: ${formatPeso(result.totalDueValue)}`,
-      `• ${result.remindersSuppressed} reminder(s) silenced`,
     ];
-    if (result.calendarUpdated > 0) {
-      bullets.push(
-        `• ${result.calendarUpdated} calendar event(s) marked as PAID`,
-      );
-    } else if (result.calendarError) {
-      bullets.push(`• ⚠️ Calendar skipped: ${result.calendarError}`);
+
+    if (result.thresholdMet) {
+      bullets.push(`• ${result.remindersSuppressed} reminder(s) silenced`);
+      if (result.calendarUpdated > 0) {
+        bullets.push(
+          `• ${result.calendarUpdated} calendar event(s) marked as PAID`,
+        );
+      } else if (result.calendarError) {
+        bullets.push(`• ⚠️ Calendar skipped: ${result.calendarError}`);
+      }
     }
-    if (result.belowTotalDue) {
+
+    if (result.coverage === "partial") {
       bullets.push(
-        `\n⚠️ _Amount covers minimum due but balance remains on the card._`,
+        `\nℹ️ _Partial payment saved — upload more receipts to reach the due amount._`,
+      );
+    } else if (result.belowTotalDue) {
+      bullets.push(
+        `\n⚠️ _Minimum due met but balance remains on the card._`,
       );
     }
+
+    const title = result.thresholdMet
+      ? "✅ *Payment Confirmed*"
+      : "📝 *Partial Payment Saved*";
+
     return (
-      `✅ *Payment Confirmed*\n\n` +
-      `*${cardLabel(result.entry)}*\n` +
-      bullets.join("\n")
+      `${title}\n\n` + `*${cardLabel(result.entry)}*\n` + bullets.join("\n")
     );
   }
 
@@ -270,18 +280,6 @@ export function buildReceiptConfirmationMessage(
         `Resend the photo with a caption like \`april 2026\` to target a specific statement.`
       );
     }
-    case "amount_below_minimum": {
-      const threshold = receiptRequiresTotalDue() ? "total" : "minimum";
-      return (
-        `❌ *Payment not confirmed*\n\n` +
-        `*${cardLabel(result.entry)}*\n` +
-        `• Due: ${result.entry.dueDate}\n` +
-        `• Amount paid: ${formatPeso(result.amountPaid)}\n` +
-        `• Min due: ${result.entry.minimumDue} · Total due: ${result.entry.totalDue}\n\n` +
-        `Amount is below the ${threshold} due.\n\n` +
-        `If this is wrong, mark it manually:\n\`${result.entry.cardLast4} - ${ymToCaption(result.entry.dueDateYmd)} - paid\``
-      );
-    }
   }
 }
 
@@ -299,8 +297,6 @@ export function receiptPaymentFailureMessage(
       return "This card is already marked paid";
     case "ambiguous_card":
       return "Multiple cards match — add a month caption";
-    case "amount_below_minimum":
-      return "Amount is below minimum due";
     default:
       return "Could not confirm payment";
   }

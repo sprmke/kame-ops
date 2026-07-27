@@ -136,6 +136,8 @@ export function paymentStatusLabel(status: string | null | undefined): string {
   switch (status) {
     case "marked_paid":
       return "Paid";
+    case "partial":
+      return "Partial";
     case "rejected":
       return "Rejected";
     case "ai_error":

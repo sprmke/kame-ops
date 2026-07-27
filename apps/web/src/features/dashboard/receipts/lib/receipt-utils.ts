@@ -2,6 +2,7 @@ import {
   matchReceiptToDue,
   resolveStatementPeriodFromDue,
 } from "@/lib/receipts/match-due";
+import type { DuePaymentCoverage } from "@/lib/receipts/partial-payment";
 import { formatSoaPeriodLabelFromKey } from "@/lib/soa/period";
 
 export type ReceiptGroupMode = "month" | "card";
@@ -38,6 +39,10 @@ export type ReceiptListItem = {
   statementPeriodLabel: string | null;
   minimumDue: string | null;
   totalDue: string | null;
+  cumulativePaidForDue?: number | null;
+  duePaymentCoverage?: DuePaymentCoverage | null;
+  paymentSequenceLabel?: string | null;
+  receiptCountForDue?: number | null;
 };
 
 export type ReceiptGroup = {
@@ -173,7 +178,8 @@ export function receiptGroupPaidSummary(items: ReceiptListItem[]): {
 
 const PAYMENT_STATUS_RANK: Record<string, number> = {
   marked_paid: 4,
-  pending: 3,
+  partial: 3,
+  pending: 2,
   rejected: 1,
   ai_error: 0,
 };

@@ -104,7 +104,7 @@ export function ReceiptUploadProgressDialog({
           errorMessage={errorMessage}
           detail={detail}
           icon={Receipt}
-          doneTitle="Receipt processed"
+          doneTitle={runSucceeded ? "Receipt saved" : "Receipt processed"}
           failedTitle="Upload failed"
         />
 

@@ -125,11 +125,20 @@ export function outstandingForStatement(
   const total = parsePhpAmount(stmt.totalDue);
   const minimum = parsePhpAmount(stmt.minimumDue);
   if (total <= 0) return { total: 0, minimum: 0 };
-  if (!payment?.paidAt) return { total, minimum };
 
-  const paidRecorded = payment.paidAmount
+  const paidRecorded = payment?.paidAmount
     ? parsePhpAmount(payment.paidAmount)
-    : total;
+    : payment?.paidAt
+      ? total
+      : 0;
+
+  if (!payment?.paidAt && paidRecorded <= 0) {
+    return { total, minimum };
+  }
+
+  if (payment?.paidAt && !payment.paidAmount) {
+    return { total: 0, minimum: 0 };
+  }
 
   if (paidRecorded >= total - 0.01) {
     return { total: 0, minimum: 0 };
@@ -157,13 +166,14 @@ export function paidAmountForStatement(
   >,
   payment?: DuePaymentInfo | null,
 ): number {
-  if (!payment?.paidAt) return 0;
-
   const stmtTotal = parsePhpAmount(stmt.totalDue);
-  const paid = payment.paidAmount
+  const paid = payment?.paidAmount
     ? parsePhpAmount(payment.paidAmount)
-    : stmtTotal;
+    : payment?.paidAt
+      ? stmtTotal
+      : 0;
 
+  if (paid <= 0) return 0;
   if (stmtTotal <= 0) return paid;
   return Math.min(paid, stmtTotal);
 }

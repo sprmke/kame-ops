@@ -35,9 +35,15 @@ export function useReceiptUploadFlow(connected: Set<string>) {
     onSuccess: (result) => {
       if (result.payment.ok) {
         setUploadSettled("success");
-        toast.success(
-          `Payment confirmed — •••• ${result.receipt.parsedCardLast4 ?? "????"}`,
-        );
+        if (result.payment.thresholdMet) {
+          toast.success(
+            `Payment confirmed — •••• ${result.receipt.parsedCardLast4 ?? "????"}`,
+          );
+        } else {
+          toast.success(
+            `Partial payment ${result.payment.paymentSequenceLabel} saved`,
+          );
+        }
       } else if (result.payment.code === "ai_skipped_no_keys") {
         setUploadSettled("success");
         toast.error(AI_SKIP_NO_KEYS_MESSAGE);

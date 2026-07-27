@@ -128,7 +128,11 @@ export function ReceiptCard({
             <StatusBadge
               label={paymentStatusLabel(receipt.paymentStatus)}
               variant={
-                receipt.paymentStatus === "marked_paid" ? "success" : "muted"
+                receipt.paymentStatus === "marked_paid"
+                  ? "success"
+                  : receipt.paymentStatus === "partial"
+                    ? "warning"
+                    : "muted"
               }
             />
             <ReceiptAiVerdictBadge verdict={receipt.aiVerdict} compact />

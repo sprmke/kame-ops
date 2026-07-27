@@ -1,13 +1,23 @@
 import { and, eq } from "drizzle-orm";
 
+import { normalizeCardLast4 } from "@/lib/due/normalize";
 import { extractMonthYearLoose } from "@/lib/mark-paid/parse-messages";
 import type { ParsedReceipt } from "@/lib/receipts/parsed-receipt";
+import {
+  computeDuePaymentCoverage,
+  estimatePaymentSequence,
+  isDueFullyPaid,
+  parseDueAmounts,
+  paymentTargetDue,
+  paymentThresholdMet,
+  sumReceiptAmounts,
+} from "@/lib/receipts/partial-payment";
 import {
   parseMoneyToNumber,
   receiptRequiresTotalDue,
 } from "@/lib/receipts/payment-threshold";
 import { db } from "@/lib/db";
-import { creditCards, dueEntries } from "@/lib/db/schema";
+import { creditCards, dueEntries, receipts } from "@/lib/db/schema";
 
 import {
   dueEntryQueryService,
@@ -35,6 +45,201 @@ export {
   buildUnpaidConfirmationMessage,
   receiptPaymentFailureMessage,
 } from "@/lib/mark-paid/messages";
+
+async function loadReceiptAmountsForDueEntry(
+  userId: string,
+  dueEntryId: string,
+  excludeReceiptId?: string,
+): Promise<number[]> {
+  const rows = await db.query.receipts.findMany({
+    where: and(eq(receipts.userId, userId), eq(receipts.dueEntryId, dueEntryId)),
+  });
+
+  return rows
+    .filter(
+      (row) =>
+        row.id !== excludeReceiptId &&
+        row.paymentStatus !== "rejected" &&
+        row.paymentStatus !== "ai_error",
+    )
+    .map((row) => {
+      if (row.parsedAmount) return Number(row.parsedAmount);
+      if (row.parsedAmountRaw) return parseMoneyToNumber(row.parsedAmountRaw);
+      return NaN;
+    })
+    .filter((amount) => Number.isFinite(amount) && amount > 0);
+}
+
+function cumulativePaidBeforeNewReceipt(
+  entry: DueEntryRow,
+  existingAmounts: number[],
+): number {
+  const receiptSum = sumReceiptAmounts(existingAmounts);
+  const recorded = entry.paidAmount ? parseMoneyToNumber(entry.paidAmount) : 0;
+  return Math.max(receiptSum, Number.isFinite(recorded) ? recorded : 0);
+}
+
+async function findNearestNotFullyPaidByLast4(
+  userId: string,
+  cardLast4: string,
+): Promise<DueEntryRow | DueEntryRow[] | null> {
+  const lastNorm = normalizeCardLast4(cardLast4);
+  const all = await db.query.dueEntries.findMany({
+    where: eq(dueEntries.userId, userId),
+  });
+  const forCard = all.filter(
+    (d) => normalizeCardLast4(d.cardLast4) === lastNorm,
+  );
+  if (forCard.length === 0) return null;
+
+  const open: DueEntryRow[] = [];
+  for (const entry of forCard) {
+    const amounts = await loadReceiptAmountsForDueEntry(userId, entry.id);
+    const cumulative = cumulativePaidBeforeNewReceipt(entry, amounts);
+    const { minimumDueValue, totalDueValue } = parseDueAmounts(entry);
+    const coverage = computeDuePaymentCoverage(
+      cumulative,
+      minimumDueValue,
+      totalDueValue,
+    );
+    if (!isDueFullyPaid(coverage)) {
+      open.push(entry);
+    }
+  }
+
+  if (open.length === 0) return null;
+  if (open.length === 1) return open[0]!;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const daysUntil = (ymd: string) => {
+    const a = new Date(`${ymd}T12:00:00`);
+    const b = new Date(`${today}T12:00:00`);
+    return Math.round((a.getTime() - b.getTime()) / 86_400_000);
+  };
+
+  const byIssuer = new Map<string, DueEntryRow>();
+  for (const d of open) {
+    const existing = byIssuer.get(d.issuerId);
+    if (!existing) {
+      byIssuer.set(d.issuerId, d);
+      continue;
+    }
+    const curDist = Math.abs(daysUntil(d.dueDateYmd));
+    const prevDist = Math.abs(daysUntil(existing.dueDateYmd));
+    if (curDist < prevDist) byIssuer.set(d.issuerId, d);
+  }
+
+  const picks = Array.from(byIssuer.values());
+  if (picks.length === 1) return picks[0]!;
+  return picks;
+}
+
+async function applyReceiptToDueEntry(
+  userId: string,
+  entry: DueEntryRow,
+  parsed: ParsedReceipt,
+  opts?: {
+    skipCalendar?: boolean;
+    excludeReceiptId?: string;
+  },
+): Promise<Extract<ReceiptPayResult, { ok: true }>> {
+  const amountPaid = parsed.amount!;
+  const amountRaw = parsed.amountRaw ?? String(parsed.amount);
+  const { minimumDueValue, totalDueValue } = parseDueAmounts(entry);
+  const requireTotalDue = receiptRequiresTotalDue();
+  const targetDue = paymentTargetDue(
+    minimumDueValue,
+    totalDueValue,
+    requireTotalDue,
+  );
+
+  const existingAmounts = await loadReceiptAmountsForDueEntry(
+    userId,
+    entry.id,
+    opts?.excludeReceiptId,
+  );
+  const cumulativeBefore = cumulativePaidBeforeNewReceipt(
+    entry,
+    existingAmounts,
+  );
+  const cumulativePaid = cumulativeBefore + amountPaid;
+  const coverage = computeDuePaymentCoverage(
+    cumulativePaid,
+    minimumDueValue,
+    totalDueValue,
+    requireTotalDue,
+  );
+  const thresholdMet = paymentThresholdMet(coverage);
+  const paymentSequence = estimatePaymentSequence(
+    [...existingAmounts, amountPaid],
+    targetDue,
+  );
+
+  let remindersSuppressed = 0;
+  let calendarUpdated = 0;
+  let calendarError: string | undefined;
+  let updatedEntry = entry;
+
+  if (thresholdMet && !entry.paidAt) {
+    const effects = await applyPaidSideEffects(userId, entry, {
+      skipCalendar: opts?.skipCalendar,
+      paidAmount: String(cumulativePaid),
+    });
+    updatedEntry = effects.entry;
+    remindersSuppressed = effects.remindersSuppressed;
+    calendarUpdated = effects.calendarUpdated;
+    calendarError = effects.calendarError;
+  } else if (
+    entry.paidAt &&
+    cumulativePaid > cumulativeBefore + 0.005
+  ) {
+    const [refreshed] = await db
+      .update(dueEntries)
+      .set({ paidAmount: String(cumulativePaid) })
+      .where(and(eq(dueEntries.id, entry.id), eq(dueEntries.userId, userId)))
+      .returning();
+    updatedEntry = refreshed ?? entry;
+  } else if (!entry.paidAt && cumulativePaid > 0) {
+    const [refreshed] = await db
+      .update(dueEntries)
+      .set({ paidAmount: String(cumulativePaid) })
+      .where(and(eq(dueEntries.id, entry.id), eq(dueEntries.userId, userId)))
+      .returning();
+    updatedEntry = refreshed ?? entry;
+  }
+
+  return {
+    ok: true,
+    entry: updatedEntry,
+    amountPaid,
+    amountRaw,
+    cumulativePaid,
+    minimumDueValue,
+    totalDueValue,
+    coverage,
+    paymentSequence,
+    thresholdMet,
+    belowTotalDue: coverage !== "full_paid",
+    remindersSuppressed,
+    calendarUpdated,
+    calendarError,
+  };
+}
+
+async function isDueEntryFullyPaid(
+  userId: string,
+  entry: DueEntryRow,
+): Promise<boolean> {
+  const amounts = await loadReceiptAmountsForDueEntry(userId, entry.id);
+  const cumulative = cumulativePaidBeforeNewReceipt(entry, amounts);
+  const { minimumDueValue, totalDueValue } = parseDueAmounts(entry);
+  const coverage = computeDuePaymentCoverage(
+    cumulative,
+    minimumDueValue,
+    totalDueValue,
+  );
+  return isDueFullyPaid(coverage);
+}
 
 async function reminderSuppressWindow(
   userId: string,
@@ -306,7 +511,12 @@ export const markPaidService = {
   async markFromReceipt(
     userId: string,
     parsed: ParsedReceipt,
-    opts?: { caption?: string; skipCalendar?: boolean; dueEntryId?: string },
+    opts?: {
+      caption?: string;
+      skipCalendar?: boolean;
+      dueEntryId?: string;
+      excludeReceiptId?: string;
+    },
   ): Promise<ReceiptPayResult> {
     if (!parsed.cardLast4) {
       return { ok: false, reason: "no_card_detected", parsed };
@@ -335,7 +545,7 @@ export const markPaidService = {
           parsed,
         };
       }
-      if (byId.paidAt) {
+      if (await isDueEntryFullyPaid(userId, byId)) {
         return {
           ok: false,
           reason: "already_paid",
@@ -369,6 +579,14 @@ export const markPaidService = {
           parsed,
         };
       }
+      if (await isDueEntryFullyPaid(userId, byMonth)) {
+        return {
+          ok: false,
+          reason: "already_paid",
+          cardLast4: parsed.cardLast4,
+          parsed,
+        };
+      }
       entry = byMonth;
       monthResolved = monthYM;
     } else {
@@ -385,14 +603,29 @@ export const markPaidService = {
         };
       }
       if (nearest === "already_paid") {
-        return {
-          ok: false,
-          reason: "already_paid",
-          cardLast4: parsed.cardLast4,
-          parsed,
-        };
-      }
-      if (Array.isArray(nearest)) {
+        const open = await findNearestNotFullyPaidByLast4(
+          userId,
+          parsed.cardLast4,
+        );
+        if (open === null) {
+          return {
+            ok: false,
+            reason: "already_paid",
+            cardLast4: parsed.cardLast4,
+            parsed,
+          };
+        }
+        if (Array.isArray(open)) {
+          return {
+            ok: false,
+            reason: "ambiguous_card",
+            cardLast4: parsed.cardLast4,
+            matches: open,
+            parsed,
+          };
+        }
+        entry = open;
+      } else if (Array.isArray(nearest)) {
         return {
           ok: false,
           reason: "ambiguous_card",
@@ -400,50 +633,16 @@ export const markPaidService = {
           matches: nearest,
           parsed,
         };
+      } else {
+        entry = nearest;
       }
-      entry = nearest;
     }
 
-    const amountPaid = parsed.amount;
-    const amountRaw = parsed.amountRaw ?? String(parsed.amount);
-    const minimumDueValue = parseMoneyToNumber(entry.minimumDue);
-    const totalDueValue = parseMoneyToNumber(entry.totalDue);
-    const threshold = receiptRequiresTotalDue()
-      ? totalDueValue
-      : minimumDueValue;
-
-    if (!Number.isFinite(threshold) || amountPaid + 0.005 < threshold) {
-      return {
-        ok: false,
-        reason: "amount_below_minimum",
-        entry,
-        amountPaid,
-        amountRaw,
-        minimumDueValue,
-        parsed,
-      };
-    }
-
-    const effects = await applyPaidSideEffects(userId, entry, {
+    const result = await applyReceiptToDueEntry(userId, entry, parsed, {
       skipCalendar: opts?.skipCalendar,
-      paidAmount: amountRaw,
+      excludeReceiptId: opts?.excludeReceiptId,
     });
 
-    const belowTotalDue =
-      Number.isFinite(totalDueValue) && amountPaid + 0.005 < totalDueValue;
-
-    return {
-      ok: true,
-      entry: effects.entry,
-      amountPaid,
-      amountRaw,
-      minimumDueValue,
-      totalDueValue,
-      belowTotalDue,
-      remindersSuppressed: effects.remindersSuppressed,
-      calendarUpdated: effects.calendarUpdated,
-      calendarError: effects.calendarError,
-      monthYM: monthResolved,
-    };
+    return { ...result, monthYM: monthResolved };
   },
 };

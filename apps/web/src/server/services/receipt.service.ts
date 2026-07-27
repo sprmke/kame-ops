@@ -32,6 +32,14 @@ import { ReceiptUploadProgressReporter } from "./receipt-upload-progress.service
 import { storageService } from "./storage.service";
 import { enrichDueEntriesWithSoaPeriod } from "./due-statement-period.service";
 import { matchReceiptToDue } from "@/lib/receipts/match-due";
+import {
+  computeDuePaymentCoverage,
+  estimatePaymentSequence,
+  parseDueAmounts,
+  paymentTargetDue,
+  sumReceiptAmounts,
+} from "@/lib/receipts/partial-payment";
+import type { DuePaymentCoverage } from "@/lib/receipts/partial-payment";
 
 function mimeFromPath(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase();
@@ -92,6 +100,10 @@ export type ReceiptProcessResult = {
         ok: true;
         dueEntryId: string;
         amountPaid: number;
+        cumulativePaid: number;
+        coverage: DuePaymentCoverage;
+        paymentSequenceLabel: string;
+        thresholdMet: boolean;
         belowTotalDue: boolean;
         remindersSuppressed?: number;
       }
@@ -101,6 +113,77 @@ export type ReceiptProcessResult = {
         code: string;
       };
 };
+
+async function syncReceiptStatusesForDueEntry(
+  userId: string,
+  dueEntryId: string,
+  thresholdMet: boolean,
+) {
+  const nextStatus = thresholdMet ? "marked_paid" : "partial";
+  await db
+    .update(receipts)
+    .set({ paymentStatus: nextStatus, dueEntryId })
+    .where(
+      and(
+        eq(receipts.userId, userId),
+        eq(receipts.dueEntryId, dueEntryId),
+        inArray(receipts.paymentStatus, ["pending", "partial", "marked_paid"]),
+      ),
+    );
+}
+
+function buildDuePaymentSummaries(
+  rows: ReceiptRow[],
+  dueById: Map<string, typeof dueEntries.$inferSelect>,
+) {
+  const amountsByDue = new Map<string, number[]>();
+
+  for (const row of rows) {
+    if (!row.dueEntryId || row.paymentStatus === "rejected") continue;
+    const amount =
+      row.parsedAmount != null
+        ? Number(row.parsedAmount)
+        : row.parsedAmountRaw
+          ? Number(row.parsedAmountRaw.replace(/[^\d.-]/g, ""))
+          : NaN;
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    const list = amountsByDue.get(row.dueEntryId) ?? [];
+    list.push(amount);
+    amountsByDue.set(row.dueEntryId, list);
+  }
+
+  const summaryByDue = new Map<
+    string,
+    {
+      cumulativePaidForDue: number;
+      duePaymentCoverage: DuePaymentCoverage;
+      paymentSequenceLabel: string;
+      receiptCountForDue: number;
+    }
+  >();
+
+  for (const [dueEntryId, amounts] of amountsByDue) {
+    const due = dueById.get(dueEntryId);
+    if (!due) continue;
+    const cumulativePaidForDue = sumReceiptAmounts(amounts);
+    const { minimumDueValue, totalDueValue } = parseDueAmounts(due);
+    const duePaymentCoverage = computeDuePaymentCoverage(
+      cumulativePaidForDue,
+      minimumDueValue,
+      totalDueValue,
+    );
+    const targetDue = paymentTargetDue(minimumDueValue, totalDueValue);
+    const paymentSequence = estimatePaymentSequence(amounts, targetDue);
+    summaryByDue.set(dueEntryId, {
+      cumulativePaidForDue,
+      duePaymentCoverage,
+      paymentSequenceLabel: paymentSequence.label,
+      receiptCountForDue: amounts.length,
+    });
+  }
+
+  return summaryByDue;
+}
 
 type ReceiptRow = typeof receipts.$inferSelect;
 
@@ -174,8 +257,9 @@ export const receiptService = {
       statementPeriodLabel: row.statementPeriodLabel,
     }));
 
-    const dueById = new Map(linkedDues.map((row) => [row.id, row]));
+    const dueById = new Map(enrichedDues.map((row) => [row.id, row]));
     const statementDateByDueKey = await loadStatementDateByDueKey(userId);
+    const duePaymentSummaries = buildDuePaymentSummaries(rows, dueById);
 
     return rows.map((row) => {
       const linked = row.dueEntryId ? dueById.get(row.dueEntryId) : undefined;
@@ -198,6 +282,8 @@ export const receiptService = {
           dueStatementKey(due.issuerId, due.cardLast4, due.dueDateYmd),
         );
 
+      const dueSummary = due?.id ? duePaymentSummaries.get(due.id) : undefined;
+
       return {
         ...row,
         parsedAmount: row.parsedAmount ? Number(row.parsedAmount) : null,
@@ -210,6 +296,10 @@ export const receiptService = {
         statementPeriodLabel: due?.statementPeriodLabel ?? null,
         minimumDue: due?.minimumDue ?? null,
         totalDue: due?.totalDue ?? null,
+        cumulativePaidForDue: dueSummary?.cumulativePaidForDue ?? null,
+        duePaymentCoverage: dueSummary?.duePaymentCoverage ?? null,
+        paymentSequenceLabel: dueSummary?.paymentSequenceLabel ?? null,
+        receiptCountForDue: dueSummary?.receiptCountForDue ?? null,
       };
     });
   },
@@ -465,15 +555,15 @@ export const receiptService = {
     }
 
     const parsed = aiToParsedReceipt(ai);
-    await reporter?.activate(
-      "mark_paid",
-      parsed.cardLast4
+    const matchDetail =
+      parsed.cardLast4 != null
         ? `Card •••• ${parsed.cardLast4}`
-        : "Matching payment to due date",
-    );
+        : "Matching payment to due date";
+    await reporter?.activate("mark_paid", matchDetail);
     const payResult = await markPaidService.markFromReceipt(userId, parsed, {
       caption: input.caption,
       dueEntryId: input.dueEntryId,
+      excludeReceiptId: receiptRow!.id,
     });
 
     if (!payResult.ok) {
@@ -495,42 +585,60 @@ export const receiptService = {
     }
 
     await reporter?.completeStep("mark_paid");
-    await reporter?.activate(
-      "reminders",
-      payResult.remindersSuppressed > 0
-        ? `${payResult.remindersSuppressed} reminder(s) silenced`
-        : "Updating reminder status",
-    );
-    await reporter?.completeStep("reminders");
 
-    const snapshot = reporter?.snapshot();
-    const hasCalendarStep = snapshot?.steps.some((s) => s.id === "calendar");
-    if (hasCalendarStep) {
-      await reporter?.activate(
-        "calendar",
-        payResult.calendarUpdated > 0
-          ? `${payResult.calendarUpdated} event(s) updated`
-          : "Checking calendar events",
-      );
-      await reporter?.completeStep("calendar");
-    }
-
-    await db
-      .update(dueEntries)
-      .set({ receiptId: receiptRow!.id })
-      .where(eq(dueEntries.id, payResult.entry.id));
+    const receiptPaymentStatus = payResult.thresholdMet ? "marked_paid" : "partial";
 
     await db
       .update(receipts)
       .set({
-        paymentStatus: "marked_paid",
+        paymentStatus: receiptPaymentStatus,
         dueEntryId: payResult.entry.id,
       })
       .where(eq(receipts.id, receiptRow!.id));
 
-    await reporter?.activate("sync", "Saving");
-    await reporter?.completeStep("sync");
-    await reporter?.complete();
+    await syncReceiptStatusesForDueEntry(
+      userId,
+      payResult.entry.id,
+      payResult.thresholdMet,
+    );
+
+    if (!payResult.thresholdMet) {
+      await reporter?.activate(
+        "mark_paid",
+        `Partial ${payResult.paymentSequence.label} · ${payResult.coverage === "partial" ? "below minimum due" : "recorded"}`,
+      );
+      await reporter?.skipRemaining("reminders");
+      await reporter?.complete();
+    } else {
+      await reporter?.activate(
+        "reminders",
+        payResult.remindersSuppressed > 0
+          ? `${payResult.remindersSuppressed} reminder(s) silenced`
+          : "Updating reminder status",
+      );
+      await reporter?.completeStep("reminders");
+
+      const snapshot = reporter?.snapshot();
+      const hasCalendarStep = snapshot?.steps.some((s) => s.id === "calendar");
+      if (hasCalendarStep) {
+        await reporter?.activate(
+          "calendar",
+          payResult.calendarUpdated > 0
+            ? `${payResult.calendarUpdated} event(s) updated`
+            : "Checking calendar events",
+        );
+        await reporter?.completeStep("calendar");
+      }
+
+      await db
+        .update(dueEntries)
+        .set({ receiptId: receiptRow!.id })
+        .where(eq(dueEntries.id, payResult.entry.id));
+
+      await reporter?.activate("sync", "Saving");
+      await reporter?.completeStep("sync");
+      await reporter?.complete();
+    }
 
     const updatedReceipt = await db.query.receipts.findFirst({
       where: eq(receipts.id, receiptRow!.id),
@@ -543,6 +651,10 @@ export const receiptService = {
         ok: true,
         dueEntryId: payResult.entry.id,
         amountPaid: payResult.amountPaid,
+        cumulativePaid: payResult.cumulativePaid,
+        coverage: payResult.coverage,
+        paymentSequenceLabel: payResult.paymentSequence.label,
+        thresholdMet: payResult.thresholdMet,
         belowTotalDue: payResult.belowTotalDue,
         remindersSuppressed: payResult.remindersSuppressed,
       },
@@ -560,6 +672,12 @@ export const receiptService = {
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: "Receipt already marked paid",
+      });
+    }
+    if (row.paymentStatus === "partial") {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Receipt already recorded as a partial payment",
       });
     }
 
@@ -594,6 +712,10 @@ export const receiptService = {
     const payResult = await markPaidService.markFromReceipt(
       userId,
       aiToParsedReceipt(ai),
+      {
+        dueEntryId: row.dueEntryId ?? undefined,
+        excludeReceiptId: row.id,
+      },
     );
     if (!payResult.ok) {
       throw new TRPCError({
@@ -603,17 +725,25 @@ export const receiptService = {
     }
 
     await db
-      .update(dueEntries)
-      .set({ receiptId: row.id })
-      .where(eq(dueEntries.id, payResult.entry.id));
-
-    await db
       .update(receipts)
       .set({
-        paymentStatus: "marked_paid",
+        paymentStatus: payResult.thresholdMet ? "marked_paid" : "partial",
         dueEntryId: payResult.entry.id,
       })
       .where(eq(receipts.id, row.id));
+
+    await syncReceiptStatusesForDueEntry(
+      userId,
+      payResult.entry.id,
+      payResult.thresholdMet,
+    );
+
+    if (payResult.thresholdMet) {
+      await db
+        .update(dueEntries)
+        .set({ receiptId: row.id })
+        .where(eq(dueEntries.id, payResult.entry.id));
+    }
 
     return { ok: true as const, dueEntryId: payResult.entry.id };
   },

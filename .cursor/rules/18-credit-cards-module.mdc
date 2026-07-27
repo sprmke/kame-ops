@@ -51,7 +51,7 @@ Order of operations (`lib/soa/run.ts`):
 | Input | Behavior |
 | ----- | -------- |
 | `xxxx - month year - paid` | Text command (Telegram or API) |
-| Receipt image | AI vision → amount ≥ minimum due → mark paid |
+| Receipt image | AI vision → amount recorded; partial payments allowed; sums multiple receipts per due entry → marks paid when min/total due met |
 | `xxxx - month year - unpaid` | Reverse paid state |
 
 Side effects: update due entry, suppress/restore reminder fingerprints, patch calendar events.
@@ -61,7 +61,7 @@ Side effects: update due entry, suppress/restore reminder fingerprints, patch ca
 - Gemini 2.5 Flash vision (multi-key rotation) + Groq fallback
 - API keys: **Settings only** (`ai_api_keys` table) — never `GEMINI_*` / `GROQ_*` env vars
 - Extract card last-4, amount, bank/wallet from PH e-wallet/bank screenshots
-- Amount must meet minimum due (or total when `RECEIPT_REQUIRE_TOTAL_DUE=1`)
+- Amount must meet minimum due (or total when `RECEIPT_REQUIRE_TOTAL_DUE=1`) to mark paid and silence reminders; partial amounts are saved and summed across receipts until threshold is met
 - Store uploads in Supabase Storage under `receipts/{userId}/`
 
 ## Security
