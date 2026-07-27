@@ -246,7 +246,7 @@ export function ReminderDueEntriesPanel() {
         jobs={receiptUpload.cardJobs}
         options={receiptUpload.uploadOptions}
         isPending={receiptUpload.isPending}
-        analyzingLabel={receiptUpload.analyzingLabel}
+        batchProgress={receiptUpload.batchProgress}
         onComplete={receiptUpload.handleProgressComplete}
       />
 

@@ -34,6 +34,77 @@ export type ReceiptUploadStepPlanInput = {
   updateCalendar: boolean;
 };
 
+export type ReceiptBatchPrepPhase = "uploading" | "analyzing" | "processing";
+
+export type ReceiptBatchPrepProgress = {
+  total: number;
+  uploaded: number;
+  phase: ReceiptBatchPrepPhase;
+};
+
+export function buildBatchPrepSteps(
+  progress: ReceiptBatchPrepProgress,
+): ReceiptUploadStepSnapshot[] {
+  const { total, phase } = progress;
+  const multi = total > 1;
+  const analyzeDone = phase === "processing";
+
+  return [
+    {
+      id: "upload",
+      label: multi ? `Uploading ${total} receipts` : "Uploading receipt",
+      status:
+        phase === "uploading"
+          ? "active"
+          : phase === "analyzing" || analyzeDone
+            ? "done"
+            : "pending",
+    },
+    {
+      id: "validate",
+      label: multi ? `Analyzing ${total} receipts` : "Analyzing receipt",
+      status: analyzeDone ? "done" : phase === "analyzing" ? "active" : "pending",
+    },
+    {
+      id: "prepare",
+      label: multi ? "Grouping by card" : "Identifying card",
+      status: analyzeDone ? "done" : "pending",
+    },
+  ];
+}
+
+export function batchPrepDetail(progress: ReceiptBatchPrepProgress): string | null {
+  if (progress.phase === "uploading" && progress.total > 1) {
+    return `${progress.uploaded} of ${progress.total} uploaded`;
+  }
+  if (progress.phase === "analyzing") {
+    return progress.total > 1 ? "Matching cards and amounts" : null;
+  }
+  return null;
+}
+
+export function computeBatchPrepProgressPercent(
+  progress: ReceiptBatchPrepProgress,
+): number {
+  const { total, uploaded, phase } = progress;
+  if (phase === "uploading") {
+    const ratio = total > 0 ? uploaded / total : 0;
+    return Math.round(8 + ratio * 32);
+  }
+  if (phase === "analyzing") {
+    return 52;
+  }
+  return 68;
+}
+
+export function batchPrepActiveStepIndex(
+  progress: ReceiptBatchPrepProgress,
+): number {
+  if (progress.phase === "uploading") return 0;
+  if (progress.phase === "analyzing") return 1;
+  return 2;
+}
+
 export function buildReceiptUploadStepPlan(
   input: ReceiptUploadStepPlanInput,
 ): ReceiptUploadStepSnapshot[] {

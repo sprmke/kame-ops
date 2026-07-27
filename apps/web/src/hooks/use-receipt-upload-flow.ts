@@ -7,6 +7,7 @@ import type {
   CardUploadJob,
   ReceiptUploadOptions,
 } from "@/components/shared/ReceiptBatchUploadProgressDialog";
+import type { ReceiptBatchPrepProgress } from "@/lib/receipt-upload-progress";
 import { api } from "@/lib/api/client";
 import { AI_SKIP_NO_KEYS_MESSAGE } from "@/lib/receipts/ai-skip";
 
@@ -42,7 +43,8 @@ export function useReceiptUploadFlow(connected: Set<string>) {
 
   const [progressOpen, setProgressOpen] = useState(false);
   const [cardJobs, setCardJobs] = useState<CardUploadJob[]>([]);
-  const [analyzingLabel, setAnalyzingLabel] = useState<string | null>(null);
+  const [batchProgress, setBatchProgress] =
+    useState<ReceiptBatchPrepProgress | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
   const uploadOptions = useMemo(
@@ -87,162 +89,115 @@ export function useReceiptUploadFlow(connected: Set<string>) {
   async function uploadFiles(files: File[], dueEntryId?: string) {
     if (files.length === 0) return;
 
+    const total = files.length;
+
     setProgressOpen(true);
     setCardJobs([]);
-    setAnalyzingLabel(null);
+    setBatchProgress({ total, uploaded: 0, phase: "uploading" });
     setIsUploading(true);
 
     try {
       const uploadedItems = [];
-      for (const file of files) {
-        uploadedItems.push(await uploadRawFile(file));
+      for (let index = 0; index < files.length; index++) {
+        uploadedItems.push(await uploadRawFile(files[index]!));
+        setBatchProgress({
+          total,
+          uploaded: index + 1,
+          phase: "uploading",
+        });
       }
 
-      if (files.length === 1 && !dueEntryId) {
-        const processId = crypto.randomUUID();
-        setCardJobs([
-          {
-            processId,
-            cardLabel: "Receipt",
-            receiptCount: 1,
-            settled: null,
-            errorMessage: null,
-          },
-        ]);
+      setBatchProgress({ total, uploaded: total, phase: "analyzing" });
 
-        const analysis = await analyzeUploadBatch.mutateAsync({
-          items: uploadedItems,
-        });
-        const group = analysis.groups[0];
-        if (!group) {
-          throw new Error("Could not analyze receipt");
-        }
+      const analysis = await analyzeUploadBatch.mutateAsync({
+        items: uploadedItems,
+        dueEntryId,
+      });
 
-        setCardJobs([
-          {
-            processId,
-            cardLabel: group.label,
-            receiptCount: group.items.length,
-            settled: null,
-            errorMessage: null,
-          },
-        ]);
+      const jobs: CardUploadJob[] = analysis.groups.map((group) => ({
+        processId: crypto.randomUUID(),
+        cardLabel: group.label,
+        receiptCount: group.items.length,
+        settled: null,
+        errorMessage: null,
+      }));
 
-        const result = await processUploadBatch.mutateAsync({
-          groups: [
-            {
-              processId,
-              cardLabel: group.label,
-              items: group.items,
-            },
-          ],
-          markPaid: true,
-          updateCalendar: uploadOptions.updateCalendar,
-        });
+      setBatchProgress({ total, uploaded: total, phase: "processing" });
+      setCardJobs(jobs);
 
-        const summary = summarizeGroupResults(result.groups[0]?.receipts ?? []);
-        setCardJobs([
-          {
-            processId,
-            cardLabel: group.label,
-            receiptCount: group.items.length,
+      const result = await processUploadBatch.mutateAsync({
+        groups: analysis.groups.map((group, index) => ({
+          processId: jobs[index]!.processId,
+          cardLabel: group.label,
+          items: group.items,
+        })),
+        dueEntryId,
+        markPaid: true,
+        updateCalendar: uploadOptions.updateCalendar,
+      });
+
+      setCardJobs(
+        jobs.map((job, index) => {
+          const summary = summarizeGroupResults(
+            result.groups[index]?.receipts ?? [],
+          );
+          return {
+            ...job,
             settled: summary.settled,
             errorMessage: summary.errorMessage,
-          },
-        ]);
+          };
+        }),
+      );
 
-        if (summary.settled === "success") {
-          const payment = result.groups[0]?.receipts[0]?.payment;
-          if (payment?.ok && payment.thresholdMet) {
-            toast.success(
-              `Payment confirmed — •••• ${result.groups[0]?.receipts[0]?.receipt.parsedCardLast4 ?? "????"}`,
-            );
-          } else if (payment?.ok && !payment.thresholdMet) {
-            toast.success(
-              `Partial payment ${payment.paymentSequenceLabel ?? ""} saved`.trim(),
-            );
-          } else if (payment && !payment.ok && payment.code === "ai_skipped_no_keys") {
-            toast.error(AI_SKIP_NO_KEYS_MESSAGE);
-          }
-        } else if (summary.errorMessage) {
-          toast.error(summary.errorMessage);
-        }
-      } else {
-        setAnalyzingLabel(`Analyzing ${files.length} receipts…`);
+      const successGroups = result.groups.filter((group) =>
+        group.receipts.every(
+          (row) =>
+            row.payment.ok ||
+            row.payment.code === "ai_skipped_no_keys" ||
+            row.payment.code === "validate_only",
+        ),
+      );
 
-        const analysis = await analyzeUploadBatch.mutateAsync({
-          items: uploadedItems,
-          dueEntryId,
-        });
-
-        const jobs: CardUploadJob[] = analysis.groups.map((group) => ({
-          processId: crypto.randomUUID(),
-          cardLabel: group.label,
-          receiptCount: group.items.length,
-          settled: null,
-          errorMessage: null,
-        }));
-
-        setAnalyzingLabel(null);
-        setCardJobs(jobs);
-
-        const result = await processUploadBatch.mutateAsync({
-          groups: analysis.groups.map((group, index) => ({
-            processId: jobs[index]!.processId,
-            cardLabel: group.label,
-            items: group.items,
-          })),
-          dueEntryId,
-          markPaid: true,
-          updateCalendar: uploadOptions.updateCalendar,
-        });
-
-        setCardJobs(
-          jobs.map((job, index) => {
-            const summary = summarizeGroupResults(
-              result.groups[index]?.receipts ?? [],
-            );
-            return {
-              ...job,
-              settled: summary.settled,
-              errorMessage: summary.errorMessage,
-            };
-          }),
-        );
-
-        const successGroups = result.groups.filter((group) =>
-          group.receipts.every(
-            (row) =>
-              row.payment.ok ||
-              row.payment.code === "ai_skipped_no_keys" ||
-              row.payment.code === "validate_only",
-          ),
-        );
-
-        if (successGroups.length > 0) {
+      if (successGroups.length === 1 && total === 1) {
+        const payment = successGroups[0]!.receipts[0]?.payment;
+        if (payment?.ok && payment.thresholdMet) {
           toast.success(
-            successGroups.length === 1
-              ? `${successGroups[0]!.cardLabel} — ${successGroups[0]!.receiptCount} receipt(s) processed`
-              : `${successGroups.length} cards processed`,
+            `Payment confirmed — •••• ${successGroups[0]!.receipts[0]?.receipt.parsedCardLast4 ?? "????"}`,
           );
+        } else if (payment?.ok && !payment.thresholdMet) {
+          toast.success(
+            `Partial payment ${payment.paymentSequenceLabel ?? ""} saved`.trim(),
+          );
+        } else if (
+          payment &&
+          !payment.ok &&
+          payment.code === "ai_skipped_no_keys"
+        ) {
+          toast.error(AI_SKIP_NO_KEYS_MESSAGE);
         }
-
-        const failed = result.groups.find((group) =>
-          group.receipts.some(
-            (row) =>
-              !row.payment.ok &&
-              row.payment.code !== "ai_skipped_no_keys" &&
-              row.payment.code !== "validate_only",
-          ),
+      } else if (successGroups.length > 0) {
+        toast.success(
+          successGroups.length === 1
+            ? `${successGroups[0]!.cardLabel} — ${successGroups[0]!.receiptCount} receipt(s) processed`
+            : `${successGroups.length} cards processed`,
         );
-        if (failed) {
-          const reason = failed.receipts.find((row) => !row.payment.ok);
-          toast.error(
-            reason && !reason.payment.ok
-              ? reason.payment.reason
-              : "Some receipts failed",
-          );
-        }
+      }
+
+      const failed = result.groups.find((group) =>
+        group.receipts.some(
+          (row) =>
+            !row.payment.ok &&
+            row.payment.code !== "ai_skipped_no_keys" &&
+            row.payment.code !== "validate_only",
+        ),
+      );
+      if (failed) {
+        const reason = failed.receipts.find((row) => !row.payment.ok);
+        toast.error(
+          reason && !reason.payment.ok
+            ? reason.payment.reason
+            : "Some receipts failed",
+        );
       }
 
       void utils.receipts.list.invalidate();
@@ -261,8 +216,8 @@ export function useReceiptUploadFlow(connected: Set<string>) {
           : [
               {
                 processId: crypto.randomUUID(),
-                cardLabel: "Receipt",
-                receiptCount: 1,
+                cardLabel: total === 1 ? "Receipt" : `${total} receipts`,
+                receiptCount: total,
                 settled: "error" as const,
                 errorMessage: message,
               },
@@ -270,7 +225,7 @@ export function useReceiptUploadFlow(connected: Set<string>) {
       );
       toast.error(message);
     } finally {
-      setAnalyzingLabel(null);
+      setBatchProgress(null);
       setIsUploading(false);
     }
   }
@@ -293,7 +248,7 @@ export function useReceiptUploadFlow(connected: Set<string>) {
   function handleProgressComplete() {
     setProgressOpen(false);
     setCardJobs([]);
-    setAnalyzingLabel(null);
+    setBatchProgress(null);
   }
 
   function handleProgressOpenChange(open: boolean) {
@@ -322,7 +277,7 @@ export function useReceiptUploadFlow(connected: Set<string>) {
     fileRef,
     progressOpen,
     cardJobs,
-    analyzingLabel,
+    batchProgress,
     uploadOptions,
     isPending,
     handleProgressComplete,
