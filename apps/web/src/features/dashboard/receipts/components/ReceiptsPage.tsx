@@ -29,7 +29,7 @@ import { ReceiptCard } from "./ReceiptCard";
 import { ReceiptGroupHeader } from "./ReceiptGroupHeader";
 import { ReceiptGroupToggle } from "./ReceiptGroupToggle";
 import { ReceiptPreviewDialog } from "./ReceiptPreviewDialog";
-import { ReceiptUploadProgressDialog } from "@/components/shared/ReceiptUploadProgressDialog";
+import { ReceiptBatchUploadProgressDialog } from "@/components/shared/ReceiptBatchUploadProgressDialog";
 
 const GROUP_MODE_KEY = "kame-ops:receipts-group-mode";
 
@@ -165,6 +165,7 @@ export function ReceiptsPage() {
               ref={receiptUpload.fileRef}
               type="file"
               accept="image/*,application/pdf"
+              multiple
               className="hidden"
               onChange={receiptUpload.handleFileInputChange}
             />
@@ -179,14 +180,13 @@ export function ReceiptsPage() {
         }
       />
 
-      <ReceiptUploadProgressDialog
+      <ReceiptBatchUploadProgressDialog
         open={receiptUpload.progressOpen}
         onOpenChange={receiptUpload.handleProgressOpenChange}
-        processId={receiptUpload.activeProcessId}
+        jobs={receiptUpload.cardJobs}
         options={receiptUpload.uploadOptions}
         isPending={receiptUpload.isPending}
-        settled={receiptUpload.uploadSettled}
-        errorMessage={receiptUpload.uploadErrorMessage}
+        analyzingLabel={receiptUpload.analyzingLabel}
         onComplete={receiptUpload.handleProgressComplete}
       />
 

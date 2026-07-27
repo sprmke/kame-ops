@@ -162,6 +162,20 @@ export class ReceiptUploadProgressReporter {
     await this.scheduleFlush();
   }
 
+  async resetSteps(stepIds: ReceiptUploadStepId[]): Promise<void> {
+    if (this.status !== "running") return;
+    this.steps = cloneSteps(this.steps);
+    const reset = new Set(stepIds);
+    for (const step of this.steps) {
+      if (reset.has(step.id)) {
+        step.status = "pending";
+      }
+    }
+    this.detail = null;
+    this.dirty = true;
+    await this.scheduleFlush();
+  }
+
   async complete(): Promise<void> {
     this.status = "completed";
     this.steps = cloneSteps(this.steps).map((s) => ({ ...s, status: "done" }));

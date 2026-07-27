@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DashboardSection } from "@/components/shared/DashboardSection";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { ReceiptUploadProgressDialog } from "@/components/shared/ReceiptUploadProgressDialog";
+import { ReceiptBatchUploadProgressDialog } from "@/components/shared/ReceiptBatchUploadProgressDialog";
 import { RemindersContentSkeleton } from "@/components/shared/skeletons";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -193,6 +193,7 @@ export function ReminderDueEntriesPanel() {
         ref={receiptUpload.fileRef}
         type="file"
         accept="image/*,application/pdf"
+        multiple
         className="hidden"
         onChange={receiptUpload.handleFileInputChange}
       />
@@ -239,14 +240,13 @@ export function ReminderDueEntriesPanel() {
         disabled={actionPending}
       />
 
-      <ReceiptUploadProgressDialog
+      <ReceiptBatchUploadProgressDialog
         open={receiptUpload.progressOpen}
         onOpenChange={receiptUpload.handleProgressOpenChange}
-        processId={receiptUpload.activeProcessId}
+        jobs={receiptUpload.cardJobs}
         options={receiptUpload.uploadOptions}
         isPending={receiptUpload.isPending}
-        settled={receiptUpload.uploadSettled}
-        errorMessage={receiptUpload.uploadErrorMessage}
+        analyzingLabel={receiptUpload.analyzingLabel}
         onComplete={receiptUpload.handleProgressComplete}
       />
 

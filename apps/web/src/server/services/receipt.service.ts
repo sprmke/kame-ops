@@ -31,6 +31,12 @@ import {
 import { ReceiptUploadProgressReporter } from "./receipt-upload-progress.service";
 import { storageService } from "./storage.service";
 import { enrichDueEntriesWithSoaPeriod } from "./due-statement-period.service";
+import {
+  groupAnalyzedBatchItems,
+  type AnalyzedBatchGroup,
+  type AnalyzedBatchItem,
+  type BatchUploadItemInput,
+} from "@/lib/receipts/receipt-card-group";
 import { matchReceiptToDue } from "@/lib/receipts/match-due";
 import {
   computeDuePaymentCoverage,
@@ -354,6 +360,9 @@ export const receiptService = {
       caption?: string;
       markPaid?: boolean;
       processId?: string;
+      prefetchedAi?: CreditCardReceiptAiResult;
+      skipPrepare?: boolean;
+      batchMeta?: { index: number; total: number; isLast: boolean };
     },
   ): Promise<ReceiptProcessResult> {
     let reporter: ReceiptUploadProgressReporter | null = null;
@@ -361,7 +370,7 @@ export const receiptService = {
       reporter =
         (await ReceiptUploadProgressReporter.resume(userId, input.processId)) ??
         null;
-      if (reporter) {
+      if (reporter && !input.skipPrepare) {
         await reporter.activate("prepare", "Loading your cards");
       }
     }
@@ -420,9 +429,14 @@ export const receiptService = {
       };
     }
 
-    await reporter?.completeStep("prepare");
+    if (!input.skipPrepare) {
+      await reporter?.completeStep("prepare");
+    }
 
     const mimeType = mimeFromPath(input.originalFileName ?? input.storagePath);
+    const batchLabel = input.batchMeta
+      ? `Receipt ${input.batchMeta.index}/${input.batchMeta.total}`
+      : null;
 
     if (!(await aiApiKeyService.hasConfiguredKeys(userId))) {
       const ai = skippedReceiptAi(AI_SKIP_NO_KEYS_MESSAGE, "no_keys");
@@ -454,13 +468,26 @@ export const receiptService = {
       };
     }
 
-    await reporter?.activate("validate", "Analyzing receipt with AI");
-    const ai = await validateCreditCardReceiptImage(userId, buffer, mimeType, {
-      knownCards,
-      dueContext,
-    });
-    await reporter?.completeStep("validate");
-    await reporter?.activate("save", "Saving receipt details");
+    let ai: CreditCardReceiptAiResult;
+    if (input.prefetchedAi) {
+      ai = input.prefetchedAi;
+      await reporter?.activate(
+        "validate",
+        batchLabel ?? "Using analyzed receipt data",
+      );
+      await reporter?.completeStep("validate");
+    } else {
+      await reporter?.activate("validate", "Analyzing receipt with AI");
+      ai = await validateCreditCardReceiptImage(userId, buffer, mimeType, {
+        knownCards,
+        dueContext,
+      });
+      await reporter?.completeStep("validate");
+    }
+    await reporter?.activate(
+      "save",
+      batchLabel ? `${batchLabel} — saving` : "Saving receipt details",
+    );
 
     const extraction = ai.extraction;
     const paymentStatus = ai.aiModelError ? "ai_error" : "pending";
@@ -497,7 +524,9 @@ export const receiptService = {
     await reporter?.completeStep("save");
 
     if (isReceiptAiSkipped(ai)) {
-      await reporter?.complete();
+      if (!input.batchMeta || input.batchMeta.isLast) {
+        await reporter?.complete();
+      }
       return {
         receipt: receiptRow!,
         ai,
@@ -542,7 +571,9 @@ export const receiptService = {
     }
 
     if (input.markPaid === false) {
-      await reporter?.complete();
+      if (!input.batchMeta || input.batchMeta.isLast) {
+        await reporter?.complete();
+      }
       return {
         receipt: receiptRow!,
         ai,
@@ -608,7 +639,16 @@ export const receiptService = {
         `Partial ${payResult.paymentSequence.label} · ${payResult.coverage === "partial" ? "below minimum due" : "recorded"}`,
       );
       await reporter?.skipRemaining("reminders");
-      await reporter?.complete();
+      if (input.batchMeta && !input.batchMeta.isLast) {
+        await reporter?.resetSteps([
+          "mark_paid",
+          "reminders",
+          "calendar",
+          "sync",
+        ]);
+      } else {
+        await reporter?.complete();
+      }
     } else {
       await reporter?.activate(
         "reminders",
@@ -637,7 +677,16 @@ export const receiptService = {
 
       await reporter?.activate("sync", "Saving");
       await reporter?.completeStep("sync");
-      await reporter?.complete();
+      if (!input.batchMeta || input.batchMeta.isLast) {
+        await reporter?.complete();
+      } else {
+        await reporter?.resetSteps([
+          "mark_paid",
+          "reminders",
+          "calendar",
+          "sync",
+        ]);
+      }
     }
 
     const updatedReceipt = await db.query.receipts.findFirst({
@@ -932,6 +981,161 @@ export const receiptService = {
       ai,
       paymentStatus,
     };
+  },
+
+  async analyzeUploadBatch(
+    userId: string,
+    input: {
+      items: BatchUploadItemInput[];
+      dueEntryId?: string;
+    },
+  ): Promise<{ groups: AnalyzedBatchGroup[] }> {
+    if (input.items.length === 0) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "No receipts to analyze",
+      });
+    }
+
+    const cards = await creditCardService.list(userId);
+    const knownCards = cards.map((c) => ({
+      last4: c.last4,
+      issuerId: c.issuer,
+      bankLabel: c.issuer,
+      displayLabel: c.label,
+    }));
+
+    let dueContext:
+      | {
+          cardLast4: string;
+          issuerId: string;
+          bankLabel: string;
+          dueDateYmd: string;
+          minimumDue: string;
+          totalDue: string;
+        }
+      | undefined;
+    let forcedLabel: string | undefined;
+
+    if (input.dueEntryId) {
+      const targetDueEntry = await db.query.dueEntries.findFirst({
+        where: and(
+          eq(dueEntries.id, input.dueEntryId),
+          eq(dueEntries.userId, userId),
+        ),
+      });
+      if (!targetDueEntry) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Due entry not found",
+        });
+      }
+      dueContext = {
+        cardLast4: targetDueEntry.cardLast4,
+        issuerId: targetDueEntry.issuerId,
+        bankLabel: targetDueEntry.bankLabel,
+        dueDateYmd: targetDueEntry.dueDateYmd,
+        minimumDue: targetDueEntry.minimumDue,
+        totalDue: targetDueEntry.totalDue,
+      };
+      forcedLabel =
+        targetDueEntry.cardDisplayLabel ??
+        `${targetDueEntry.bankLabel} ·••• ${targetDueEntry.cardLast4}`;
+    }
+
+    const analyzed: AnalyzedBatchItem[] = [];
+
+    for (const item of input.items) {
+      const buffer = await storageService.readPrivate(item.storagePath);
+      if (!buffer?.length) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Could not read ${item.originalFileName ?? "receipt"}`,
+        });
+      }
+
+      const mimeType = mimeFromPath(item.originalFileName ?? item.storagePath);
+
+      if (!(await aiApiKeyService.hasConfiguredKeys(userId))) {
+        analyzed.push({
+          ...item,
+          ai: skippedReceiptAi(AI_SKIP_NO_KEYS_MESSAGE, "no_keys"),
+        });
+        continue;
+      }
+
+      const ai = await validateCreditCardReceiptImage(userId, buffer, mimeType, {
+        knownCards,
+        dueContext,
+      });
+
+      analyzed.push({ ...item, ai });
+    }
+
+    const groups = groupAnalyzedBatchItems(analyzed, knownCards, {
+      forcedDueEntryId: input.dueEntryId,
+      forcedLabel,
+    });
+
+    return { groups };
+  },
+
+  async processUploadBatch(
+    userId: string,
+    input: {
+      groups: Array<{
+        processId: string;
+        cardLabel: string;
+        items: AnalyzedBatchItem[];
+      }>;
+      dueEntryId?: string;
+      markPaid?: boolean;
+      updateCalendar?: boolean;
+    },
+  ) {
+    const results: Array<{
+      processId: string;
+      cardLabel: string;
+      receiptCount: number;
+      receipts: ReceiptProcessResult[];
+    }> = [];
+
+    for (const group of input.groups) {
+      await ReceiptUploadProgressReporter.create(userId, group.processId, {
+        markPaid: input.markPaid !== false,
+        updateCalendar: input.updateCalendar ?? false,
+      });
+
+      const groupResults: ReceiptProcessResult[] = [];
+
+      for (let i = 0; i < group.items.length; i++) {
+        const item = group.items[i]!;
+        const result = await this.processUploadedReceipt(userId, {
+          storagePath: item.storagePath,
+          originalFileName: item.originalFileName,
+          dueEntryId: input.dueEntryId,
+          markPaid: input.markPaid,
+          processId: group.processId,
+          prefetchedAi: item.ai,
+          skipPrepare: i > 0,
+          batchMeta: {
+            index: i + 1,
+            total: group.items.length,
+            isLast: i === group.items.length - 1,
+          },
+        });
+        groupResults.push(result);
+      }
+
+      results.push({
+        processId: group.processId,
+        cardLabel: group.cardLabel,
+        receiptCount: group.items.length,
+        receipts: groupResults,
+      });
+    }
+
+    return { groups: results };
   },
 
   async processTelegramReceipt(
