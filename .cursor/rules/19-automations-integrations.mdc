@@ -17,7 +17,7 @@ alwaysApply: false
 
 ## Scheduling
 
-**Production:** Supabase **`pg_cron` + `pg_net`** (every minute) → `GET /api/cron/dispatch` with `CRON_SECRET` from Vault. See **`docs/temp/scheduled-jobs-and-testing.md`**. Vercel Hobby cannot use sub-daily `vercel.json` crons. The dispatcher runs due `automation_jobs` (per user timezone): `send_due_reminders` (default seeded daily 12:00 PM) and user-created `run_soa_pipeline` jobs—not macOS launchd.
+**Production:** Supabase **`pg_cron` + `pg_net`** and Vercel cron both fire **once daily** (`0 4 * * *` UTC = 12:00 PM Asia/Manila) → `GET /api/cron/dispatch` with `CRON_SECRET` from Vault. See **`docs/temp/scheduled-jobs-and-testing.md`**. Do **not** use every-minute cron — it burns Vercel Fluid CPU. The dispatcher runs due `automation_jobs` (per user timezone): `send_due_reminders` (default seeded daily 12:00 PM) and user-created `run_soa_pipeline` jobs—not macOS launchd.
 
 | Job type | Legacy CLI | KameOps |
 | -------- | ---------- | ------- |

@@ -1,6 +1,7 @@
 -- KameOps automation dispatcher: pg_cron + pg_net → GET /api/cron/dispatch
 --
--- Vercel Hobby cannot run sub-daily crons in vercel.json. Schedule this in Supabase instead.
+-- Runs once daily (same window as vercel.json) to avoid waking Vercel every minute.
+-- Schedule: 0 4 * * * UTC = 12:00 PM Asia/Manila.
 --
 -- One-time Vault secrets (Supabase Dashboard → SQL Editor):
 --
@@ -20,7 +21,8 @@ SET search_path = public, extensions, cron, vault, pg_temp
 AS $fn$
 DECLARE
   r RECORD;
-  cron_expr text := '* * * * *';
+  -- Daily at 04:00 UTC (12:00 Asia/Manila). Do not use * * * * * — that burns Vercel Fluid/CPU.
+  cron_expr text := '0 4 * * *';
   v_cmd_body text := $BODY$
 SELECT net.http_get(
   url := rtrim(
@@ -70,7 +72,7 @@ END;
 $fn$;
 
 COMMENT ON FUNCTION public.sync_kame_ops_automation_dispatch_cron_job() IS
-  'Schedules kame-ops-automation-dispatch (every minute UTC) calling GET /api/cron/dispatch with CRON_SECRET from Vault.';
+  'Schedules kame-ops-automation-dispatch (daily 0 4 * * * UTC) calling GET /api/cron/dispatch with CRON_SECRET from Vault.';
 
 -- Apply after Vault secrets exist:
 -- SELECT public.sync_kame_ops_automation_dispatch_cron_job();

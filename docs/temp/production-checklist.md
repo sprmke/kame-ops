@@ -78,9 +78,9 @@ See **`docs/temp/supabase-setup.md`** for the full walkthrough.
 
 | Target                                            | Schedule (UTC) | Notes                                                                                                    |
 | ------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------- |
-| `GET /api/cron/dispatch` on `NEXT_PUBLIC_APP_URL` | `* * * * *`    | Every minute via **`pg_cron` + `pg_net`** in Supabase; see **`docs/temp/scheduled-jobs-and-testing.md`** |
+| `GET /api/cron/dispatch` on `NEXT_PUBLIC_APP_URL` | `0 4 * * *`    | Once daily via **`pg_cron` + `pg_net`** in Supabase (12:00 PM Manila); see **`docs/temp/scheduled-jobs-and-testing.md`** |
 
-`apps/web/vercel.json` also schedules the same route **once daily** at `0 4 * * *` UTC (12:00 PM Manila) as a Hobby-plan fallback. Dispatcher runs overdue jobs when `next_run_at` is in the past.
+`apps/web/vercel.json` schedules the same route **once daily** at `0 4 * * *` UTC as a redundant Hobby-plan tick. Do **not** use `* * * * *` — that burns Fluid CPU. Dispatcher runs overdue jobs when `next_run_at` is in the past.
 
 Cron requests must include: `Authorization: Bearer <CRON_SECRET>` (stored in Supabase Vault as `kame_ops_cron_secret`).
 

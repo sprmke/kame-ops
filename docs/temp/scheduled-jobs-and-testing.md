@@ -1,15 +1,17 @@
 # Scheduled jobs (Supabase pg_cron)
 
-KameOps runs due automations and payment reminders via **`GET /api/cron/dispatch`**. Production uses **Supabase `pg_cron` + `pg_net`** (every minute). **Vercel Hobby** also has a **daily fallback** cron in `vercel.json` (`0 4 * * *` UTC = 12:00 PM Asia/Manila).
+KameOps runs due automations and payment reminders via **`GET /api/cron/dispatch`**. Production uses **Supabase `pg_cron` + `pg_net`** **once daily** (`0 4 * * *` UTC = 12:00 PM Asia/Manila), matching **`apps/web/vercel.json`**. Overdue jobs still run on the next tick when `next_run_at` is in the past.
+
+> **Cost note:** Do **not** schedule `* * * * *`. An every-minute ping wakes a Vercel Fluid function ~1,440×/day and drives most of the project's Active CPU / provisioned memory even with no users.
 
 ## What the dispatcher does
 
-Every minute (pg_cron) or once daily (Vercel fallback), the cron job HTTP-calls your deployed app. The handler:
+Once daily (pg_cron and/or Vercel), the cron job HTTP-calls your deployed app. The handler:
 
 1. Verifies `Authorization: Bearer <CRON_SECRET>`
 2. Runs `automationService.dispatchDueJobs()` — evaluates each active `automation_jobs` row against the user's timezone schedule (daily / weekly / monthly + time)
 3. **Overdue catch-up:** if `next_run_at` is in the past and the job has not run since that due time, it runs immediately (not only at the exact scheduled minute)
-4. Runs `send_due_reminders` when due; respects per-card **reminder interval** (hourly, every 2h, etc.) via `reminder_logs`
+4. Runs `send_due_reminders` when due; respects per-card **reminder interval** via `reminder_logs` (sub-daily intervals need a more frequent cron — not enabled by default)
 
 Manual **Run now** in the Automations UI still works without pg_cron.
 
@@ -41,13 +43,13 @@ Run the full script:
 
 `apps/web/supabase/snippets/automation-dispatch-cron.sql`
 
-Or, if the function already exists:
+Or, if the function already exists (after deploying the updated snippet):
 
 ```sql
 select public.sync_kame_ops_automation_dispatch_cron_job();
 ```
 
-Expected: `{"ok": true, "job": "kame-ops-automation-dispatch", "cronExpr": "* * * * *"}`
+Expected: `{"ok": true, "job": "kame-ops-automation-dispatch", "cronExpr": "0 4 * * *"}`
 
 ### 4. Verify
 
@@ -56,7 +58,29 @@ select jobid, jobname, schedule, active from cron.job
 where jobname = 'kame-ops-automation-dispatch';
 ```
 
-After ~1 minute, check **Vercel → Logs** or run an automation at the current minute and confirm `automation_runs` updates.
+Expect `schedule = '0 4 * * *'`. After the next noon Manila tick, check **Vercel → Logs** or run an automation manually and confirm `automation_runs` updates.
+
+## Fix: stop every-minute Vercel usage (run in Supabase SQL Editor)
+
+If the live job is still `* * * * *`, apply this now:
+
+```sql
+-- 1) Stop the expensive minute ticker immediately
+select cron.unschedule('kame-ops-automation-dispatch');
+
+-- 2) Re-install the sync function from apps/web/supabase/snippets/automation-dispatch-cron.sql
+--    (paste the full file contents, or at least CREATE OR REPLACE FUNCTION …)
+
+-- 3) Schedule once daily
+select public.sync_kame_ops_automation_dispatch_cron_job();
+
+-- 4) Confirm
+select jobid, jobname, schedule, active
+from cron.job
+where jobname = 'kame-ops-automation-dispatch';
+```
+
+**Optional — rely on Vercel only:** if Vault secrets / pg_cron are unused, leave the job unscheduled after step 1. `vercel.json` already hits `/api/cron/dispatch` at `0 4 * * *` UTC.
 
 ## Local / manual testing
 
@@ -78,12 +102,13 @@ curl -sS -H "Authorization: Bearer $CRON_SECRET" \
 
 | Symptom                            | Check                                                                                                          |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Deploy blocked on Vercel Hobby     | `vercel.json` allows **one** daily cron (`0 4 * * *`); minute-level dispatch still needs Supabase pg_cron      |
-| Jobs stuck with "Next run" overdue | Deploy overdue catch-up (`isAutomationJobDue`); confirm pg_cron job is active; run dispatch manually to verify |
+| High Vercel Fluid CPU / invocations | Confirm `cron.job` is **not** `* * * * *`; expect `0 4 * * *` or unscheduled                                  |
+| Deploy blocked on Vercel Hobby     | `vercel.json` allows **one** daily cron (`0 4 * * *`); that is enough for once-daily dispatch                  |
+| Jobs stuck with "Next run" overdue | Confirm daily cron is active; run dispatch manually to verify; overdue catch-up runs on next tick              |
 | `401 Unauthorized` from dispatch   | `kame_ops_cron_secret` in Vault must match Vercel `CRON_SECRET`                                                |
-| Jobs never run at scheduled time   | pg_cron must fire every minute; user schedule is timezone-aware (`users.timezone`)                             |
+| Jobs never run at scheduled time   | Daily cron fires at 04:00 UTC; user schedule is timezone-aware (`users.timezone`)                              |
 | `sync_…` returns missing Vault     | Create both `kame_ops_app_url` and `kame_ops_cron_secret` first                                                |
-| Reminders only once per day        | Confirm minute cron is active; card interval &lt; 1440 needs frequent dispatch ticks                           |
+| Need sub-daily reminder intervals  | Temporarily raise pg_cron (e.g. `0 * * * *` hourly) — avoid `* * * * *`                                       |
 
 ## Related
 
