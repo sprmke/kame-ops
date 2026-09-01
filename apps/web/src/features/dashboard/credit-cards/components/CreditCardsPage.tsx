@@ -1,58 +1,59 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 import {
   CreditCard,
   HelpCircle,
   MoreHorizontal,
   Pencil,
   Trash2,
-} from 'lucide-react';
-import { toast } from 'sonner';
+} from "lucide-react";
+import { toast } from "sonner";
 
-import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
-import { DashboardPageHeader } from '@/components/shared/DashboardPageHeader';
-import { EmptyState } from '@/components/shared/EmptyState';
-import { ListViewToolbar } from '@/components/shared/ListViewToolbar';
-import { ViewModeLayout } from '@/components/shared/ViewModeLayout';
-import { CardFormSkeleton } from '@/components/shared/skeletons';
-import { StatusBadge } from '@/components/shared/StatusBadge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { DashboardPageHeader } from "@/components/shared/DashboardPageHeader";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { GoogleAccountSelect } from "@/components/shared/GoogleAccountSelect";
+import { ListViewToolbar } from "@/components/shared/ListViewToolbar";
+import { ViewModeLayout } from "@/components/shared/ViewModeLayout";
+import { CardFormSkeleton } from "@/components/shared/skeletons";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { PasswordInput } from '@/components/ui/password-input';
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { api } from '@/lib/api/client';
-import { normalizeCardLast4 } from '@/lib/due/normalize';
-import { useListPagination } from '@/lib/hooks/use-list-pagination';
+} from "@/components/ui/tooltip";
+import { api } from "@/lib/api/client";
+import { normalizeCardLast4 } from "@/lib/due/normalize";
+import { useListPagination } from "@/lib/hooks/use-list-pagination";
 import {
   BANK_ISSUERS,
   DEFAULT_CARD_COLORS,
@@ -67,19 +68,26 @@ import {
   REMINDER_INTERVALS,
   type BankIssuer,
   type ReminderIntervalMinutes,
-} from '@/lib/db/schema/credit-cards';
+} from "@/lib/db/schema/credit-cards";
 
 import {
   DEFAULT_REMINDER_WINDOW_DAYS,
   formatReminderSummary,
-} from '@/lib/reminders/reminder-labels';
-import { CreditCardsTable } from './CreditCardsTable';
-import { CardColorPicker } from './CardColorPicker';
-import { CreditCardsLoadingView } from './CreditCardsLoadingView';
-import { useHasHydrated } from '@/hooks/use-has-hydrated';
-import { usePersistedViewMode } from '@/hooks/use-persisted-view-mode';
-import { CardBankLabel } from '@/lib/credit-cards/CardBankLabel';
-import { resolveCardAccent } from '@/lib/credit-cards/card-accent';
+} from "@/lib/reminders/reminder-labels";
+import { CreditCardsTable } from "./CreditCardsTable";
+import { CardColorPicker } from "./CardColorPicker";
+import { CreditCardsLoadingView } from "./CreditCardsLoadingView";
+import { useHasHydrated } from "@/hooks/use-has-hydrated";
+import { useGoogleLinkCallback } from "@/hooks/use-google-link-callback";
+import { usePersistedViewMode } from "@/hooks/use-persisted-view-mode";
+import { CardBankLabel } from "@/lib/credit-cards/CardBankLabel";
+import { resolveCardAccent } from "@/lib/credit-cards/card-accent";
+import {
+  clearAddCardDraft,
+  loadAddCardDraft,
+  saveAddCardDraft,
+  type AddCardDraft,
+} from "@/lib/credit-cards/add-card-draft";
 
 const DEFAULT_WINDOW = DEFAULT_REMINDER_WINDOW_DAYS;
 
@@ -88,13 +96,14 @@ export function CreditCardsPage() {
   const utils = api.useUtils();
   const { data: cards, isLoading } = api.creditCards.list.useQuery();
   const { viewMode, setViewMode } = usePersistedViewMode(
-    'kame-ops:credit-cards-view-mode',
+    "kame-ops:credit-cards-view-mode",
   );
   const pagination = useListPagination(cards ?? [], 7);
 
   const create = api.creditCards.create.useMutation({
     onSuccess: () => {
-      toast.success('Card added');
+      toast.success("Card added");
+      clearAddCardDraft();
       void utils.creditCards.list.invalidate();
       void utils.overview.stats.invalidate();
       setAddOpen(false);
@@ -105,7 +114,7 @@ export function CreditCardsPage() {
 
   const update = api.creditCards.update.useMutation({
     onSuccess: (_data, variables) => {
-      toast.success('Card updated');
+      toast.success("Card updated");
       void utils.creditCards.list.invalidate();
       void utils.creditCards.get.invalidate({ id: variables.id });
       setEditOpen(false);
@@ -115,7 +124,7 @@ export function CreditCardsPage() {
 
   const remove = api.creditCards.delete.useMutation({
     onSuccess: () => {
-      toast.success('Card removed');
+      toast.success("Card removed");
       void utils.creditCards.list.invalidate();
       void utils.overview.stats.invalidate();
     },
@@ -125,18 +134,20 @@ export function CreditCardsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [issuer, setIssuer] = useState<BankIssuer>('bpi');
-  const [label, setLabel] = useState('');
-  const [fullPan, setFullPan] = useState('');
-  const [contactLine, setContactLine] = useState('');
-  const [pdfPassword, setPdfPassword] = useState('');
-  const [gmailMonthOffset, setGmailMonthOffset] = useState('0');
-  const [reminderWindowDays, setReminderWindowDays] = useState('');
+  const [issuer, setIssuer] = useState<BankIssuer>("bpi");
+  const [label, setLabel] = useState("");
+  const [fullPan, setFullPan] = useState("");
+  const [dueDay, setDueDay] = useState("");
+  const [contactLine, setContactLine] = useState("");
+  const [pdfPassword, setPdfPassword] = useState("");
+  const [gmailMonthOffset, setGmailMonthOffset] = useState("0");
+  const [reminderWindowDays, setReminderWindowDays] = useState("");
   const [reminderIntervalMinutes, setReminderIntervalMinutes] =
     useState<ReminderIntervalMinutes>(DEFAULT_REMINDER_INTERVAL_MINUTES);
-  const [notes, setNotes] = useState('');
-  const [soaSubject, setSoaSubject] = useState(defaultSoaSubject('bpi'));
+  const [notes, setNotes] = useState("");
+  const [soaSubject, setSoaSubject] = useState(defaultSoaSubject("bpi"));
   const [color, setColor] = useState(DEFAULT_CARD_COLORS.bpi);
+  const [googleAccountId, setGoogleAccountId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [formPopulatedForId, setFormPopulatedForId] = useState<string | null>(
     null,
@@ -162,20 +173,21 @@ export function CreditCardsPage() {
   useEffect(() => {
     if (!editingCard || editingCard.id !== editingId) return;
     setIssuer(normalizeBankIssuer(editingCard.issuer));
-    setLabel(editingCard.label ?? '');
-    setFullPan(editingCard.fullPan ?? '');
-    setContactLine(editingCard.contactLine ?? '');
+    setLabel(editingCard.label ?? "");
+    setFullPan(editingCard.fullPan ?? "");
+    setDueDay(editingCard.dueDay != null ? String(editingCard.dueDay) : "");
+    setContactLine(editingCard.contactLine ?? "");
     setPdfPassword(editingCard.pdfPassword);
     setGmailMonthOffset(String(editingCard.gmailMonthOffset ?? 0));
     setReminderWindowDays(
       editingCard.reminderWindowDays != null
         ? String(editingCard.reminderWindowDays)
-        : '',
+        : "",
     );
     setReminderIntervalMinutes(
       normalizeReminderIntervalMinutes(editingCard.reminderIntervalMinutes),
     );
-    setNotes(editingCard.notes ?? '');
+    setNotes(editingCard.notes ?? "");
     setSoaSubject(
       normalizeSoaSubject(
         editingCard.soaSubject,
@@ -188,35 +200,76 @@ export function CreditCardsPage() {
         normalizeBankIssuer(editingCard.issuer),
       ) ?? DEFAULT_CARD_COLORS.bpi,
     );
+    setGoogleAccountId(editingCard.googleAccountId ?? null);
     if (editingCard.secretsUnavailable) {
-      toast.error('PDF password could not be decrypted. Re-enter it and save.');
+      toast.error("PDF password could not be decrypted. Re-enter it and save.");
     }
     setFormPopulatedForId(editingId);
   }, [editingCard, editingId]);
 
   function resetForm() {
-    setIssuer('bpi');
-    setLabel('');
-    setFullPan('');
-    setContactLine('');
-    setPdfPassword('');
-    setGmailMonthOffset('0');
-    setReminderWindowDays('');
+    setIssuer("bpi");
+    setLabel("");
+    setFullPan("");
+    setDueDay("");
+    setContactLine("");
+    setPdfPassword("");
+    setGmailMonthOffset("0");
+    setReminderWindowDays("");
     setReminderIntervalMinutes(DEFAULT_REMINDER_INTERVAL_MINUTES);
-    setNotes('');
-    setSoaSubject(defaultSoaSubject('bpi'));
+    setNotes("");
+    setSoaSubject(defaultSoaSubject("bpi"));
     setColor(DEFAULT_CARD_COLORS.bpi);
+    setGoogleAccountId(null);
+  }
+
+  function currentAddCardDraft(): AddCardDraft {
+    return {
+      issuer,
+      label,
+      fullPan,
+      dueDay,
+      contactLine,
+      pdfPassword,
+      gmailMonthOffset,
+      reminderWindowDays,
+      reminderIntervalMinutes,
+      notes,
+      soaSubject,
+      color,
+      googleAccountId,
+    };
+  }
+
+  function applyAddCardDraft(draft: AddCardDraft) {
+    setIssuer(draft.issuer);
+    setLabel(draft.label);
+    setFullPan(draft.fullPan);
+    setDueDay(draft.dueDay ?? "");
+    setContactLine(draft.contactLine);
+    setPdfPassword(draft.pdfPassword);
+    setGmailMonthOffset(draft.gmailMonthOffset);
+    setReminderWindowDays(draft.reminderWindowDays);
+    setReminderIntervalMinutes(draft.reminderIntervalMinutes);
+    setNotes(draft.notes);
+    setSoaSubject(draft.soaSubject);
+    setColor(draft.color);
+    setGoogleAccountId(draft.googleAccountId);
+  }
+
+  function persistAddCardDraftBeforeConnect() {
+    saveAddCardDraft(currentAddCardDraft());
   }
 
   function resolveLast4(fallbackLast4?: string): string {
-    const panDigits = fullPan.replace(/\D/g, '');
+    const panDigits = fullPan.replace(/\D/g, "");
     if (panDigits.length >= 4) {
       return normalizeCardLast4(fullPan);
     }
     if (fallbackLast4) {
       return normalizeCardLast4(fallbackLast4);
     }
-    return '';
+    return "";
   }
 
   function formPayload(fallbackLast4?: string) {
@@ -228,6 +281,7 @@ export function CreditCardsPage() {
       last4: resolveLast4(fallbackLast4),
       label: label || undefined,
       fullPan: fullPan || undefined,
+      dueDay: Number(dueDay),
       contactLine: contactLine || undefined,
       gmailMonthOffset: Number(gmailMonthOffset) || 0,
       reminderWindowDays: windowDays,
@@ -235,13 +289,22 @@ export function CreditCardsPage() {
       notes: notes || undefined,
       soaSubject: normalizeSoaSubject(soaSubject, issuer),
       color: normalizeCardColor(color, issuer),
+      googleAccountId,
     };
   }
 
   function submitCreate() {
     const payload = formPayload();
     if (payload.last4.length !== 4) {
-      toast.error('Enter a full card number with at least 4 digits');
+      toast.error("Enter a full card number with at least 4 digits");
+      return;
+    }
+    if (
+      !Number.isInteger(payload.dueDay) ||
+      payload.dueDay < 1 ||
+      payload.dueDay > 31
+    ) {
+      toast.error("Enter a due date from 1 to 31");
       return;
     }
     create.mutate({ ...payload, pdfPassword });
@@ -250,7 +313,15 @@ export function CreditCardsPage() {
   function submitUpdate(cardId: string, fallbackLast4: string) {
     const payload = formPayload(fallbackLast4);
     if (payload.last4.length !== 4) {
-      toast.error('Enter a full card number with at least 4 digits');
+      toast.error("Enter a full card number with at least 4 digits");
+      return;
+    }
+    if (
+      !Number.isInteger(payload.dueDay) ||
+      payload.dueDay < 1 ||
+      payload.dueDay > 31
+    ) {
+      toast.error("Enter a due date from 1 to 31");
       return;
     }
     update.mutate({
@@ -266,6 +337,52 @@ export function CreditCardsPage() {
     setEditingId(cardId);
     setEditOpen(true);
   }
+
+  useGoogleLinkCallback({
+    onSuccess: (accountId) => {
+      void utils.creditCards.list.invalidate();
+      const editId =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("edit")
+          : null;
+      if (editId) {
+        void utils.creditCards.get.invalidate({ id: editId });
+      }
+      if (accountId) {
+        setGoogleAccountId(accountId);
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const editId = params.get("edit");
+    const addReturn = params.get("add");
+
+    if (addReturn === "1") {
+      setAddOpen(true);
+      setFormSessionKey((key) => key + 1);
+      const draft = loadAddCardDraft();
+      if (draft) {
+        applyAddCardDraft(draft);
+        clearAddCardDraft();
+      }
+      params.delete("add");
+    }
+
+    if (editId) {
+      openEdit(editId);
+      params.delete("edit");
+    }
+
+    if (addReturn === "1" || editId) {
+      const next = `${window.location.pathname}${
+        params.toString() ? `?${params.toString()}` : ""
+      }`;
+      window.history.replaceState({}, "", next);
+    }
+  }, []);
 
   if (!hasHydrated || (isLoading && cards === undefined)) {
     return <CreditCardsLoadingView />;
@@ -302,6 +419,8 @@ export function CreditCardsPage() {
                 fullPan={fullPan}
                 setFullPan={setFullPan}
                 fullPanRequired
+                dueDay={dueDay}
+                setDueDay={setDueDay}
                 contactLine={contactLine}
                 setContactLine={setContactLine}
                 pdfPassword={pdfPassword}
@@ -318,6 +437,9 @@ export function CreditCardsPage() {
                 setSoaSubject={setSoaSubject}
                 color={color}
                 setColor={setColor}
+                googleAccountId={googleAccountId}
+                setGoogleAccountId={setGoogleAccountId}
+                onBeforeConnectOtherGmail={persistAddCardDraftBeforeConnect}
                 onSubmit={submitCreate}
                 pending={create.isPending}
                 submitLabel="Add card"
@@ -384,8 +506,8 @@ export function CreditCardsPage() {
                                 color={card.color}
                               />
                               <StatusBadge
-                                label={card.isActive ? 'Active' : 'Inactive'}
-                                variant={card.isActive ? 'success' : 'muted'}
+                                label={card.isActive ? "Active" : "Inactive"}
+                                variant={card.isActive ? "success" : "muted"}
                               />
                             </div>
                           </div>
@@ -434,14 +556,32 @@ export function CreditCardsPage() {
                           </div>
                           <div>
                             <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                              Due date
+                            </p>
+                            <p className="font-medium">
+                              {card.dueDay ? `Day ${card.dueDay}` : "Not set"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                               Interval
                             </p>
                             <p className="font-medium">
                               {REMINDER_INTERVALS.find(
                                 (i) => i.value === card.reminderIntervalMinutes,
-                              )?.label ?? 'Once per day'}
+                              )?.label ?? "Once per day"}
                             </p>
                           </div>
+                          {card.googleAccountLabel ? (
+                            <div className="sm:col-span-2">
+                              <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                                Gmail
+                              </p>
+                              <p className="truncate font-medium">
+                                {card.googleAccountLabel}
+                              </p>
+                            </div>
+                          ) : null}
                         </div>
                         {(card.gmailMonthOffset ?? 0) !== 0 && (
                           <StatusBadge
@@ -492,6 +632,8 @@ export function CreditCardsPage() {
                 setLabel={setLabel}
                 fullPan={fullPan}
                 setFullPan={setFullPan}
+                dueDay={dueDay}
+                setDueDay={setDueDay}
                 contactLine={contactLine}
                 setContactLine={setContactLine}
                 pdfPassword={pdfPassword}
@@ -508,6 +650,9 @@ export function CreditCardsPage() {
                 setSoaSubject={setSoaSubject}
                 color={color}
                 setColor={setColor}
+                googleAccountId={googleAccountId}
+                setGoogleAccountId={setGoogleAccountId}
+                creditCardId={editingId}
                 passwordOptional
                 onSubmit={() => submitUpdate(editingId, editingCard.last4)}
                 pending={update.isPending}
@@ -539,7 +684,7 @@ export function CreditCardsPage() {
 }
 
 const GMAIL_MONTH_OFFSET_HINT =
-  'Shifts which calendar month Gmail searches for the SOA email. Use -1 if your bank sends the statement in the previous month. Leave 0 for most banks.';
+  "Shifts which calendar month Gmail searches for the SOA email. Use -1 if your bank sends the statement in the previous month. Leave 0 for most banks.";
 
 function FieldLabelWithHint({
   htmlFor,
@@ -584,6 +729,8 @@ function CardForm({
   fullPan,
   setFullPan,
   fullPanRequired = false,
+  dueDay,
+  setDueDay,
   contactLine,
   setContactLine,
   pdfPassword,
@@ -600,6 +747,10 @@ function CardForm({
   setSoaSubject,
   color,
   setColor,
+  googleAccountId,
+  setGoogleAccountId,
+  creditCardId,
+  onBeforeConnectOtherGmail,
   passwordOptional,
   onSubmit,
   pending,
@@ -612,6 +763,8 @@ function CardForm({
   fullPan: string;
   setFullPan: (v: string) => void;
   fullPanRequired?: boolean;
+  dueDay: string;
+  setDueDay: (v: string) => void;
   contactLine: string;
   setContactLine: (v: string) => void;
   pdfPassword: string;
@@ -628,6 +781,10 @@ function CardForm({
   setSoaSubject: (v: string) => void;
   color: string;
   setColor: (v: string) => void;
+  googleAccountId: string | null;
+  setGoogleAccountId: (v: string | null) => void;
+  creditCardId?: string | null;
+  onBeforeConnectOtherGmail?: () => void;
   passwordOptional?: boolean;
   onSubmit: () => void;
   pending: boolean;
@@ -643,6 +800,13 @@ function CardForm({
         onSubmit();
       }}
     >
+      <GoogleAccountSelect
+        value={googleAccountId}
+        onChange={setGoogleAccountId}
+        creditCardId={creditCardId}
+        onBeforeConnect={onBeforeConnectOtherGmail}
+        id={`google-account-${creditCardId ?? "add"}`}
+      />
       <div className="space-y-2">
         <Label>Bank</Label>
         <Select
@@ -682,6 +846,20 @@ function CardForm({
           required={fullPanRequired}
         />
       </div>
+      <div className="space-y-2">
+        <Label htmlFor={`due-day-${creditCardId ?? "add"}`}>Due date</Label>
+        <Input
+          id={`due-day-${creditCardId ?? "add"}`}
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={31}
+          value={dueDay}
+          onChange={(e) => setDueDay(e.target.value)}
+          placeholder="Day of month"
+          required
+        />
+      </div>
 
       <div className="space-y-2">
         <Label>SOA subject</Label>
@@ -708,7 +886,7 @@ function CardForm({
           onClick={() => setAdvancedOpen((open) => !open)}
           aria-expanded={advancedOpen}
         >
-          {advancedOpen ? 'Hide advanced settings' : 'Show advanced settings'}
+          {advancedOpen ? "Hide advanced settings" : "Show advanced settings"}
         </Button>
 
         {advancedOpen ? (

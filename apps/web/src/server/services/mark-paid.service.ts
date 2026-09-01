@@ -52,7 +52,10 @@ async function loadReceiptAmountsForDueEntry(
   excludeReceiptId?: string,
 ): Promise<number[]> {
   const rows = await db.query.receipts.findMany({
-    where: and(eq(receipts.userId, userId), eq(receipts.dueEntryId, dueEntryId)),
+    where: and(
+      eq(receipts.userId, userId),
+      eq(receipts.dueEntryId, dueEntryId),
+    ),
   });
 
   return rows
@@ -88,7 +91,7 @@ async function findNearestNotFullyPaidByLast4(
     where: eq(dueEntries.userId, userId),
   });
   const forCard = all.filter(
-    (d) => normalizeCardLast4(d.cardLast4) === lastNorm,
+    (d) => d.source === "soa" && normalizeCardLast4(d.cardLast4) === lastNorm,
   );
   if (forCard.length === 0) return null;
 
@@ -143,6 +146,9 @@ async function applyReceiptToDueEntry(
     excludeReceiptId?: string;
   },
 ): Promise<Extract<ReceiptPayResult, { ok: true }>> {
+  if (entry.source === "expected") {
+    throw new Error("Wait for the SOA before applying a payment receipt");
+  }
   const amountPaid = parsed.amount!;
   const amountRaw = parsed.amountRaw ?? String(parsed.amount);
   const { minimumDueValue, totalDueValue } = parseDueAmounts(entry);
@@ -189,10 +195,7 @@ async function applyReceiptToDueEntry(
     remindersSuppressed = effects.remindersSuppressed;
     calendarUpdated = effects.calendarUpdated;
     calendarError = effects.calendarError;
-  } else if (
-    entry.paidAt &&
-    cumulativePaid > cumulativeBefore + 0.005
-  ) {
+  } else if (entry.paidAt && cumulativePaid > cumulativeBefore + 0.005) {
     const [refreshed] = await db
       .update(dueEntries)
       .set({ paidAmount: String(cumulativePaid) })
@@ -319,7 +322,9 @@ export const markPaidService = {
     const entry = await db.query.dueEntries.findFirst({
       where: and(eq(dueEntries.id, dueEntryId), eq(dueEntries.userId, userId)),
     });
-    if (!entry) return { ok: false, reason: "not_found" };
+    if (!entry || entry.source === "expected") {
+      return { ok: false, reason: "not_found" };
+    }
 
     const effects = await applyPaidSideEffects(userId, entry, opts);
     return { ok: true, ...effects };
@@ -538,6 +543,14 @@ export const markPaidService = {
         ),
       });
       if (!byId) {
+        return {
+          ok: false,
+          reason: "no_due_entry",
+          cardLast4: parsed.cardLast4,
+          parsed,
+        };
+      }
+      if (byId.source === "expected") {
         return {
           ok: false,
           reason: "no_due_entry",

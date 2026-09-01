@@ -18,6 +18,7 @@ export const dueEntryQueryService = {
     });
     const matches = rows.filter(
       (d) =>
+        d.source === "soa" &&
         normalizeCardLast4(d.cardLast4) === lastNorm &&
         d.dueDateYmd.startsWith(monthYM),
     );
@@ -35,7 +36,7 @@ export const dueEntryQueryService = {
       where: eq(dueEntries.userId, userId),
     });
     const forCard = all.filter(
-      (d) => normalizeCardLast4(d.cardLast4) === lastNorm,
+      (d) => d.source === "soa" && normalizeCardLast4(d.cardLast4) === lastNorm,
     );
     if (forCard.length === 0) return null;
 
@@ -68,7 +69,11 @@ export const dueEntryQueryService = {
 
   async listUnpaid(userId: string) {
     return db.query.dueEntries.findMany({
-      where: and(eq(dueEntries.userId, userId), isNull(dueEntries.paidAt)),
+      where: and(
+        eq(dueEntries.userId, userId),
+        isNull(dueEntries.paidAt),
+        eq(dueEntries.source, "soa"),
+      ),
     });
   },
 };

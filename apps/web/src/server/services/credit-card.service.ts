@@ -4,13 +4,17 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import {
   BANK_ISSUERS,
+  accounts,
   creditCards,
   normalizeCardColor,
   soaSubjectForStorage,
   effectiveSoaSubject,
   type BankIssuer,
 } from "@/lib/db/schema";
+import { formatGoogleAccountLabel } from "@/lib/google/google-account-display";
 import { encryptSecret, tryDecryptSecret } from "@/lib/utils/encryption";
+import { cachedPerRequest } from "@/server/lib/request-cache";
+import { gmailService } from "@/server/services/gmail.service";
 
 function stripEncryptedPassword<T extends { pdfPasswordEncrypted: string }>(
   card: T,
@@ -27,7 +31,9 @@ const createCardSchema = z.object({
   contactLine: z.string().optional(),
   pdfPassword: z.string().min(1),
   gmailMonthOffset: z.number().int().optional(),
+  googleAccountId: z.string().uuid().optional().nullable(),
   soaSubject: z.string().max(512).optional().nullable(),
+  dueDay: z.number().int().min(1).max(31),
   color: z
     .string()
     .regex(/^#[0-9A-Fa-f]{6}$/, "Color must be a hex value like #E8720C")
@@ -39,13 +45,58 @@ const createCardSchema = z.object({
 });
 
 export const creditCardService = {
-  async list(userId: string) {
-    const cards = await db.query.creditCards.findMany({
-      where: and(eq(creditCards.userId, userId), isNull(creditCards.deletedAt)),
-      orderBy: (t, { asc }) => [asc(t.issuer), asc(t.last4)],
-    });
-    return cards.map(stripEncryptedPassword);
+  async resolveGoogleAccountId(
+    userId: string,
+    googleAccountId: string | null | undefined,
+  ): Promise<string | null> {
+    if (googleAccountId) {
+      await gmailService.assertGoogleAccountOwned(userId, googleAccountId);
+      return googleAccountId;
+    }
+    return gmailService.getDefaultGoogleAccountId(userId);
   },
+
+  list: cachedPerRequest("creditCards.list", async (userId: string) => {
+    const [cards, defaultGoogleAccountId, googleAccountRows] =
+      await Promise.all([
+        db.query.creditCards.findMany({
+          where: and(
+            eq(creditCards.userId, userId),
+            isNull(creditCards.deletedAt),
+          ),
+          orderBy: (t, { asc }) => [asc(t.issuer), asc(t.last4)],
+        }),
+        gmailService.getDefaultGoogleAccountId(userId),
+        db.query.accounts.findMany({
+          where: and(
+            eq(accounts.userId, userId),
+            eq(accounts.provider, "google"),
+          ),
+          columns: { id: true, googleEmail: true, googleName: true },
+        }),
+      ]);
+    const labelByAccountId = new Map(
+      googleAccountRows.map((row) => [
+        row.id,
+        formatGoogleAccountLabel({
+          name: row.googleName,
+          email: row.googleEmail,
+        }),
+      ]),
+    );
+
+    return cards.map((card) => {
+      const stripped = stripEncryptedPassword(card);
+      const resolvedAccountId =
+        card.googleAccountId ?? defaultGoogleAccountId ?? null;
+      return {
+        ...stripped,
+        googleAccountLabel: resolvedAccountId
+          ? (labelByAccountId.get(resolvedAccountId) ?? null)
+          : null,
+      };
+    });
+  }),
 
   async getById(userId: string, id: string) {
     const card = await db.query.creditCards.findFirst({
@@ -79,6 +130,10 @@ export const creditCardService = {
 
   async create(userId: string, input: z.infer<typeof createCardSchema>) {
     const data = createCardSchema.parse(input);
+    const googleAccountId = await this.resolveGoogleAccountId(
+      userId,
+      data.googleAccountId,
+    );
     const [card] = await db
       .insert(creditCards)
       .values({
@@ -90,7 +145,9 @@ export const creditCardService = {
         contactLine: data.contactLine,
         pdfPasswordEncrypted: encryptSecret(data.pdfPassword),
         gmailMonthOffset: data.gmailMonthOffset ?? 0,
+        googleAccountId,
         soaSubject: soaSubjectForStorage(data.soaSubject, data.issuer),
+        dueDay: data.dueDay,
         color: normalizeCardColor(data.color, data.issuer),
         reminderWindowDays: data.reminderWindowDays ?? null,
         reminderIntervalMinutes: data.reminderIntervalMinutes ?? 1440,
@@ -115,6 +172,18 @@ export const creditCardService = {
     });
     if (!existing) throw new Error("Card not found");
 
+    let googleAccountId: string | null | undefined;
+    if (input.googleAccountId !== undefined) {
+      if (input.googleAccountId === null) {
+        googleAccountId = null;
+      } else {
+        googleAccountId = await this.resolveGoogleAccountId(
+          userId,
+          input.googleAccountId,
+        );
+      }
+    }
+
     const [updated] = await db
       .update(creditCards)
       .set({
@@ -124,6 +193,7 @@ export const creditCardService = {
         fullPan: input.fullPan,
         contactLine: input.contactLine,
         gmailMonthOffset: input.gmailMonthOffset,
+        googleAccountId,
         soaSubject:
           input.soaSubject !== undefined
             ? soaSubjectForStorage(
@@ -131,6 +201,7 @@ export const creditCardService = {
                 (input.issuer ?? existing.issuer) as BankIssuer,
               )
             : undefined,
+        dueDay: input.dueDay,
         color:
           input.color !== undefined
             ? normalizeCardColor(
@@ -171,12 +242,18 @@ export const creditCardService = {
     return plain;
   },
 
-  /** Cards formatted for SOA pipeline env (CARDS_JSON) */
+  /** Cards formatted for SOA pipeline env (CARDS_JSON) — active cards only. */
   async listForSoaPipeline(userId: string) {
     const cards = await db.query.creditCards.findMany({
-      where: and(eq(creditCards.userId, userId), isNull(creditCards.deletedAt)),
+      where: and(
+        eq(creditCards.userId, userId),
+        isNull(creditCards.deletedAt),
+        eq(creditCards.isActive, true),
+      ),
       orderBy: (t, { asc }) => [asc(t.issuer), asc(t.last4)],
     });
+    const defaultGoogleAccountId =
+      await gmailService.getDefaultGoogleAccountId(userId);
     return cards.map((c) => ({
       id: c.id,
       issuer: c.issuer,
@@ -186,6 +263,7 @@ export const creditCardService = {
       contactLine: c.contactLine ?? undefined,
       password: this.getPdfPassword(c),
       gmailMonthOffset: c.gmailMonthOffset ?? 0,
+      googleAccountId: c.googleAccountId ?? defaultGoogleAccountId ?? undefined,
       soaSubject: effectiveSoaSubject(c.soaSubject, c.issuer as BankIssuer),
       color: c.color ?? undefined,
       reminderWindowDays: c.reminderWindowDays ?? undefined,

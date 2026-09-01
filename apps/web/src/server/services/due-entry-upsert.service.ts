@@ -8,6 +8,8 @@ import { dueStatementAmountKey } from "@/lib/soa/due-statement-match";
 import { db } from "@/lib/db";
 import { creditCards, dueEntries } from "@/lib/db/schema";
 
+import { invalidateDueEntryRows } from "./user-rows.service";
+
 type SoaRow = {
   issuerId: string;
   cardLast4: string;
@@ -53,6 +55,10 @@ export const dueEntryUpsertService = {
       ]),
     );
     const byAmount = new Map<string, (typeof existingRows)[number]>();
+    const expectedByCardMonth = new Map<
+      string,
+      (typeof existingRows)[number]
+    >();
     for (const d of existingRows) {
       const amountKey = dueStatementAmountKey(
         d.issuerId,
@@ -60,11 +66,18 @@ export const dueEntryUpsertService = {
         d.totalDue,
       );
       if (amountKey) byAmount.set(amountKey, d);
+      if (d.source === "expected" && d.creditCardId) {
+        expectedByCardMonth.set(
+          `${d.creditCardId}:${d.dueDateYmd.slice(0, 7)}`,
+          d,
+        );
+      }
     }
 
     let added = 0;
     let updated = 0;
     let skipped = 0;
+    const cardsWithSoaUpsert = new Set<string>();
 
     for (const r of rows) {
       if (r.soaUnavailable) {
@@ -96,11 +109,22 @@ export const dueEntryUpsertService = {
         interestCharges: formatInterestCharges(r.transactions) ?? null,
         contactLine: r.contactLine?.trim() || card?.contactLine || null,
         creditCardId: card?.id ?? null,
+        source: "soa",
       };
 
+      // Exact identity (issuer + card + due date) must win over the amount-based
+      // fallback. The amount key intentionally omits card last-4 to repair rows
+      // where last-4 detection failed, but checking it first meant two different
+      // cards from the same issuer with the same due date and total due could
+      // collide — the second row would silently take over the first card's due
+      // entry (and its `paidAt`), making an unpaid card show up as "Paid".
       const key = dueEntryKey(issuerId, cardLast4, ymd);
       const existing =
-        (amountKey ? byAmount.get(amountKey) : undefined) ?? byKey.get(key);
+        byKey.get(key) ??
+        (amountKey ? byAmount.get(amountKey) : undefined) ??
+        (card
+          ? expectedByCardMonth.get(`${card.id}:${ymd.slice(0, 7)}`)
+          : undefined);
 
       if (!existing) {
         const [inserted] = await db
@@ -108,6 +132,7 @@ export const dueEntryUpsertService = {
           .values({ userId, ...values })
           .returning();
         byKey.set(key, inserted!);
+        if (card?.id) cardsWithSoaUpsert.add(card.id);
         added++;
         continue;
       }
@@ -123,7 +148,26 @@ export const dueEntryUpsertService = {
         .where(
           and(eq(dueEntries.id, existing.id), eq(dueEntries.userId, userId)),
         );
+      if (card?.id) cardsWithSoaUpsert.add(card.id);
       updated++;
+    }
+
+    if (cardsWithSoaUpsert.size > 0) {
+      for (const cardId of cardsWithSoaUpsert) {
+        await db
+          .delete(dueEntries)
+          .where(
+            and(
+              eq(dueEntries.userId, userId),
+              eq(dueEntries.creditCardId, cardId),
+              eq(dueEntries.source, "expected"),
+            ),
+          );
+      }
+    }
+
+    if (added > 0 || updated > 0 || cardsWithSoaUpsert.size > 0) {
+      invalidateDueEntryRows();
     }
 
     return { added, updated, skipped };

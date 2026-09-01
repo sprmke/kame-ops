@@ -1,5 +1,8 @@
 import { TRPCError } from "@trpc/server";
+import { and, eq } from "drizzle-orm";
 
+import { db } from "@/lib/db";
+import { dueEntries } from "@/lib/db/schema";
 import { DueActionProgressReporter } from "./due-action-progress.service";
 import { markPaidService } from "./mark-paid.service";
 import { deleteReceiptsForDueEntry } from "./receipt-cleanup.service";
@@ -17,6 +20,20 @@ export const dueEntryService = {
     }
 
     try {
+      const entry = await db.query.dueEntries.findFirst({
+        where: and(
+          eq(dueEntries.id, dueEntryId),
+          eq(dueEntries.userId, userId),
+        ),
+        columns: { source: true },
+      });
+      if (entry?.source === "expected") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Wait for the SOA before marking this card as paid",
+        });
+      }
+
       await reporter?.completeStep("prepare");
       await reporter?.activate("mark", "Updating paid status");
 
