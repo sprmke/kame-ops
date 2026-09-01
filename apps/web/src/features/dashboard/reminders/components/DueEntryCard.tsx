@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, RotateCcw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, RotateCcw } from "lucide-react";
 
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,7 @@ export function DueEntryCard({
   disabled,
 }: DueEntryCardProps) {
   const paid = Boolean(entry.paidAt);
+  const soaMissing = entry.source === "expected";
   const title = formatDueCardTitle(entry);
   const cardLabel = dueCardLabel(entry);
   const showCardLabel = cardLabel !== title && !title.includes(cardLabel);
@@ -67,11 +68,17 @@ export function DueEntryCard({
           </p>
         </div>
         <StatusBadge
-          label={paid ? "Paid" : "Unpaid"}
+          label={soaMissing ? "SOA missing" : paid ? "Paid" : "Unpaid"}
           variant={paid ? "success" : "warning"}
         />
       </CardHeader>
       <CardContent className="space-y-3">
+        {soaMissing ? (
+          <div className="flex gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <p>Check your email, bank app, or contact the bank.</p>
+          </div>
+        ) : null}
         {reminderStatus && (
           <StatusBadge
             label={reminderStatus.statusLabel}
@@ -79,7 +86,7 @@ export function DueEntryCard({
             className="w-full justify-center truncate py-1"
           />
         )}
-        {showCardMeta && (
+        {showCardMeta && !soaMissing && (
           <>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Minimum</span>
@@ -91,7 +98,7 @@ export function DueEntryCard({
             </div>
           </>
         )}
-        {paid ? (
+        {soaMissing ? null : paid ? (
           <Button
             variant="outline"
             size="sm"

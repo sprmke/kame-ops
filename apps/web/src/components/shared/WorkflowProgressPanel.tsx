@@ -9,6 +9,7 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { formatUserFacingErrorMessage } from "@/lib/errors/user-facing-message";
 import { cn } from "@/lib/utils/cn";
 
 export type WorkflowProgressStep = {
@@ -29,6 +30,8 @@ type WorkflowProgressPanelProps = {
   doneTitle?: string;
   failedTitle?: string;
   summaryLines?: string[];
+  /** When set and total > 1, shows which receipt/item is currently processing within a batch. */
+  itemProgress?: { index: number; total: number } | null;
 };
 
 function ProgressBar({ value }: { value: number }) {
@@ -57,9 +60,15 @@ export function WorkflowProgressPanel({
   doneTitle = "All done",
   failedTitle = "Run failed",
   summaryLines,
+  itemProgress,
 }: WorkflowProgressPanelProps) {
   const current = steps[activeStepIndex] ?? steps[0];
   const done = finished && !failed;
+  const displayError = errorMessage
+    ? formatUserFacingErrorMessage(errorMessage)
+    : null;
+  const showItemProgress =
+    !done && !failed && itemProgress != null && itemProgress.total > 1;
 
   return (
     <div
@@ -99,19 +108,19 @@ export function WorkflowProgressPanel({
         </div>
 
         <div className="w-full min-w-0 space-y-1">
+          {showItemProgress ? (
+            <p className="text-xs font-medium tabular-nums text-muted-foreground">
+              Receipt {itemProgress!.index} of {itemProgress!.total}
+            </p>
+          ) : null}
           <p
             className="truncate font-display text-base font-semibold"
             title={done ? doneTitle : failed ? failedTitle : current?.label}
           >
             {done ? doneTitle : failed ? failedTitle : current?.label}
           </p>
-          {failed && errorMessage ? (
-            <p
-              className="truncate text-sm text-destructive"
-              title={errorMessage}
-            >
-              {errorMessage}
-            </p>
+          {failed && displayError ? (
+            <p className="text-sm text-destructive">{displayError}</p>
           ) : !finished && detail ? (
             <p
               className="truncate text-sm text-muted-foreground"

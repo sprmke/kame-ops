@@ -16,6 +16,7 @@ export type DueReminderEntry = {
   interestCharges?: string | null;
   contactLine?: string | null;
   fullPan?: string | null;
+  source?: string;
 };
 
 type Urgency = "info" | "warning" | "final" | "today";
@@ -40,6 +41,7 @@ function bodyInfoFromEntry(
     dueDate: entry.dueDate,
     minimumDue: entry.minimumDue,
     totalDue: entry.totalDue,
+    soaMissing: entry.source === "expected",
     interestCharges: entry.interestCharges ?? undefined,
     viewSoaLink: telegramWebLink?.trim() || undefined,
     contactLine: entry.contactLine ?? undefined,
@@ -52,6 +54,19 @@ export function buildTelegramReminderMessage(
   daysAway: number,
   telegramWebLink?: string,
 ): string {
+  if (entry.source === "expected") {
+    const header =
+      daysAway < 0
+        ? "🚨 *OVERDUE — SOA STILL MISSING*"
+        : daysAway === 0
+          ? "🚨🚨 *DUE TODAY — SOA MISSING*"
+          : `⚠️ *SOA missing — due in ${daysAway} day${daysAway === 1 ? "" : "s"}*`;
+    return [
+      header,
+      "",
+      ...buildDueBodyLines(bodyInfoFromEntry(entry, telegramWebLink)),
+    ].join("\n");
+  }
   const urgency = urgencyFor(daysAway);
   const header = (() => {
     switch (urgency) {
@@ -79,6 +94,19 @@ export function buildSlackReminderMessage(
   daysAway: number,
   telegramWebLink?: string,
 ): string {
+  if (entry.source === "expected") {
+    const header =
+      daysAway < 0
+        ? ":rotating_light: *OVERDUE — SOA STILL MISSING*"
+        : daysAway === 0
+          ? ":rotating_light::rotating_light: *DUE TODAY — SOA MISSING*"
+          : `:warning: *SOA missing — due in ${daysAway} day${daysAway === 1 ? "" : "s"}*`;
+    return [
+      header,
+      "",
+      ...buildDueBodyLines(bodyInfoFromEntry(entry, telegramWebLink)),
+    ].join("\n");
+  }
   const urgency = urgencyFor(daysAway);
   const header = (() => {
     switch (urgency) {

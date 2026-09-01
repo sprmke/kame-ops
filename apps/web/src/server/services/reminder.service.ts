@@ -1,5 +1,3 @@
-import { eq } from "drizzle-orm";
-
 import { reminderFingerprint } from "@/lib/reminders/fingerprint";
 import {
   alreadySentRemindersMessage,
@@ -11,10 +9,10 @@ import {
   todayYmdLocal,
   type ReminderCardStatus,
 } from "@/lib/reminders/reminder-status";
-import { db } from "@/lib/db";
-import { dueEntries } from "@/lib/db/schema";
+import { loadDueEntryRows } from "./user-rows.service";
 import { ensureDefaultAutomationJobs } from "./default-automation.service";
 import { creditCardService } from "./credit-card.service";
+import { expectedDueEntryService } from "./expected-due-entry.service";
 import {
   ensureDueEntryCardIdentity,
   listDueEntriesWithCorrectIdentity,
@@ -26,6 +24,7 @@ const DEFAULT_WINDOW_DAYS = Math.max(
   0,
   Number(process.env.DUE_REMINDERS_WINDOW_DAYS ?? "4") || 4,
 );
+const EXPECTED_DUE_OVERDUE_DAYS = 7;
 
 function cardKey(issuerId: string, last4: string) {
   return `${issuerId.toLowerCase()}:${last4}`;
@@ -33,8 +32,17 @@ function cardKey(issuerId: string, last4: string) {
 
 export const reminderService = {
   async listDueEntries(userId: string, unpaidOnly = true) {
-    await ensureDefaultAutomationJobs(userId);
-    return listDueEntriesWithCorrectIdentity(userId, unpaidOnly);
+    await Promise.all([
+      ensureDefaultAutomationJobs(userId),
+      expectedDueEntryService.ensureForUser(userId),
+    ]);
+    const rows = await listDueEntriesWithCorrectIdentity(userId, unpaidOnly);
+    const asOf = todayYmdLocal();
+    return rows.filter(
+      (row) =>
+        row.source !== "expected" ||
+        daysUntilYmd(row.dueDateYmd, asOf) >= -EXPECTED_DUE_OVERDUE_DAYS,
+    );
   },
 
   async getReminderStatus(userId: string): Promise<{
@@ -44,14 +52,16 @@ export const reminderService = {
     inWindowCount: number;
     readyCount: number;
   }> {
-    await ensureDefaultAutomationJobs(userId);
-    await ensureDueEntryCardIdentity(userId);
+    await Promise.all([
+      ensureDefaultAutomationJobs(userId),
+      ensureDueEntryCardIdentity(userId),
+      expectedDueEntryService.ensureForUser(userId),
+    ]);
 
-    const dues = await db.query.dueEntries.findMany({
-      where: eq(dueEntries.userId, userId),
-      orderBy: (t, { asc }) => [asc(t.dueDateYmd)],
-    });
-    const cards = await creditCardService.list(userId);
+    const [dues, cards] = await Promise.all([
+      loadDueEntryRows(userId),
+      creditCardService.list(userId),
+    ]);
     const cardSettings = new Map(
       cards.map((c) => [
         cardKey(c.issuer, c.last4),
@@ -63,25 +73,42 @@ export const reminderService = {
 
     const asOf = todayYmdLocal();
 
-    const statuses = await Promise.all(
-      dues.map(async (d) => {
-        const windowDays =
-          cardSettings.get(cardKey(d.issuerId, d.cardLast4))?.windowDays ??
-          DEFAULT_WINDOW_DAYS;
-        const daysAway = daysUntilYmd(d.dueDateYmd, asOf);
-        let alreadySentToday = false;
+    const evaluated = dues.map((d) => {
+      const windowDays =
+        cardSettings.get(cardKey(d.issuerId, d.cardLast4))?.windowDays ??
+        DEFAULT_WINDOW_DAYS;
+      const daysAway = daysUntilYmd(d.dueDateYmd, asOf);
+      const inWindow =
+        (daysAway >= 0 && daysAway <= windowDays) ||
+        (d.source === "expected" &&
+          daysAway < 0 &&
+          daysAway >= -EXPECTED_DUE_OVERDUE_DAYS);
 
-        if (daysAway >= 0 && daysAway <= windowDays) {
-          const fp = reminderFingerprint({
-            issuerId: d.issuerId,
-            cardLast4: d.cardLast4,
-            dueDateYmd: d.dueDateYmd,
-            daysAway,
-          });
-          alreadySentToday = await reminderLogService.hasBeenSent(userId, fp);
-        }
+      return {
+        due: d,
+        windowDays,
+        daysAway,
+        fingerprint: inWindow
+          ? reminderFingerprint({
+              issuerId: d.issuerId,
+              cardLast4: d.cardLast4,
+              dueDateYmd: d.dueDateYmd,
+              daysAway,
+            })
+          : null,
+      };
+    });
 
-        return buildReminderCardStatus({
+    const sentFingerprints = await reminderLogService.findSentFingerprints(
+      userId,
+      evaluated
+        .map((e) => e.fingerprint)
+        .filter((fp): fp is string => fp !== null),
+    );
+
+    const statuses = evaluated.map(
+      ({ due: d, windowDays, daysAway, fingerprint }) =>
+        buildReminderCardStatus({
           dueEntryId: d.id,
           bankLabel: d.bankLabel,
           cardLast4: d.cardLast4,
@@ -91,9 +118,11 @@ export const reminderService = {
           paidAt: d.paidAt,
           windowDays,
           asOfYmd: asOf,
-          alreadySentToday,
-        });
-      }),
+          alreadySentToday:
+            fingerprint !== null && sentFingerprints.has(fingerprint),
+          includeOverdue:
+            d.source === "expected" && daysAway >= -EXPECTED_DUE_OVERDUE_DAYS,
+        }),
     );
 
     return {

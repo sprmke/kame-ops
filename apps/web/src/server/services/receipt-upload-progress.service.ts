@@ -15,6 +15,16 @@ import {
   type ReceiptUploadStepSnapshot,
 } from "@/lib/receipt-upload-progress";
 
+/** Step ids that repeat once per receipt within a batch group. */
+const REPEATABLE_STEP_IDS: ReadonlySet<ReceiptUploadStepId> = new Set([
+  "validate",
+  "save",
+  "mark_paid",
+  "reminders",
+  "calendar",
+  "sync",
+]);
+
 const STALE_MS = 24 * 60 * 60 * 1000;
 
 function cloneSteps(
@@ -59,6 +69,9 @@ export class ReceiptUploadProgressReporter {
   private status: ReceiptUploadProgressStatus = "running";
   private detail: string | null = null;
   private error: string | null = null;
+  private itemIndex = 1;
+  private itemTotal = 1;
+  private itemsCompleted = 0;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private dirty = false;
 
@@ -75,7 +88,7 @@ export class ReceiptUploadProgressReporter {
   static async create(
     userId: string,
     processId: string,
-    input: ReceiptUploadStepPlanInput,
+    input: ReceiptUploadStepPlanInput & { totalItems?: number },
   ): Promise<ReceiptUploadProgressReporter> {
     const staleBefore = new Date(Date.now() - STALE_MS);
     await db
@@ -93,6 +106,7 @@ export class ReceiptUploadProgressReporter {
       userId,
       steps,
     );
+    reporter.itemTotal = Math.max(1, input.totalItems ?? 1);
     await reporter.persist(true);
     return reporter;
   }
@@ -117,6 +131,9 @@ export class ReceiptUploadProgressReporter {
     reporter.status = row.status as ReceiptUploadProgressStatus;
     reporter.detail = row.detail;
     reporter.error = row.error;
+    reporter.itemIndex = row.itemIndex;
+    reporter.itemTotal = row.itemTotal;
+    reporter.itemsCompleted = row.itemsCompleted;
     return reporter;
   }
 
@@ -128,6 +145,7 @@ export class ReceiptUploadProgressReporter {
       steps: cloneSteps(this.steps),
       detail: this.detail,
       error: this.error,
+      item: { index: this.itemIndex, total: this.itemTotal },
     };
   }
 
@@ -148,37 +166,46 @@ export class ReceiptUploadProgressReporter {
     await this.scheduleFlush();
   }
 
-  async skipRemaining(fromStepId: ReceiptUploadStepId): Promise<void> {
+  /**
+   * Finalizes the receipt-repeatable steps (validate/save/mark_paid/
+   * reminders/calendar/sync) for the item that just finished and, if there
+   * is a next receipt in this batch group, resets those steps to "pending"
+   * so the pipeline can run again.
+   *
+   * This replaces the old `resetSteps` behavior: marking done + resetting
+   * happens as a single atomic update (one flush), and `itemsCompleted` is
+   * incremented monotonically so the overall progress percentage — computed
+   * from `itemsCompleted`, not the live step statuses alone — never regresses
+   * even though the step checklist visually restarts for the next receipt.
+   */
+  async completeItemAndAdvance(nextIndex: number | null): Promise<void> {
     if (this.status !== "running") return;
     this.steps = cloneSteps(this.steps);
-    let skipping = false;
     for (const step of this.steps) {
-      if (step.id === fromStepId) skipping = true;
-      if (skipping && step.status !== "done") {
+      if (REPEATABLE_STEP_IDS.has(step.id) && step.status !== "done") {
         step.status = "done";
       }
     }
-    this.dirty = true;
-    await this.scheduleFlush();
-  }
+    this.itemsCompleted = Math.min(this.itemTotal, this.itemsCompleted + 1);
 
-  async resetSteps(stepIds: ReceiptUploadStepId[]): Promise<void> {
-    if (this.status !== "running") return;
-    this.steps = cloneSteps(this.steps);
-    const reset = new Set(stepIds);
-    for (const step of this.steps) {
-      if (reset.has(step.id)) {
-        step.status = "pending";
+    if (nextIndex != null) {
+      this.itemIndex = nextIndex;
+      for (const step of this.steps) {
+        if (REPEATABLE_STEP_IDS.has(step.id)) {
+          step.status = "pending";
+        }
       }
+      this.detail = null;
     }
-    this.detail = null;
+
     this.dirty = true;
-    await this.scheduleFlush();
+    await this.persist(true);
   }
 
   async complete(): Promise<void> {
     this.status = "completed";
     this.steps = cloneSteps(this.steps).map((s) => ({ ...s, status: "done" }));
+    this.itemsCompleted = this.itemTotal;
     this.detail = null;
     this.dirty = true;
     await this.persist(true);
@@ -193,7 +220,10 @@ export class ReceiptUploadProgressReporter {
 
   private computeProgress(): number {
     if (this.status === "completed") return 100;
-    return computeReceiptUploadProgressPercent(this.steps);
+    return computeReceiptUploadProgressPercent(this.steps, {
+      total: this.itemTotal,
+      completed: this.itemsCompleted,
+    });
   }
 
   private scheduleFlush(): Promise<void> {
@@ -222,6 +252,9 @@ export class ReceiptUploadProgressReporter {
         steps: this.steps,
         detail: this.detail,
         error: this.error,
+        itemIndex: this.itemIndex,
+        itemTotal: this.itemTotal,
+        itemsCompleted: this.itemsCompleted,
       })
       .onConflictDoUpdate({
         target: receiptUploadProgress.id,
@@ -231,6 +264,9 @@ export class ReceiptUploadProgressReporter {
           steps: this.steps,
           detail: this.detail,
           error: this.error,
+          itemIndex: this.itemIndex,
+          itemTotal: this.itemTotal,
+          itemsCompleted: this.itemsCompleted,
           updatedAt: new Date(),
         },
       });
@@ -257,6 +293,7 @@ export const receiptUploadProgressService = {
       steps: row.steps,
       detail: row.detail,
       error: row.error,
+      item: { index: row.itemIndex, total: row.itemTotal },
     };
   },
 

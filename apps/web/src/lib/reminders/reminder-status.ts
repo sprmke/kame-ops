@@ -55,6 +55,7 @@ export function buildReminderCardStatus(input: {
   windowDays: number;
   asOfYmd?: string;
   alreadySentToday?: boolean;
+  includeOverdue?: boolean;
 }): ReminderCardStatus {
   const asOf = input.asOfYmd ?? todayYmdLocal();
   const label =
@@ -82,7 +83,7 @@ export function buildReminderCardStatus(input: {
     };
   }
 
-  if (daysAway < 0) {
+  if (daysAway < 0 && !input.includeOverdue) {
     return {
       dueEntryId: input.dueEntryId,
       label,
@@ -97,6 +98,28 @@ export function buildReminderCardStatus(input: {
       daysUntilFirstReminder: daysUntilFirst,
       status: "outside_window",
       statusLabel: formatDaysUntilDue(daysAway),
+    };
+  }
+
+  if (daysAway < 0 && input.includeOverdue) {
+    return {
+      dueEntryId: input.dueEntryId,
+      label,
+      cardLast4: input.cardLast4,
+      dueDate: input.dueDate,
+      dueDateYmd: input.dueDateYmd,
+      daysAway,
+      windowDays,
+      inWindow: true,
+      paid: false,
+      firstReminderYmd,
+      daysUntilFirstReminder: daysUntilFirst,
+      status: input.alreadySentToday
+        ? "in_window_already_sent"
+        : "in_window_ready",
+      statusLabel: input.alreadySentToday
+        ? "Overdue reminder sent"
+        : `${Math.abs(daysAway)}d overdue · ready`,
     };
   }
 

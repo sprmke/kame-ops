@@ -62,6 +62,7 @@ type OverviewPeriodMissionProps = {
     minimumDue: string;
     totalDue: string;
     paidAt: Date | null;
+    source: string;
     daysAway: number;
   }>;
   remindersReady: number;
@@ -164,7 +165,10 @@ export function OverviewPeriodMission({
     attention.push({
       id: due.id,
       label: formatDueCardTitle(due),
-      detail: `${due.totalDue} · ${formatDaysAway(due.daysAway)}`,
+      detail:
+        due.source === "expected"
+          ? `SOA missing · ${formatDaysAway(due.daysAway)}`
+          : `${due.totalDue} · ${formatDaysAway(due.daysAway)}`,
       href: ROUTES.dashboard.reminders,
       variant:
         due.daysAway < 0

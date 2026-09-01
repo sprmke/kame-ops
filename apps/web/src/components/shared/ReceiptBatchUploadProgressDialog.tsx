@@ -91,6 +91,7 @@ function CardUploadProgressSection({
     detail,
     finished: progressFinished,
     failed: progressFailed,
+    item: itemProgress,
   } = useReceiptUploadProgress(
     job.processId,
     fallbackSteps,
@@ -108,8 +109,7 @@ function CardUploadProgressSection({
           {job.cardLabel}
         </p>
         <p className="text-xs text-muted-foreground tabular-nums">
-          {job.receiptCount}{" "}
-          {job.receiptCount === 1 ? "receipt" : "receipts"}
+          {job.receiptCount} {job.receiptCount === 1 ? "receipt" : "receipts"}
         </p>
       </div>
 
@@ -124,6 +124,7 @@ function CardUploadProgressSection({
         icon={Receipt}
         doneTitle="Receipts saved"
         failedTitle="Upload failed"
+        itemProgress={itemProgress}
       />
     </div>
   );
@@ -159,7 +160,8 @@ export function ReceiptBatchUploadProgressDialog({
   const anyRunning = isPending || jobs.some((job) => job.settled === null);
   const showPrepPanel =
     batchProgress != null &&
-    (batchProgress.phase === "uploading" || batchProgress.phase === "analyzing");
+    (batchProgress.phase === "uploading" ||
+      batchProgress.phase === "analyzing");
   const showCardJobs = jobs.length > 0 && batchProgress?.phase !== "analyzing";
 
   useEffect(() => {

@@ -28,7 +28,14 @@
         "BPI_OCR_PAGES",
         "BPI_OCR_SCALE",
         "BPI_OCR_PSM",
-        "BPI_OCR_DUAL"
+        "BPI_OCR_DUAL",
+        "SOA_OCR_FORCE",
+        "SOA_OCR_DISABLE",
+        "SOA_OCR_PAGES",
+        "SOA_OCR_SCALE",
+        "SOA_OCR_PSM",
+        "SOA_OCR_DUAL",
+        "SOA_OCR_DEBUG"
       ]
     },
     "dev": {

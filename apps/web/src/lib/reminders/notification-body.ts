@@ -34,8 +34,9 @@ export type DueBodyInfo = {
   cardLabel: string;
   /** Raw formatted due date, e.g. "Apr 25, 2026". */
   dueDate: string;
-  minimumDue: string;
-  totalDue: string;
+  minimumDue?: string;
+  totalDue?: string;
+  soaMissing?: boolean;
   interestCharges?: string;
   viewSoaLink?: string;
   contactLine?: string;
@@ -131,8 +132,14 @@ export function buildDueBodyLines(
   lines.push(opts.headerLine ?? `Credit card payment due: ${info.dueDate}`);
   lines.push(`Card: ${info.cardLabel}`);
   if (info.fullPan) lines.push(`Card number: ${info.fullPan}`);
-  lines.push(`Minimum due: ${info.minimumDue}`);
-  lines.push(`Total due: ${info.totalDue}`);
+  if (info.soaMissing) {
+    lines.push(
+      "SOA not received. Check your email, bank app, or contact the bank.",
+    );
+  } else {
+    if (info.minimumDue) lines.push(`Minimum due: ${info.minimumDue}`);
+    if (info.totalDue) lines.push(`Total due: ${info.totalDue}`);
+  }
   if (info.interestCharges)
     lines.push(`Interest charges: ${info.interestCharges}`);
   if (info.viewSoaLink) lines.push(`View SOA: ${info.viewSoaLink}`);

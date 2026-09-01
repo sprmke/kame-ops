@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 import { db } from "@/lib/db";
@@ -37,6 +37,7 @@ import {
   type AnalyzedBatchItem,
   type BatchUploadItemInput,
 } from "@/lib/receipts/receipt-card-group";
+import { loadDueEntryRows, loadSoaStatementRows } from "./user-rows.service";
 import { matchReceiptToDue } from "@/lib/receipts/match-due";
 import {
   computeDuePaymentCoverage,
@@ -202,15 +203,7 @@ function dueStatementKey(
 }
 
 async function loadStatementDateByDueKey(userId: string) {
-  const rows = await db.query.soaStatements.findMany({
-    where: eq(soaStatements.userId, userId),
-    columns: {
-      issuerId: true,
-      cardLast4: true,
-      dueDateYmd: true,
-      statementDate: true,
-    },
-  });
+  const rows = await loadSoaStatementRows(userId);
 
   const map = new Map<string, string>();
   for (const row of rows) {
@@ -227,29 +220,16 @@ async function loadStatementDateByDueKey(userId: string) {
 
 export const receiptService = {
   async list(userId: string, limit = 100) {
-    const rows = await db.query.receipts.findMany({
-      where: eq(receipts.userId, userId),
-      orderBy: (t, { desc }) => [desc(t.createdAt)],
-      limit,
-    });
-
-    const dueEntryIds = rows
-      .map((row) => row.dueEntryId)
-      .filter((id): id is string => Boolean(id));
-
-    const [linkedDues, allDues] = await Promise.all([
-      dueEntryIds.length > 0
-        ? db.query.dueEntries.findMany({
-            where: and(
-              eq(dueEntries.userId, userId),
-              inArray(dueEntries.id, dueEntryIds),
-            ),
-          })
-        : Promise.resolve([]),
-      db.query.dueEntries.findMany({
-        where: eq(dueEntries.userId, userId),
-        orderBy: (t, { asc }) => [asc(t.dueDateYmd)],
+    // Statements are only needed further down for enrichment, but starting them
+    // here keeps all three reads in one round trip instead of a chain of three.
+    const [rows, allDues] = await Promise.all([
+      db.query.receipts.findMany({
+        where: eq(receipts.userId, userId),
+        orderBy: (t, { desc }) => [desc(t.createdAt)],
+        limit,
       }),
+      loadDueEntryRows(userId),
+      loadSoaStatementRows(userId),
     ]);
 
     const enrichedDues = await enrichDueEntriesWithSoaPeriod(userId, allDues);
@@ -344,11 +324,8 @@ export const receiptService = {
   },
 
   async listUnpaidDueEntries(userId: string) {
-    const rows = await db.query.dueEntries.findMany({
-      where: and(eq(dueEntries.userId, userId), isNull(dueEntries.paidAt)),
-      orderBy: (t, { asc }) => [asc(t.dueDateYmd)],
-    });
-    return rows;
+    const rows = await loadDueEntryRows(userId);
+    return rows.filter((row) => !row.paidAt && row.source === "soa");
   },
 
   async processUploadedReceipt(
@@ -405,18 +382,19 @@ export const receiptService = {
 
     let targetDueEntry: typeof dueEntries.$inferSelect | undefined;
     if (input.dueEntryId) {
-      targetDueEntry =
-        (await db.query.dueEntries.findFirst({
-          where: and(
-            eq(dueEntries.id, input.dueEntryId),
-            eq(dueEntries.userId, userId),
-          ),
-        })) ?? undefined;
+      const dues = await loadDueEntryRows(userId);
+      targetDueEntry = dues.find((row) => row.id === input.dueEntryId);
       if (!targetDueEntry) {
         await reporter?.fail("Due entry not found");
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Due entry not found",
+        });
+      }
+      if (targetDueEntry.source === "expected") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Wait for the SOA before uploading a payment receipt",
         });
       }
       dueContext = {
@@ -617,7 +595,9 @@ export const receiptService = {
 
     await reporter?.completeStep("mark_paid");
 
-    const receiptPaymentStatus = payResult.thresholdMet ? "marked_paid" : "partial";
+    const receiptPaymentStatus = payResult.thresholdMet
+      ? "marked_paid"
+      : "partial";
 
     await db
       .update(receipts)
@@ -638,14 +618,8 @@ export const receiptService = {
         "mark_paid",
         `Partial ${payResult.paymentSequence.label} · ${payResult.coverage === "partial" ? "below minimum due" : "recorded"}`,
       );
-      await reporter?.skipRemaining("reminders");
       if (input.batchMeta && !input.batchMeta.isLast) {
-        await reporter?.resetSteps([
-          "mark_paid",
-          "reminders",
-          "calendar",
-          "sync",
-        ]);
+        await reporter?.completeItemAndAdvance(input.batchMeta.index + 1);
       } else {
         await reporter?.complete();
       }
@@ -680,12 +654,7 @@ export const receiptService = {
       if (!input.batchMeta || input.batchMeta.isLast) {
         await reporter?.complete();
       } else {
-        await reporter?.resetSteps([
-          "mark_paid",
-          "reminders",
-          "calendar",
-          "sync",
-        ]);
+        await reporter?.completeItemAndAdvance(input.batchMeta.index + 1);
       }
     }
 
@@ -842,12 +811,8 @@ export const receiptService = {
       | undefined;
 
     if (row.dueEntryId) {
-      const due = await db.query.dueEntries.findFirst({
-        where: and(
-          eq(dueEntries.id, row.dueEntryId),
-          eq(dueEntries.userId, userId),
-        ),
-      });
+      const dues = await loadDueEntryRows(userId);
+      const due = dues.find((entry) => entry.id === row.dueEntryId);
       if (due) {
         dueContext = {
           cardLast4: due.cardLast4,
@@ -859,10 +824,7 @@ export const receiptService = {
         };
       }
     } else {
-      const allDues = await db.query.dueEntries.findMany({
-        where: eq(dueEntries.userId, userId),
-        orderBy: (t, { asc }) => [asc(t.dueDateYmd)],
-      });
+      const allDues = await loadDueEntryRows(userId);
       const enrichedDues = await enrichDueEntriesWithSoaPeriod(userId, allDues);
       const matched = matchReceiptToDue(
         enrichedDues.map((due) => ({
@@ -1018,16 +980,18 @@ export const receiptService = {
     let forcedLabel: string | undefined;
 
     if (input.dueEntryId) {
-      const targetDueEntry = await db.query.dueEntries.findFirst({
-        where: and(
-          eq(dueEntries.id, input.dueEntryId),
-          eq(dueEntries.userId, userId),
-        ),
-      });
+      const dues = await loadDueEntryRows(userId);
+      const targetDueEntry = dues.find((row) => row.id === input.dueEntryId);
       if (!targetDueEntry) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Due entry not found",
+        });
+      }
+      if (targetDueEntry.source === "expected") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Wait for the SOA before uploading a payment receipt",
         });
       }
       dueContext = {
@@ -1064,10 +1028,15 @@ export const receiptService = {
         continue;
       }
 
-      const ai = await validateCreditCardReceiptImage(userId, buffer, mimeType, {
-        knownCards,
-        dueContext,
-      });
+      const ai = await validateCreditCardReceiptImage(
+        userId,
+        buffer,
+        mimeType,
+        {
+          knownCards,
+          dueContext,
+        },
+      );
 
       analyzed.push({ ...item, ai });
     }
@@ -1104,6 +1073,7 @@ export const receiptService = {
       await ReceiptUploadProgressReporter.create(userId, group.processId, {
         markPaid: input.markPaid !== false,
         updateCalendar: input.updateCalendar ?? false,
+        totalItems: group.items.length,
       });
 
       const groupResults: ReceiptProcessResult[] = [];

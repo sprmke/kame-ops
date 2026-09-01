@@ -47,3 +47,14 @@ export function defaultAutomationName(jobType: AutomationJobType): string {
     "Automation"
   );
 }
+
+export function automationEditDialogTitle(jobType: AutomationJobType): string {
+  switch (jobType) {
+    case "run_soa_pipeline":
+      return "SOA Automation";
+    case "send_due_reminders":
+      return "Payment Reminders Automation";
+    default:
+      return "Edit automation";
+  }
+}

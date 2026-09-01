@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { AlertTriangle, ArrowRight } from "lucide-react";
 
 import { DashboardPageHeader } from "@/components/shared/DashboardPageHeader";
 import { OverviewContentSkeleton } from "@/components/shared/skeletons";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { ROUTES } from "@/config/routes";
 import {
   SoaPeriodSpendByCategoryCard,
@@ -27,6 +28,8 @@ export function OverviewPage() {
   }
 
   const period = stats?.latestPeriod;
+  const missingSoaDues =
+    stats?.upcomingDues.filter((due) => due.source === "expected") ?? [];
 
   return (
     <div className="space-y-8">
@@ -38,6 +41,30 @@ export function OverviewPage() {
           </Button>
         }
       />
+
+      {!isLoading && missingSoaDues.length > 0 ? (
+        <Card className="border-warning/50 bg-warning/10 shadow-card">
+          <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+              <div>
+                <p className="font-display font-semibold">SOA missing</p>
+                <p className="text-sm text-muted-foreground">
+                  {missingSoaDues.length} card
+                  {missingSoaDues.length === 1 ? "" : "s"} near the expected due
+                  date. Check email or your bank app.
+                </p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" asChild>
+              <Link href={ROUTES.dashboard.reminders}>
+                View due dates
+                <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {isLoading ? (
         <OverviewContentSkeleton />

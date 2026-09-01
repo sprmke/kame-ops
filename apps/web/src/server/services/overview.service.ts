@@ -20,14 +20,27 @@ export const overviewService = {
   async getStats(userId: string) {
     const asOf = todayYmdLocal();
 
+    // Resolve the latest period first so its detail can join the same parallel wave
+    // below rather than adding another serial round trip after everything else.
+    const latestPeriodRow = await db.query.soaPeriods.findFirst({
+      where: eq(soaPeriods.userId, userId),
+      orderBy: [
+        desc(soaPeriods.lastRunAt),
+        desc(soaPeriods.fromYear),
+        desc(soaPeriods.fromMonth),
+        desc(soaPeriods.createdAt),
+      ],
+    });
+
     const [
       cardsCount,
       unpaidCount,
       statementsCount,
       periodCount,
-      latestPeriodRow,
       unpaidDueRows,
       reminderStatus,
+      periodDetail,
+      lastSoa,
     ] = await Promise.all([
       db
         .select({ value: count() })
@@ -39,7 +52,13 @@ export const overviewService = {
       db
         .select({ value: count() })
         .from(dueEntries)
-        .where(and(eq(dueEntries.userId, userId), isNull(dueEntries.paidAt)))
+        .where(
+          and(
+            eq(dueEntries.userId, userId),
+            isNull(dueEntries.paidAt),
+            eq(dueEntries.source, "soa"),
+          ),
+        )
         .then(([row]) => row?.value ?? 0),
       db
         .select({ value: count() })
@@ -51,17 +70,15 @@ export const overviewService = {
         .from(soaPeriods)
         .where(eq(soaPeriods.userId, userId))
         .then(([row]) => row?.value ?? 0),
-      db.query.soaPeriods.findFirst({
-        where: eq(soaPeriods.userId, userId),
-        orderBy: [
-          desc(soaPeriods.lastRunAt),
-          desc(soaPeriods.fromYear),
-          desc(soaPeriods.fromMonth),
-          desc(soaPeriods.createdAt),
-        ],
-      }),
       reminderService.listDueEntries(userId, true),
       reminderService.getReminderStatus(userId),
+      latestPeriodRow
+        ? soaPeriodService.getPeriod(userId, latestPeriodRow.id)
+        : Promise.resolve(null),
+      db.query.soaStatements.findFirst({
+        where: eq(soaStatements.userId, userId),
+        orderBy: [desc(soaStatements.createdAt)],
+      }),
     ]);
 
     const upcomingDues = unpaidDueRows.slice(0, 5).map((row) => ({
@@ -77,6 +94,7 @@ export const overviewService = {
       minimumDue: row.minimumDue,
       totalDue: row.totalDue,
       paidAt: row.paidAt,
+      source: row.source,
       daysAway: daysUntilYmd(row.dueDateYmd, asOf),
     }));
 
@@ -113,59 +131,47 @@ export const overviewService = {
       }>;
     } | null = null;
 
-    if (latestPeriodRow) {
-      const periodDetail = await soaPeriodService.getPeriod(
-        userId,
-        latestPeriodRow.id,
+    if (periodDetail) {
+      const periodStats = computePeriodOverviewStats(
+        flattenStatementTransactions(periodDetail.statements),
       );
 
-      if (periodDetail) {
-        const periodStats = computePeriodOverviewStats(
-          flattenStatementTransactions(periodDetail.statements),
-        );
-
-        latestPeriod = {
-          id: periodDetail.id,
-          label: periodDetail.label,
-          cardCount: periodDetail.cardCount,
-          paidCardCount: periodDetail.paidCardCount,
-          minimumMetCardCount: periodDetail.minimumMetCardCount,
-          statementCount: periodDetail.statementCount,
-          totalDue: periodDetail.totalDue,
-          totalMinimum: periodDetail.totalMinimum,
-          grossStatementDue: periodDetail.grossStatementDue,
-          grossMinimumDue: periodDetail.grossMinimumDue,
-          totalPaid: periodDetail.totalPaid,
-          nextDueYmd: periodDetail.nextDueYmd,
-          spendTotal: periodStats.spendTotal,
-          unanalyzed: periodStats.unanalyzed,
-          interestFeesTotal: periodStats.interestFeesTotal,
-          topCategory: periodStats.topCategory
-            ? {
-                label: periodStats.topCategory.label,
-                share: periodStats.topCategoryShare,
-              }
-            : null,
-          analyzedCategoryRows: periodStats.analyzedRows,
-          periodCards: periodDetail.periodCards.map((card) => ({
-            label: card.label,
-            issuerId: card.issuerId,
-            cardLast4: card.cardLast4,
-            grossMinimumDue: card.grossMinimumDue,
-            minimumRemaining: card.minimumRemaining,
-            minimumMet: card.minimumMet,
-            markedPaid: card.markedPaid,
-            outstandingDue: card.outstandingDue,
-            paidAmount: card.paidAmount,
-          })),
-        };
-      }
+      latestPeriod = {
+        id: periodDetail.id,
+        label: periodDetail.label,
+        cardCount: periodDetail.cardCount,
+        paidCardCount: periodDetail.paidCardCount,
+        minimumMetCardCount: periodDetail.minimumMetCardCount,
+        statementCount: periodDetail.statementCount,
+        totalDue: periodDetail.totalDue,
+        totalMinimum: periodDetail.totalMinimum,
+        grossStatementDue: periodDetail.grossStatementDue,
+        grossMinimumDue: periodDetail.grossMinimumDue,
+        totalPaid: periodDetail.totalPaid,
+        nextDueYmd: periodDetail.nextDueYmd,
+        spendTotal: periodStats.spendTotal,
+        unanalyzed: periodStats.unanalyzed,
+        interestFeesTotal: periodStats.interestFeesTotal,
+        topCategory: periodStats.topCategory
+          ? {
+              label: periodStats.topCategory.label,
+              share: periodStats.topCategoryShare,
+            }
+          : null,
+        analyzedCategoryRows: periodStats.analyzedRows,
+        periodCards: periodDetail.periodCards.map((card) => ({
+          label: card.label,
+          issuerId: card.issuerId,
+          cardLast4: card.cardLast4,
+          grossMinimumDue: card.grossMinimumDue,
+          minimumRemaining: card.minimumRemaining,
+          minimumMet: card.minimumMet,
+          markedPaid: card.markedPaid,
+          outstandingDue: card.outstandingDue,
+          paidAmount: card.paidAmount,
+        })),
+      };
     }
-
-    const lastSoa = await db.query.soaStatements.findFirst({
-      where: eq(soaStatements.userId, userId),
-      orderBy: [desc(soaStatements.createdAt)],
-    });
 
     return {
       cards: cardsCount,

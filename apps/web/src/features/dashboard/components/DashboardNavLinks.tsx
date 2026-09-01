@@ -15,6 +15,7 @@ import { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 
 import { DASHBOARD_NAV, ROUTES } from "@/config/routes";
+import { useNavDataPrefetch } from "@/hooks/use-nav-data-prefetch";
 import { cn } from "@/lib/utils/cn";
 
 const ICONS: Record<(typeof DASHBOARD_NAV)[number]["icon"], LucideIcon> = {
@@ -63,6 +64,7 @@ export function DashboardNavLinks({
 }: DashboardNavLinksProps) {
   const pathname = usePathname();
   const isSidebar = variant === "sidebar";
+  const prefetchNavData = useNavDataPrefetch();
 
   return (
     <>
@@ -74,6 +76,8 @@ export function DashboardNavLinks({
             href={item.href}
             prefetch
             onClick={onNavigate}
+            onMouseEnter={() => prefetchNavData(item.href)}
+            onFocus={() => prefetchNavData(item.href)}
             className={cn(
               "flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
               isSidebar

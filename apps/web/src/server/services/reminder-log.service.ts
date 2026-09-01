@@ -22,6 +22,36 @@ export const reminderLogService = {
     return Date.now() - row.sentAt.getTime() < intervalMinutes * 60_000;
   },
 
+  /** One round trip for many fingerprints; returns those already sent within the interval. */
+  async findSentFingerprints(
+    userId: string,
+    fingerprints: string[],
+    intervalMinutes = 1440,
+  ): Promise<Set<string>> {
+    if (fingerprints.length === 0) return new Set();
+
+    const rows = await db.query.reminderLogs.findMany({
+      where: and(
+        eq(reminderLogs.userId, userId),
+        inArray(reminderLogs.fingerprint, fingerprints),
+      ),
+      columns: { fingerprint: true, sentAt: true },
+      orderBy: [desc(reminderLogs.sentAt)],
+    });
+
+    const sent = new Set<string>();
+    for (const row of rows) {
+      if (sent.has(row.fingerprint)) continue;
+      if (
+        intervalMinutes >= 1440 ||
+        Date.now() - row.sentAt.getTime() < intervalMinutes * 60_000
+      ) {
+        sent.add(row.fingerprint);
+      }
+    }
+    return sent;
+  },
+
   async markSent(userId: string, fingerprint: string, channel: string) {
     await db.insert(reminderLogs).values({
       userId,

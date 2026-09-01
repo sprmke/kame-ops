@@ -1,24 +1,27 @@
-import { eq } from 'drizzle-orm';
+import { eq } from "drizzle-orm";
 
-import { reminderFingerprint } from '@/lib/reminders/fingerprint';
+import { reminderFingerprint } from "@/lib/reminders/fingerprint";
 import {
   buildSlackReminderMessage,
   buildTelegramReminderMessage,
   type DueReminderEntry,
-} from '@/lib/reminders/reminder-messages';
-import { daysUntilYmd, todayYmdLocal } from '@/lib/reminders/reminder-status';
-import { db } from '@/lib/db';
-import { dueEntries } from '@/lib/db/schema';
-import { creditCardService } from './credit-card.service';
-import { integrationService } from './integration.service';
-import { notificationService } from './notification.service';
-import { reminderLogService } from './reminder-log.service';
-import { ReminderRunProgressReporter } from './reminder-run-progress.service';
+} from "@/lib/reminders/reminder-messages";
+import { daysUntilYmd, todayYmdLocal } from "@/lib/reminders/reminder-status";
+import { db } from "@/lib/db";
+import { dueEntries } from "@/lib/db/schema";
+import { creditCardService } from "./credit-card.service";
+import { integrationService } from "./integration.service";
+import { notificationService } from "./notification.service";
+import { reminderLogService } from "./reminder-log.service";
+import { ReminderRunProgressReporter } from "./reminder-run-progress.service";
+import { expectedDueEntryService } from "./expected-due-entry.service";
+import { googleCalendarService } from "./google-calendar.service";
 
 const DEFAULT_WINDOW_DAYS = Math.max(
   0,
-  Number(process.env.DUE_REMINDERS_WINDOW_DAYS ?? '4') || 4,
+  Number(process.env.DUE_REMINDERS_WINDOW_DAYS ?? "4") || 4,
 );
+const EXPECTED_DUE_OVERDUE_DAYS = 7;
 
 function cardKey(issuerId: string, last4: string) {
   return `${issuerId.toLowerCase()}:${last4}`;
@@ -49,7 +52,8 @@ export const sendDueRemindersService = {
       : null;
 
     try {
-      await reporter?.activate('prepare', 'Loading due entries');
+      await reporter?.activate("prepare", "Loading due entries");
+      await expectedDueEntryService.ensureForUser(userId, { asOfYmd: asOf });
 
       const dues = await db.query.dueEntries.findMany({
         where: eq(dueEntries.userId, userId),
@@ -57,7 +61,7 @@ export const sendDueRemindersService = {
       });
 
       if (!dues.length) {
-        await reporter?.complete('No due entries found');
+        await reporter?.complete("No due entries found");
         return { sent: 0, skipped: 0, failed: 0 };
       }
 
@@ -72,24 +76,18 @@ export const sendDueRemindersService = {
         ]),
       );
 
-      await reporter?.completeStep('prepare');
-      await reporter?.activate('channels', 'Checking Telegram and Slack');
+      await reporter?.completeStep("prepare");
+      await reporter?.activate("channels", "Checking Telegram and Slack");
 
       const telegram = await integrationService.getConfig<{
         webLink?: string;
-      }>(userId, 'telegram');
+      }>(userId, "telegram");
       const webLink = telegram?.webLink;
 
       const configured = await notificationService.isConfigured(userId);
-      if (!configured && !force) {
-        await reporter?.complete(
-          'Telegram or Slack is not configured in Settings',
-        );
-        return { sent: 0, skipped: 0, failed: 0 };
-      }
 
-      await reporter?.completeStep('channels');
-      await reporter?.activate('evaluate', 'Finding cards in reminder window');
+      await reporter?.completeStep("channels");
+      await reporter?.activate("evaluate", "Finding cards in reminder window");
 
       let sent = 0;
       let skipped = 0;
@@ -109,7 +107,14 @@ export const sendDueRemindersService = {
           cardSettings.get(cardKey(due.issuerId, due.cardLast4)) ??
           ({ windowDays: DEFAULT_WINDOW_DAYS, intervalMinutes: 1440 } as const);
         const daysAway = daysUntilYmd(due.dueDateYmd, asOf);
-        if (daysAway < 0 || daysAway > settings.windowDays) continue;
+        if (
+          daysAway > settings.windowDays ||
+          (daysAway < 0 &&
+            (due.source !== "expected" ||
+              daysAway < -EXPECTED_DUE_OVERDUE_DAYS))
+        ) {
+          continue;
+        }
 
         plans.push({
           entry: {
@@ -124,6 +129,7 @@ export const sendDueRemindersService = {
             interestCharges: due.interestCharges,
             contactLine: due.contactLine,
             fullPan: due.fullPan,
+            source: due.source,
           },
           daysAway,
           fingerprint: reminderFingerprint({
@@ -138,13 +144,32 @@ export const sendDueRemindersService = {
 
       plans.sort((a, b) => a.daysAway - b.daysAway);
 
+      const calendar = await integrationService.getConfig(
+        userId,
+        "google_calendar",
+      );
+      const expectedRows = plans
+        .filter((plan) => plan.entry.source === "expected")
+        .map((plan) => ({
+          ...plan.entry,
+          dueDateYMD: plan.entry.dueDateYmd,
+          updatedAt: new Date().toISOString(),
+        }));
+      if (calendar && expectedRows.length > 0) {
+        try {
+          await googleCalendarService.createDueDateEvents(userId, expectedRows);
+        } catch {
+          // Reminder delivery should continue when Calendar sync is unavailable.
+        }
+      }
+
       await reporter?.setDetail(
         plans.length
-          ? `${plans.length} card${plans.length === 1 ? '' : 's'} in window`
-          : 'No cards in reminder window today',
+          ? `${plans.length} card${plans.length === 1 ? "" : "s"} in window`
+          : "No cards in reminder window today",
       );
-      await reporter?.completeStep('evaluate');
-      await reporter?.activate('send', 'Sending reminders');
+      await reporter?.completeStep("evaluate");
+      await reporter?.activate("send", "Sending reminders");
 
       for (const plan of plans) {
         const label =
@@ -187,15 +212,15 @@ export const sendDueRemindersService = {
             slackText,
           );
           const channelLabel = [
-            channels.telegram && 'telegram',
-            channels.slack && 'slack',
+            channels.telegram && "telegram",
+            channels.slack && "slack",
           ]
             .filter(Boolean)
-            .join('+');
+            .join("+");
           await reminderLogService.markSent(
             userId,
             plan.fingerprint,
-            channelLabel || 'unknown',
+            channelLabel || "unknown",
           );
           sent++;
         } catch {
@@ -203,19 +228,19 @@ export const sendDueRemindersService = {
         }
       }
 
-      await reporter?.completeStep('send');
+      await reporter?.completeStep("send");
       await reporter?.complete(
         sent > 0
-          ? `Sent ${sent} reminder${sent === 1 ? '' : 's'}`
+          ? `Sent ${sent} reminder${sent === 1 ? "" : "s"}`
           : plans.length
-            ? 'No new reminders sent'
-            : 'Nothing to send today',
+            ? "No new reminders sent"
+            : "Nothing to send today",
       );
 
       return { sent, skipped, failed };
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Reminder run failed';
+        error instanceof Error ? error.message : "Reminder run failed";
       await reporter?.fail(message);
       throw error;
     }

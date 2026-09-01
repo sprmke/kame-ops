@@ -9,6 +9,7 @@ import { AutomationCardSkeleton } from "@/components/shared/skeletons";
 import { DashboardSection } from "@/components/shared/DashboardSection";
 import type { AutomationJobType } from "@/lib/automations/job-types";
 import { api } from "@/lib/api/client";
+import { formatUserFacingErrorMessage } from "@/lib/errors/user-facing-message";
 import type { AppRouter } from "@/server/routers/_app";
 
 import { AutomationFormDialog } from "./AutomationFormDialog";
@@ -47,7 +48,7 @@ export function AutomationsPanel() {
         "message" in result &&
         typeof result.message === "string"
       ) {
-        setRunErrorMessage(result.message);
+        setRunErrorMessage(formatUserFacingErrorMessage(result.message));
         setRunSettled("error");
       } else {
         setRunResult(result);
@@ -61,9 +62,10 @@ export function AutomationsPanel() {
       void utils.overview.stats.invalidate();
     },
     onError: (error) => {
-      setRunErrorMessage(error.message);
+      const message = formatUserFacingErrorMessage(error.message);
+      setRunErrorMessage(message);
       setRunSettled("error");
-      toast.error(error.message);
+      toast.error(message);
     },
   });
 

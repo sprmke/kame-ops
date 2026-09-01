@@ -15,6 +15,7 @@ export type DueEntryListItem = {
   minimumDue: string;
   totalDue: string;
   paidAt: Date | null;
+  source?: string;
 };
 
 export type ReminderEntryGroup = {

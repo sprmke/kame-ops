@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import {
-  formatAutomationRunSummary,
+  getAutomationRunResultPresentation,
   parseAutomationRunResult,
 } from "@/lib/automation-run-summary";
 import {
@@ -34,7 +34,10 @@ import {
   readScheduleConfigFromJob,
 } from "@/lib/automations/schedule";
 import { api } from "@/lib/api/client";
+import { formatUserFacingErrorMessage } from "@/lib/errors/user-facing-message";
 import type { AppRouter } from "@/server/routers/_app";
+
+import { AutomationRunResultPanel } from "./AutomationRunResultPanel";
 
 type AutomationJob =
   inferRouterOutputs<AppRouter>["automations"]["list"][number];
@@ -78,9 +81,14 @@ export function AutomationJobCard({
     job.jobType,
     job.lastRun?.resultSummary,
   );
-  const lastRunSummary = formatAutomationRunSummary(job.jobType, lastRunResult);
   const lastRunFailed = job.lastRun?.status === "failed";
   const lastRunError = job.lastRun?.errorMessage;
+  const lastRunPresentation = lastRunFailed
+    ? {
+        tone: "error" as const,
+        lines: [formatUserFacingErrorMessage(lastRunError ?? "Run failed")],
+      }
+    : getAutomationRunResultPresentation(job.jobType, lastRunResult);
 
   return (
     <Card className="border-border/80 shadow-card">
@@ -168,19 +176,18 @@ export function AutomationJobCard({
           </p>
         )}
         {job.lastRunAt && (
-          <div className="space-y-1">
+          <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
               Last run{" "}
               {formatDistanceToNow(new Date(job.lastRunAt), {
                 addSuffix: true,
               })}
             </p>
-            {lastRunFailed ? (
-              <p className="text-xs text-destructive">
-                {lastRunError ?? "Run failed"}
-              </p>
-            ) : lastRunSummary ? (
-              <p className="text-xs text-foreground">{lastRunSummary}</p>
+            {lastRunPresentation ? (
+              <AutomationRunResultPanel
+                tone={lastRunPresentation.tone}
+                lines={lastRunPresentation.lines}
+              />
             ) : null}
           </div>
         )}

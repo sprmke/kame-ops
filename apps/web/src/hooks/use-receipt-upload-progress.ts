@@ -4,11 +4,24 @@ import { useMemo } from "react";
 
 import {
   activeReceiptStepIndexFromSteps,
+  computeBatchPrepProgressPercent,
   type ReceiptUploadStepSnapshot,
 } from "@/lib/receipt-upload-progress";
 import { api } from "@/lib/api/client";
 
 export type ReceiptUploadSettled = "success" | "error" | null;
+
+/** Prep phase ends at this percent; card processing maps server 0–100 into this range. */
+const CARD_PROGRESS_FLOOR = computeBatchPrepProgressPercent({
+  total: 1,
+  uploaded: 1,
+  phase: "processing",
+});
+
+function mapServerProgressToCardPhase(serverPercent: number): number {
+  const headroom = 100 - CARD_PROGRESS_FLOOR;
+  return CARD_PROGRESS_FLOOR + Math.round((serverPercent * headroom) / 100);
+}
 
 export function useReceiptUploadProgress(
   processId: string | null,
@@ -34,10 +47,17 @@ export function useReceiptUploadProgress(
       : failed
         ? "failed"
         : (serverProgress?.status ?? "running");
-    const progress = succeeded ? 100 : (serverProgress?.progress ?? 0);
+    const awaitingSnapshot = isPending && settled === null && !serverProgress;
+    const serverPercent = serverProgress?.progress ?? 0;
+    const progress = succeeded
+      ? 100
+      : awaitingSnapshot
+        ? CARD_PROGRESS_FLOOR
+        : mapServerProgressToCardPhase(serverPercent);
     const activeStepIndex = activeReceiptStepIndexFromSteps(steps, status);
     const currentStep = steps[activeStepIndex] ?? steps[0];
     const detail = serverProgress?.detail ?? null;
+    const item = serverProgress?.item ?? null;
 
     return {
       steps,
@@ -47,6 +67,7 @@ export function useReceiptUploadProgress(
       finished: succeeded,
       failed,
       currentStep,
+      item,
     };
-  }, [serverProgress, fallbackSteps, succeeded, failed]);
+  }, [serverProgress, fallbackSteps, succeeded, failed, isPending, settled]);
 }

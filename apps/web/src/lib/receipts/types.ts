@@ -43,6 +43,7 @@ export type CreditCardReceiptAiResult = {
 
 export type ReceiptPaymentStatus =
   | "pending"
+  | "partial"
   | "marked_paid"
   | "rejected"
   | "ai_error";

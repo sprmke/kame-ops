@@ -13,7 +13,7 @@ import type { ReceiptListItem } from "../lib/receipt-utils";
 import { ReceiptAiVerdictBadge } from "./ReceiptAiVerdictBadge";
 
 function ChecklistIcon({ state }: { state: ChecklistState }) {
-  const className = "h-3.5 w-3.5 shrink-0";
+  const className = "h-3.5 w-3.5 shrink-0 mt-0.5";
   if (state === "pass") {
     return (
       <CheckCircle2
@@ -94,16 +94,16 @@ export function ReceiptValidationChecklist({
             {failCount} check{failCount === 1 ? "" : "s"} failed
           </p>
         ) : null}
-        <ul className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
+        <ul className="space-y-1">
           {checks.map((check) => (
             <li
               key={check.id}
-              className="flex items-center gap-1.5 text-xs leading-snug"
+              className="flex items-start gap-1.5 text-xs leading-snug"
             >
               <ChecklistIcon state={check.state} />
               <span
                 className={cn(
-                  "min-w-0 truncate",
+                  "min-w-0",
                   check.state === "fail" && "text-destructive",
                   check.state === "pass" && "text-foreground",
                   check.state === "unknown" && "text-muted-foreground",

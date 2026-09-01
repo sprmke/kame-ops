@@ -92,6 +92,47 @@ export function formatAutomationRunSummary(
   return lines[0] ?? null;
 }
 
+export type AutomationRunResultTone =
+  | "success"
+  | "neutral"
+  | "warning"
+  | "error";
+
+export function getAutomationRunResultTone(
+  jobType: string,
+  result: unknown,
+): AutomationRunResultTone {
+  if (!result || typeof result !== "object") return "neutral";
+
+  if (jobType === "send_due_reminders") {
+    const r = result as ReminderRunResult;
+    if ((r.failed ?? 0) > 0) return "warning";
+    if ((r.sent ?? 0) > 0) return "success";
+    return "neutral";
+  }
+
+  if (jobType === "run_soa_pipeline") {
+    const r = result as SoaRunResult;
+    if (r.ok === false || r.warning) return "warning";
+    if ((r.statementCount ?? r.parsedCount ?? 0) > 0) return "success";
+    return "neutral";
+  }
+
+  return "neutral";
+}
+
+export function getAutomationRunResultPresentation(
+  jobType: string,
+  result: unknown,
+): { tone: AutomationRunResultTone; lines: string[] } | null {
+  const lines = formatAutomationRunSummaryLines(jobType, result);
+  if (lines.length === 0) return null;
+  return {
+    tone: getAutomationRunResultTone(jobType, result),
+    lines,
+  };
+}
+
 export function formatAutomationRunSummaryLines(
   jobType: string,
   result: unknown,

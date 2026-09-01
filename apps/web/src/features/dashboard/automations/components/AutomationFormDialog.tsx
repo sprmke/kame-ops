@@ -27,6 +27,7 @@ import {
 } from "@/lib/automations/defaults";
 import {
   AUTOMATION_JOB_TYPE_OPTIONS,
+  automationEditDialogTitle,
   defaultAutomationName,
   isManagedAutomationJobType,
   type AutomationJobType,
@@ -68,7 +69,6 @@ export function AutomationFormDialog({
   useEffect(() => {
     if (!open) return;
     if (job) {
-      setName(job.name);
       setJobType(job.jobType as AutomationJobType);
       setSchedule(readScheduleConfigFromJob(job));
       return;
@@ -99,32 +99,39 @@ export function AutomationFormDialog({
   });
 
   const isPending = create.isPending || update.isPending;
-  const isRemindersJob = job?.jobType === "send_due_reminders";
+  const isRemindersJob = (job?.jobType ?? jobType) === "send_due_reminders";
+  const editJobType = (job?.jobType ?? jobType) as AutomationJobType;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? "Edit automation" : "Create automation"}
+            {isEdit
+              ? automationEditDialogTitle(editJobType)
+              : "Create automation"}
           </DialogTitle>
         </DialogHeader>
         <form
           className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
-            const payload = {
-              name: name.trim() || defaultAutomationName(jobType),
-              jobType,
-              schedule: isRemindersJob
-                ? lockScheduleToDaily(schedule)
-                : schedule,
-            };
+            const schedulePayload = isRemindersJob
+              ? lockScheduleToDaily(schedule)
+              : schedule;
             if (job) {
-              update.mutate({ jobId: job.id, ...payload });
+              update.mutate({
+                jobId: job.id,
+                jobType,
+                schedule: schedulePayload,
+              });
               return;
             }
-            create.mutate(payload);
+            create.mutate({
+              name: name.trim() || defaultAutomationName(jobType),
+              jobType,
+              schedule: schedulePayload,
+            });
           }}
         >
           {!isEdit && (
@@ -154,15 +161,16 @@ export function AutomationFormDialog({
             </div>
           )}
 
-          <div className="space-y-2">
-            <Label>Name</Label>
-            <Input
-              value={name}
-              disabled={isRemindersJob}
-              onChange={(event) => setName(event.target.value)}
-              placeholder={defaultAutomationName(jobType)}
-            />
-          </div>
+          {!isEdit && (
+            <div className="space-y-2">
+              <Label>Name</Label>
+              <Input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder={defaultAutomationName(jobType)}
+              />
+            </div>
+          )}
 
           <AutomationScheduleFields
             value={schedule}

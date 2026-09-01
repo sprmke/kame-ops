@@ -1,7 +1,11 @@
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { isManagedAutomationJobType } from "@/lib/automations/job-types";
+import { isGoogleReconnectRequiredMessage } from "@/lib/auth/google-reconnect";
+import {
+  automationJobTypeLabel,
+  isManagedAutomationJobType,
+} from "@/lib/automations/job-types";
 import {
   computeNextRunAt,
   lockScheduleToDaily,
@@ -14,7 +18,25 @@ import {
 import { db } from "@/lib/db";
 import { automationJobs, automationRuns, users } from "@/lib/db/schema";
 import { ensureDefaultAutomationJobs } from "./default-automation.service";
+import { notificationService } from "./notification.service";
 import { defaultRunSoaInput, soaService } from "./soa.service";
+
+/** Best-effort Telegram/Slack ping so a dead Google connection doesn't fail silently forever. */
+async function notifyReconnectRequired(
+  userId: string,
+  jobType: string,
+): Promise<void> {
+  const text = [
+    `⚠️ *KameOps*: Google account needs to be reconnected.`,
+    `"${automationJobTypeLabel(jobType)}" could not run.`,
+    `Reconnect in Settings → Integrations.`,
+  ].join(" ");
+  try {
+    await notificationService.sendReminderText(userId, text, text);
+  } catch {
+    // Not configured or send failed — the failed automation_run row already records the error.
+  }
+}
 
 const scheduleInputSchema = z.object({
   frequency: z.enum(["daily", "weekly", "monthly"]),
@@ -59,7 +81,11 @@ function buildJobConfig(
 async function executeJob(
   userId: string,
   job: { id: string; jobType: string },
-  options?: { force?: boolean; processId?: string },
+  options?: {
+    force?: boolean;
+    processId?: string;
+    notifyOnReconnectRequired?: boolean;
+  },
 ) {
   const [run] = await db
     .insert(automationRuns)
@@ -110,6 +136,14 @@ async function executeJob(
         errorMessage: message,
       })
       .where(eq(automationRuns.id, run.id));
+
+    if (
+      options?.notifyOnReconnectRequired &&
+      isGoogleReconnectRequiredMessage(message)
+    ) {
+      void notifyReconnectRequired(userId, job.jobType);
+    }
+
     throw error;
   }
 }
@@ -306,7 +340,9 @@ export const automationService = {
       }
 
       try {
-        const { completedAt } = await executeJob(job.userId, job);
+        const { completedAt } = await executeJob(job.userId, job, {
+          notifyOnReconnectRequired: true,
+        });
         await db
           .update(automationJobs)
           .set({
@@ -321,6 +357,17 @@ export const automationService = {
           status: "completed",
         });
       } catch (error) {
+        // Always advance nextRunAt, even on failure. Otherwise a job stuck failing
+        // (e.g. Google reconnect required) stays permanently "due" and gets retried
+        // on every single dispatch tick forever instead of backing off to the next
+        // scheduled slot — this is what caused the runaway retry storm.
+        await db
+          .update(automationJobs)
+          .set({
+            nextRunAt: computeNextRunAt(scheduleConfig, timezone, now),
+          })
+          .where(eq(automationJobs.id, job.id));
+
         results.push({
           jobId: job.id,
           userId: job.userId,

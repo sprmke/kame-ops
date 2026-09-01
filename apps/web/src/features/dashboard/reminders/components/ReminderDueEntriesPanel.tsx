@@ -97,7 +97,12 @@ export function ReminderDueEntriesPanel() {
     [status?.cards],
   );
 
-  const unpaidCount = dueItems.filter((d) => !d.paidAt).length;
+  const unpaidCount = dueItems.filter(
+    (d) => !d.paidAt && d.source !== "expected",
+  ).length;
+  const missingSoaCount = dueItems.filter(
+    (d) => d.source === "expected",
+  ).length;
 
   const markPaid = api.reminders.markPaid.useMutation({
     onSuccess: () => {
@@ -267,6 +272,12 @@ export function ReminderDueEntriesPanel() {
                     unpaid
                   </span>
                 )}
+                {missingSoaCount > 0 && (
+                  <span className="text-base font-medium text-warning">
+                    {" "}
+                    · {missingSoaCount} SOA missing
+                  </span>
+                )}
               </p>
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="text-muted-foreground">
@@ -301,7 +312,7 @@ export function ReminderDueEntriesPanel() {
         <EmptyState
           icon={<Bell className="h-6 w-6 text-muted-foreground" />}
           title="No due entries"
-          message="Run SOA to populate due dates."
+          message="Upcoming card due dates will appear here."
         />
       ) : (
         <Card className="border-border/80 shadow-card">

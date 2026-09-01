@@ -15,6 +15,7 @@ import {
 } from "@/lib/automations/schedule";
 import { db } from "@/lib/db";
 import { automationJobs, users } from "@/lib/db/schema";
+import { cachedPerRequest } from "@/server/lib/request-cache";
 
 type AutomationJobRow = typeof automationJobs.$inferSelect;
 
@@ -142,7 +143,13 @@ export async function ensureDefaultSoaPipelineJob(userId: string) {
   });
 }
 
-export async function ensureDefaultAutomationJobs(userId: string) {
-  await ensureDefaultRemindersJob(userId);
-  await ensureDefaultSoaPipelineJob(userId);
-}
+/** Idempotent seed called by several read paths, so run it once per request. */
+export const ensureDefaultAutomationJobs = cachedPerRequest(
+  "automations.ensureDefaults",
+  async (userId: string) => {
+    await Promise.all([
+      ensureDefaultRemindersJob(userId),
+      ensureDefaultSoaPipelineJob(userId),
+    ]);
+  },
+);
