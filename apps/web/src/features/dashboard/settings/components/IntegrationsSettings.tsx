@@ -1,68 +1,72 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { Mail, MessageCircle, Slack } from "lucide-react";
-import { toast } from "sonner";
+import { useEffect, useState } from 'react';
+import { Mail, MessageCircle, Slack } from 'lucide-react';
+import { toast } from 'sonner';
 
-import { IntegrationsSettingsSkeleton } from "@/components/shared/skeletons";
-import { StatusBadge } from "@/components/shared/StatusBadge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { PasswordInput } from "@/components/ui/password-input";
-import { ROUTES } from "@/config/routes";
-import { api } from "@/lib/api/client";
-import { useReconnectGoogle } from "@/hooks/use-reconnect-google";
+import { IntegrationsSettingsSkeleton } from '@/components/shared/skeletons';
+import { StatusBadge } from '@/components/shared/StatusBadge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { PasswordInput } from '@/components/ui/password-input';
+import { api } from '@/lib/api/client';
 
-import { AiApiKeysSettings } from "./AiApiKeysSettings";
+import { useGoogleLinkCallback } from '@/hooks/use-google-link-callback';
+
+import { AiApiKeysSettings } from './AiApiKeysSettings';
+import { GoogleAccountsSettings } from './GoogleAccountsSettings';
 
 export function IntegrationsSettings() {
+  useGoogleLinkCallback();
   const utils = api.useUtils();
   const { data: integrations, isLoading } = api.integrations.list.useQuery();
+  const { data: googleAccounts, isLoading: isLoadingGoogleAccounts } =
+    api.integrations.listGoogleAccounts.useQuery();
   const { data: formConfigs, isLoading: isLoadingConfigs } =
     api.integrations.getFormConfigs.useQuery();
   const upsert = api.integrations.upsert.useMutation({
     onSuccess: () => {
-      toast.success("Integration saved — applied on next SOA/reminder run");
+      toast.success('Integration saved — applied on next SOA/reminder run');
       void utils.integrations.list.invalidate();
       void utils.integrations.getFormConfigs.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const [telegramToken, setTelegramToken] = useState("");
-  const [telegramChat, setTelegramChat] = useState("");
-  const [telegramWebLink, setTelegramWebLink] = useState("");
-  const [slackWebhook, setSlackWebhook] = useState("");
-  const { reconnectGoogle, isReconnectPending } = useReconnectGoogle();
+  const [telegramToken, setTelegramToken] = useState('');
+  const [telegramChat, setTelegramChat] = useState('');
+  const [telegramWebLink, setTelegramWebLink] = useState('');
+  const [slackWebhook, setSlackWebhook] = useState('');
 
   useEffect(() => {
     if (!formConfigs) return;
     if (formConfigs.telegram) {
-      setTelegramToken(formConfigs.telegram.botToken ?? "");
-      setTelegramChat(formConfigs.telegram.chatId ?? "");
-      setTelegramWebLink(formConfigs.telegram.webLink ?? "");
+      setTelegramToken(formConfigs.telegram.botToken ?? '');
+      setTelegramChat(formConfigs.telegram.chatId ?? '');
+      setTelegramWebLink(formConfigs.telegram.webLink ?? '');
     }
     if (formConfigs.slack) {
-      setSlackWebhook(formConfigs.slack.webhookUrl ?? "");
+      setSlackWebhook(formConfigs.slack.webhookUrl ?? '');
     }
     if (formConfigs.secretsUnavailable.telegram) {
       toast.error(
-        "Telegram settings could not be decrypted. Re-enter them and save",
+        'Telegram settings could not be decrypted. Re-enter them and save',
       );
     }
     if (formConfigs.secretsUnavailable.slack) {
       toast.error(
-        "Slack webhook could not be decrypted. Re-enter it and save.",
+        'Slack webhook could not be decrypted. Re-enter it and save.',
       );
     }
   }, [formConfigs]);
 
   const connected = new Set(integrations?.map((i) => i.provider) ?? []);
-  const gmailConnected = connected.has("gmail");
+  const gmailConnected =
+    connected.has('gmail') && (googleAccounts?.length ?? 0) > 0;
 
-  if (isLoading || isLoadingConfigs) {
+  if (isLoading || isLoadingConfigs || isLoadingGoogleAccounts) {
     return <IntegrationsSettingsSkeleton />;
   }
 
@@ -70,39 +74,28 @@ export function IntegrationsSettings() {
     <div className="grid gap-6 lg:grid-cols-2">
       <Card className="lg:col-span-2">
         <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Mail className="h-5 w-5 text-primary" />
+          <div className="flex flex-wrap gap-3 justify-between items-center">
+            <div className="flex gap-2 items-center">
+              <Mail className="w-5 h-5 text-primary" />
               <CardTitle className="text-base">
                 Gmail & Google Calendar
               </CardTitle>
             </div>
-            {gmailConnected && (
-              <StatusBadge label="Connected" variant="success" />
-            )}
           </div>
         </CardHeader>
         <CardContent>
-          <Button
-            variant={gmailConnected ? "outline" : "default"}
-            onClick={() =>
-              reconnectGoogle({ callbackUrl: ROUTES.dashboard.settings })
-            }
-            disabled={isReconnectPending}
-          >
-            {gmailConnected ? "Reconnect Google" : "Connect Google"}
-          </Button>
+          <GoogleAccountsSettings />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <MessageCircle className="h-5 w-5 text-primary" />
+          <div className="flex justify-between items-center">
+            <div className="flex gap-2 items-center">
+              <MessageCircle className="w-5 h-5 text-primary" />
               <CardTitle className="text-base">Telegram</CardTitle>
             </div>
-            {connected.has("telegram") && (
+            {connected.has('telegram') && (
               <StatusBadge label="Connected" variant="success" />
             )}
           </div>
@@ -136,7 +129,7 @@ export function IntegrationsSettings() {
             className="w-full"
             onClick={() =>
               upsert.mutate({
-                provider: "telegram",
+                provider: 'telegram',
                 config: {
                   botToken: telegramToken,
                   chatId: telegramChat,
@@ -152,12 +145,12 @@ export function IntegrationsSettings() {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Slack className="h-5 w-5 text-primary" />
+          <div className="flex justify-between items-center">
+            <div className="flex gap-2 items-center">
+              <Slack className="w-5 h-5 text-primary" />
               <CardTitle className="text-base">Slack</CardTitle>
             </div>
-            {connected.has("slack") && (
+            {connected.has('slack') && (
               <StatusBadge label="Connected" variant="success" />
             )}
           </div>
@@ -175,7 +168,7 @@ export function IntegrationsSettings() {
             className="w-full"
             onClick={() =>
               upsert.mutate({
-                provider: "slack",
+                provider: 'slack',
                 config: { webhookUrl: slackWebhook },
               })
             }

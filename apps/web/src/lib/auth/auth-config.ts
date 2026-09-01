@@ -71,7 +71,10 @@ export const authConfig: NextAuthConfig = {
         if (user) {
           token.sub = user.id;
           token.email = email;
-          await gmailService.upsertGoogleAccount(user.id, account);
+          await gmailService.upsertGoogleAccount(user.id, account, {
+            email,
+            name: profile.name,
+          });
           await gmailService.markGoogleIntegrationsConnected(user.id, email);
         }
       }

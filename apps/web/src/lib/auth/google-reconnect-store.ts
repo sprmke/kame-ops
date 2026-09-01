@@ -7,7 +7,9 @@ type GoogleReconnectSnapshot = {
 
 type Listener = () => void;
 
-let snapshot: GoogleReconnectSnapshot = { open: false, message: null };
+const CLOSED_SNAPSHOT: GoogleReconnectSnapshot = { open: false, message: null };
+
+let snapshot: GoogleReconnectSnapshot = CLOSED_SNAPSHOT;
 const listeners = new Set<Listener>();
 
 function emit() {
@@ -23,6 +25,11 @@ export function getGoogleReconnectSnapshot(): GoogleReconnectSnapshot {
   return snapshot;
 }
 
+/** Stable snapshot for useSyncExternalStore SSR — must not allocate per call. */
+export function getGoogleReconnectServerSnapshot(): GoogleReconnectSnapshot {
+  return CLOSED_SNAPSHOT;
+}
+
 export function openGoogleReconnectModal(message?: string | null): void {
   snapshot = {
     open: true,
@@ -33,7 +40,7 @@ export function openGoogleReconnectModal(message?: string | null): void {
 
 export function closeGoogleReconnectModal(): void {
   if (!snapshot.open && !snapshot.message) return;
-  snapshot = { open: false, message: null };
+  snapshot = CLOSED_SNAPSHOT;
   emit();
 }
 

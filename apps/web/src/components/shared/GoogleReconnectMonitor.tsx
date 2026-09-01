@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 
-import { api } from "@/lib/api/client";
+import { api, backgroundQuery } from "@/lib/api/client";
 import {
   closeGoogleReconnectModal,
   openGoogleReconnectModal,
@@ -16,9 +16,11 @@ export function GoogleReconnectMonitor() {
 
   const { data } = api.integrations.checkGoogleAuth.useQuery(undefined, {
     enabled,
-    refetchOnWindowFocus: true,
-    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    refetchInterval: 5 * 60_000,
+    staleTime: 5 * 60_000,
     retry: false,
+    trpc: backgroundQuery,
   });
 
   useEffect(() => {
