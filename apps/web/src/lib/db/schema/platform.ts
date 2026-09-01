@@ -212,6 +212,12 @@ export const receiptUploadProgress = pgTable(
       .notNull(),
     detail: text("detail"),
     error: text("error"),
+    /** 1-based index of the receipt currently being processed within this batch group. */
+    itemIndex: integer("item_index").notNull().default(1),
+    /** Total receipts in this batch group (1 for single-receipt uploads). */
+    itemTotal: integer("item_total").notNull().default(1),
+    /** Receipts fully finished within this group — monotonic, drives overall percent. */
+    itemsCompleted: integer("items_completed").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
       .notNull()

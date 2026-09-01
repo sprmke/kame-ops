@@ -5,10 +5,10 @@
 ## Core tables (planned)
 
 - `users` — profile extension for Supabase Auth users
-- `credit_cards` — card credentials (encrypted PDF password), optional `soa_subject` (Gmail SOA search), `color` (#RRGGBB accent)
-- `soa_statements`, `soa_transactions` — parsed SOA data
+- `credit_cards` — card credentials, required-on-save recurring `due_day` (1–31 fallback when SOA is missing), encrypted PDF password, optional `soa_subject`, and `color`
+- `soa_statements`, `soa_transactions` — parsed SOA data (Gmail or manual upload; file in `pdf_storage_path`)
 - `user_transaction_categories` — per-user custom category slugs/labels (e.g. AI-created)
-- `due_entries` — payment due tracking
+- `due_entries` — payment due tracking; `source` is `soa` or preventive `expected`
 - `receipts` — uploaded receipt images + AI validation fields
 - `reminders`, `reminder_logs` — generic reminder engine
 - `integrations` — Gmail, Telegram, Slack, Calendar per user

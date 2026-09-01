@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   pgTable,
   uuid,
@@ -7,12 +7,13 @@ import {
   timestamp,
   integer,
   boolean,
+  check,
   index,
   uniqueIndex,
   jsonb,
 } from "drizzle-orm/pg-core";
 
-import { users } from "./users";
+import { accounts, users } from "./users";
 
 export const BANK_ISSUERS = ["metrobank", "rcbc", "bpi", "unionbank"] as const;
 export type BankIssuer = (typeof BANK_ISSUERS)[number];
@@ -145,6 +146,8 @@ export const creditCards = pgTable(
     gmailMonthOffset: integer("gmail_month_offset").default(0),
     /** Gmail subject line hint for SOA search (null = bank default query). */
     soaSubject: text("soa_subject"),
+    /** Normal monthly due day. Used as a fallback when no SOA is received. */
+    dueDay: integer("due_day"),
     /** Hex accent color (#RRGGBB) for SOA and card UI. */
     color: varchar("color", { length: 7 }),
     /** Days before due date to start reminders (null = use global default). */
@@ -153,6 +156,10 @@ export const creditCards = pgTable(
     reminderIntervalMinutes: integer("reminder_interval_minutes")
       .notNull()
       .default(1440),
+    /** Linked Google OAuth account for Gmail SOA fetch (null = default account). */
+    googleAccountId: uuid("google_account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
     notes: text("notes"),
     isActive: boolean("is_active").notNull().default(true),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -163,8 +170,10 @@ export const creditCards = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (table) => [
+    check("credit_cards_due_day_check", sql`${table.dueDay} between 1 and 31`),
     index("credit_cards_user_idx").on(table.userId),
     index("credit_cards_issuer_last4_idx").on(table.issuer, table.last4),
+    index("credit_cards_google_account_idx").on(table.googleAccountId),
   ],
 );
 
@@ -278,6 +287,8 @@ export const dueEntries = pgTable(
     totalDue: varchar("total_due", { length: 64 }).notNull(),
     interestCharges: varchar("interest_charges", { length: 64 }),
     contactLine: text("contact_line"),
+    /** `expected` means this row was generated because no SOA was received. */
+    source: varchar("source", { length: 16 }).notNull().default("soa"),
     paidAt: timestamp("paid_at"),
     paidAmount: varchar("paid_amount", { length: 64 }),
     receiptId: uuid("receipt_id"),
@@ -285,14 +296,27 @@ export const dueEntries = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
+    check(
+      "due_entries_source_check",
+      sql`${table.source} in ('soa', 'expected')`,
+    ),
     index("due_entries_user_idx").on(table.userId),
     index("due_entries_due_ymd_idx").on(table.dueDateYmd),
     index("due_entries_card_idx").on(table.issuerId, table.cardLast4),
+    uniqueIndex("due_entries_user_card_due_uidx").on(
+      table.userId,
+      table.creditCardId,
+      table.dueDateYmd,
+    ),
   ],
 );
 
 export const creditCardsRelations = relations(creditCards, ({ one, many }) => ({
   user: one(users, { fields: [creditCards.userId], references: [users.id] }),
+  googleAccount: one(accounts, {
+    fields: [creditCards.googleAccountId],
+    references: [accounts.id],
+  }),
   statements: many(soaStatements),
   dueEntries: many(dueEntries),
 }));

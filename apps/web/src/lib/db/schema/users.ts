@@ -48,12 +48,17 @@ export const accounts = pgTable(
     scope: varchar("scope", { length: 255 }),
     idToken: text("id_token"),
     sessionState: varchar("session_state", { length: 255 }),
+    /** Gmail address for linked Google OAuth accounts (display + SOA diagnostics). */
+    googleEmail: varchar("google_email", { length: 255 }),
+    /** Google profile display name for linked OAuth accounts. */
+    googleName: varchar("google_name", { length: 255 }),
   },
   (table) => [
     uniqueIndex("accounts_provider_idx").on(
       table.provider,
       table.providerAccountId,
     ),
+    index("accounts_user_provider_idx").on(table.userId, table.provider),
   ],
 );
 
