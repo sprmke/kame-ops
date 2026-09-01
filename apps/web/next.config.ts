@@ -33,7 +33,14 @@ const nextConfig: NextConfig = {
     "/api/health/engines": traceExcludeGlobs,
   },
   experimental: {
-    serverActions: { bodySizeLimit: "10mb" },
+    serverActions: { bodySizeLimit: "15mb" },
+    // Barrel-file packages pull in far more modules than each page uses.
+    optimizePackageImports: [
+      "lucide-react",
+      "date-fns",
+      "recharts",
+      "@tanstack/react-query",
+    ],
   },
   webpack: (config, { isServer }) => {
     if (isServer) {
