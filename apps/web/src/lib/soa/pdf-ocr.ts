@@ -4,7 +4,12 @@ import { createWorker, PSM } from "tesseract.js";
 
 import { rasterizePdfPages } from "@/server/lib/pdf-rasterize";
 
-export type BpiOcrOptions = {
+/**
+ * OCR fallback for any bank's SOA PDF — rasterize pages (pdf.js + canvas) then run
+ * Tesseract. Bank-agnostic: `run.ts` decides *when* to call this based on extracted
+ * text quality (see `text-quality.ts`), not on which issuer the PDF came from.
+ */
+export type SoaOcrOptions = {
   /** Max pages to OCR; `0` = entire PDF. */
   maxPages: number;
   /** Render scale for rasterization (higher = sharper, slower). */
@@ -17,14 +22,14 @@ export type BpiOcrOptions = {
 
 const PSM_VALUES = new Set<string>(Object.values(PSM));
 
-export function parseBpiPsmEnv(raw: string | undefined): PSM {
+export function parseSoaOcrPsmEnv(raw: string | undefined): PSM {
   const t = raw?.trim() ?? "";
   if (t && PSM_VALUES.has(t)) return t as PSM;
   return PSM.AUTO;
 }
 
-/** Fixes common OCR quirks before regex parsing. */
-function normalizeBpiOcrChunk(s: string): string {
+/** Fixes common OCR quirks before regex parsing (spaced-out currency codes, thousands separators). */
+function normalizeSoaOcrChunk(s: string): string {
   return s
     .replace(/\uFF1A/g, ":")
     .replace(/P\s+H\s+P/gi, "PHP")
@@ -41,7 +46,7 @@ async function recognizeWithPsm(
     preserve_interword_spaces: "1",
   });
   const { data } = await worker.recognize(pageBuf);
-  return normalizeBpiOcrChunk(data.text?.trim() ?? "");
+  return normalizeSoaOcrChunk(data.text?.trim() ?? "");
 }
 
 /**
@@ -51,7 +56,7 @@ async function recognizeWithPsm(
 export async function ocrPdfToPlainText(
   pdfPath: string,
   password: string,
-  options: BpiOcrOptions,
+  options: SoaOcrOptions,
 ): Promise<string> {
   const { maxPages, scale, psm, dualSparse } = options;
   const worker = await createWorker("eng");

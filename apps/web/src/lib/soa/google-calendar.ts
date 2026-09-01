@@ -28,6 +28,21 @@ export type CalendarDueEntry = {
   updatedAt: string;
 };
 
+export type CalendarEventInput = {
+  issuerId: string;
+  cardLast4: string;
+  bankLabel: string;
+  cardDisplayLabel?: string | null;
+  fullPan?: string | null;
+  contactLine?: string | null;
+  dueDate: string;
+  minimumDue: string;
+  totalDue: string;
+  source?: string;
+  soaUnavailable?: boolean;
+  transactions?: SoaRow["transactions"];
+};
+
 function parseDueDate(dueDateStr: string): Date | null {
   const ymd = parseDueDateToYmd(dueDateStr);
   if (!ymd) return null;
@@ -88,7 +103,7 @@ function collectFingerprintsFromExistingEvent(ev: {
   return out;
 }
 
-function buildEventSpecs(row: SoaRow): CalendarEventSpec[] {
+function buildEventSpecs(row: CalendarEventInput): CalendarEventSpec[] {
   if (row.soaUnavailable) return [];
   const due = parseDueDate(row.dueDate);
   if (!due) return [];
@@ -96,6 +111,7 @@ function buildEventSpecs(row: SoaRow): CalendarEventSpec[] {
   const dueFmt = row.dueDate;
   const dueYMD = toYMD(due);
   const info = dueBodyInfoFromSoaRow(row, telegramWebLinkFromEnv());
+  if (row.source === "expected") info.soaMissing = true;
   const cardLabel = info.cardLabel;
   const specs: CalendarEventSpec[] = [];
 
@@ -109,7 +125,10 @@ function buildEventSpecs(row: SoaRow): CalendarEventSpec[] {
     const body = buildDueBodyLines(info).join("\n");
 
     specs.push({
-      summary: `💳 ${cardLabel} — Pay ${dayLabel} (due ${dueFmt})`,
+      summary:
+        row.source === "expected"
+          ? `⚠️ ${cardLabel} — SOA missing · due ${dayLabel}`
+          : `💳 ${cardLabel} — Pay ${dayLabel} (due ${dueFmt})`,
       description: body,
       date: dateStr,
       endDate: endDateStr,
@@ -123,7 +142,10 @@ function buildEventSpecs(row: SoaRow): CalendarEventSpec[] {
     headerLine: "Credit card payment DUE TODAY!",
   }).join("\n");
   specs.push({
-    summary: `💳 ${cardLabel} — PAYMENT DUE TODAY (${dueFmt})`,
+    summary:
+      row.source === "expected"
+        ? `🚨 ${cardLabel} — DUE TODAY · SOA missing`
+        : `💳 ${cardLabel} — PAYMENT DUE TODAY (${dueFmt})`,
     description: dueBody,
     date: dueYMD,
     endDate: toYMD(addDays(due, 1)),
@@ -155,7 +177,7 @@ export type MarkUnpaidCalendarResult = {
 };
 
 export async function createDueDateCalendarEvents(
-  rows: SoaRow[],
+  rows: CalendarEventInput[],
   calendarId = "primary",
   options?: { todayYmd?: string; timeZone?: string },
 ): Promise<CalendarResult> {

@@ -6,10 +6,18 @@ import { and, eq, isNull } from "drizzle-orm";
 
 import { env } from "@/env";
 import { db } from "@/lib/db";
-import { creditCards } from "@/lib/db/schema";
+import { accounts, creditCards } from "@/lib/db/schema";
+import { formatGoogleAccountLabel } from "@/lib/google/google-account-display";
+import { banks } from "@/lib/soa/config";
+import {
+  disabledOcrIssuers,
+  envFlag,
+  forcedOcrIssuers,
+} from "@/lib/soa/ocr-env";
 import { tryDecryptSecret } from "@/lib/utils/encryption";
 import { checkPdfEngineReady } from "@/server/lib/pdf-engine";
 import { checkQpdfEngineReady } from "@/server/lib/qpdf-engine";
+import { gmailService } from "@/server/services/gmail.service";
 
 export type SoaCardPreflight = {
   issuer: string;
@@ -19,6 +27,8 @@ export type SoaCardPreflight = {
   passwordLength: number;
   gmailMonthOffset: number;
   soaSubject: string | null;
+  gmailAccountLabel: string | null;
+  isActive: boolean;
 };
 
 export type SoaRuntimeHints = {
@@ -26,6 +36,13 @@ export type SoaRuntimeHints = {
   vercel: boolean;
   encryptionKeyConfigured: boolean;
   encryptionKeyFingerprint: string;
+  /** OCR fallback is automatic (any bank) based on extracted text quality — always true. */
+  ocrAutoDetectEnabled: boolean;
+  /** Issuers where `SOA_OCR_FORCE` (or legacy `BPI_OCR=1`) forces OCR even when text looks fine. */
+  ocrForcedIssuers: string[];
+  /** Issuers where `SOA_OCR_DISABLE` turns OCR off entirely, even as an automatic fallback. */
+  ocrDisabledIssuers: string[];
+  /** @deprecated kept for back-compat — true when BPI is force-OCR'd via `BPI_OCR=1`. */
   bpiOcrEnabled: boolean;
   authUrl: string | null;
   appUrl: string;
@@ -75,9 +92,26 @@ export const soaDiagnosticsService = {
       where: and(eq(creditCards.userId, userId), isNull(creditCards.deletedAt)),
       orderBy: (t, { asc }) => [asc(t.issuer), asc(t.last4)],
     });
+    const defaultGoogleAccountId =
+      await gmailService.getDefaultGoogleAccountId(userId);
+    const googleAccountRows = await db.query.accounts.findMany({
+      where: and(eq(accounts.userId, userId), eq(accounts.provider, "google")),
+      columns: { id: true, googleEmail: true, googleName: true },
+    });
+    const labelByAccountId = new Map(
+      googleAccountRows.map((row) => [
+        row.id,
+        formatGoogleAccountLabel({
+          name: row.googleName,
+          email: row.googleEmail,
+        }),
+      ]),
+    );
 
     return rows.map((c) => {
       const plain = tryDecryptSecret(c.pdfPasswordEncrypted);
+      const resolvedAccountId =
+        c.googleAccountId ?? defaultGoogleAccountId ?? null;
       return {
         issuer: c.issuer,
         last4: c.last4,
@@ -86,6 +120,10 @@ export const soaDiagnosticsService = {
         passwordLength: plain?.length ?? 0,
         gmailMonthOffset: c.gmailMonthOffset ?? 0,
         soaSubject: c.soaSubject,
+        gmailAccountLabel: resolvedAccountId
+          ? (labelByAccountId.get(resolvedAccountId) ?? null)
+          : null,
+        isActive: c.isActive,
       };
     });
   },
@@ -97,12 +135,16 @@ export const soaDiagnosticsService = {
       checkPdfEngineReady(),
       checkQpdfEngineReady(),
     ]);
+    const issuerIds = banks.map((b) => b.id);
     return {
       nodeEnv: env.NODE_ENV,
       vercel: !!process.env.VERCEL,
       encryptionKeyConfigured: !!process.env.ENCRYPTION_KEY?.trim(),
       encryptionKeyFingerprint: encryptionKeyFingerprint(),
-      bpiOcrEnabled: /^(1|true|yes)$/i.test(process.env.BPI_OCR?.trim() ?? ""),
+      ocrAutoDetectEnabled: true,
+      ocrForcedIssuers: forcedOcrIssuers(issuerIds),
+      ocrDisabledIssuers: disabledOcrIssuers(issuerIds),
+      bpiOcrEnabled: envFlag("BPI_OCR"),
       authUrl,
       appUrl,
       authUrlMatchesApp:
@@ -115,7 +157,7 @@ export const soaDiagnosticsService = {
   },
 
   formatPreflightFailure(cards: SoaCardPreflight[]): string | null {
-    const bad = cards.filter((c) => !c.decryptOk);
+    const bad = cards.filter((c) => c.isActive && !c.decryptOk);
     if (bad.length === 0) return null;
 
     const list = bad.map((c) => `${c.issuer} •••• ${c.last4}`).join(", ");

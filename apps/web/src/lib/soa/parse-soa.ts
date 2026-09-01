@@ -387,8 +387,8 @@ function unionbankPairedStatementDue(flat: string): {
   return {};
 }
 
-/** After OCR, normalize punctuation and spaced-out `PHP` before regexes. */
-function preprocessBpiOcrText(text: string): string {
+/** After OCR, normalize punctuation and spaced-out `PHP` before regexes (any bank). */
+function preprocessOcrArtifacts(text: string): string {
   return text
     .replace(/\uFF1A/g, ":")
     .replace(/P\s+H\s+P/gi, "PHP")
@@ -733,12 +733,16 @@ function dueDatePatterns(issuerId: string): RegExp[] {
 
 /**
  * Bank SOA PDFs differ; patterns are ordered issuer-specific first.
- * BPI often ships SOAs where extractable “text” is empty or gibberish (image pages,
+ * Any bank can ship SOAs where extractable “text” is empty or gibberish (image pages,
  * vector outlines, or custom/subset fonts — glyphs on screen ≠ Unicode strings we can regex).
+ * `run.ts` decides per-PDF (not per-issuer) whether OCR is needed; this function only
+ * needs to know whether the text it received came from OCR so it can clean up OCR artifacts.
  */
 export type ParseSoaTextOptions = {
-  /** Set when BPI text came from Tesseract OCR (affects parse note wording). */
-  bpiFromOcr?: boolean;
+  /** Set when `text` came from Tesseract OCR instead of the PDF's text layer. */
+  usedOcr?: boolean;
+  /** Set when OCR was attempted (whether or not it ended up being used) — informs parse notes. */
+  ocrAttempted?: boolean;
 };
 
 export function parseSoaText(
@@ -751,8 +755,8 @@ export function parseSoaText(
   text: string,
   options?: ParseSoaTextOptions,
 ): SoaRow {
-  if (issuerId.toLowerCase() === "bpi" && options?.bpiFromOcr) {
-    text = preprocessBpiOcrText(text);
+  if (options?.usedOcr) {
+    text = preprocessOcrArtifacts(text);
   }
   let minimumDue = pickFirst(minimumPatterns(issuerId), text);
   let totalDue = pickFirst(totalPatterns(issuerId), text);
@@ -824,10 +828,7 @@ export function parseSoaText(
   if (!statementDate) missing.push("statement date");
   if (!dueDate) missing.push("due date");
 
-  const bpiManyMissing =
-    issuerId.toLowerCase() === "bpi" &&
-    flatten(text).length > 0 &&
-    missing.length >= 3;
+  const manyMissing = flatten(text).length > 0 && missing.length >= 3;
 
   return {
     bankLabel,
@@ -841,12 +842,14 @@ export function parseSoaText(
     statementDate: normalizeDisplayDate(statementDate || "—"),
     dueDate: formatRawDueLabel(dueDate || "—"),
     parseNotes:
-      bpiManyMissing && options?.bpiFromOcr
-        ? "BPI: OCR text did not match parsers. BPI_OCR_DEBUG=1 saves raw OCR under data/output/YYYY-MM/. Try BPI_OCR_DUAL=1 or BPI_OCR_PSM=4|6|11; see docs/SETUP.md for Preview/ocrmypdf."
-        : bpiManyMissing
-          ? "BPI: PDF has no usable text layer (custom fonts / images). Set BPI_OCR=1 in .env, or enter totals manually."
-          : missing.length > 0
-            ? `Could not detect: ${missing.join(", ")}.`
-            : undefined,
+      manyMissing && options?.usedOcr
+        ? `${bankLabel}: OCR text did not match parsers. SOA_OCR_DEBUG=1 saves raw OCR under data/output/YYYY-MM/. Try SOA_OCR_DUAL=1 or SOA_OCR_PSM=4|6|11.`
+        : manyMissing && options?.ocrAttempted
+          ? `${bankLabel}: PDF has no usable text layer and OCR could not recover it either. Enter totals manually.`
+          : manyMissing
+            ? `${bankLabel}: PDF has no usable text layer (custom fonts / images). Enter totals manually.`
+            : missing.length > 0
+              ? `Could not detect: ${missing.join(", ")}.`
+              : undefined,
   };
 }

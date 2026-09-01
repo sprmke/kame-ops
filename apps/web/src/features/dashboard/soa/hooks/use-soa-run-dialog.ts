@@ -47,10 +47,10 @@ export function useSoaRunDialog(options: UseSoaRunDialogOptions = {}) {
       lastPeriodIdRef.current = result.periodId ?? null;
       setRunSettled("success");
       if (result.warning) {
-        toast.warning(result.warning, { duration: 20000 });
+        toast.warning(result.warning, { duration: 8000 });
       } else if ((result.parsedCount ?? 1) === 0) {
-        toast.warning("SOA run finished with no parsed statements.", {
-          duration: 12000,
+        toast.warning("No statements found for this period.", {
+          duration: 8000,
         });
       } else {
         toast.success("SOA run complete");

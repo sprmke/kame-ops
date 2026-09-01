@@ -9,9 +9,11 @@ import {
   CircleCheck,
   CreditCard,
   FileText,
+  Loader2,
   PhilippinePeso,
   Play,
   Sparkles,
+  Upload,
 } from "lucide-react";
 
 import { DashboardPageHeader } from "@/components/shared/DashboardPageHeader";
@@ -31,6 +33,7 @@ import {
   CategorizeWithAiProvider,
   useCategorizeWithAiActions,
 } from "./CategorizeWithAiProvider";
+import { ManualSoaMonthConfirmDialog } from "./ManualSoaMonthConfirmDialog";
 import { RunSoaDialog } from "./RunSoaDialog";
 import { SoaPdfPreview } from "./SoaPdfPreview";
 import {
@@ -47,6 +50,7 @@ import {
   type SoaStatement,
 } from "../lib/soa-utils";
 import { periodToRunInitial } from "../lib/run-soa-progress";
+import { useSoaManualUpload } from "../hooks/use-soa-manual-upload";
 import { useSoaRunDialog } from "../hooks/use-soa-run-dialog";
 
 type PdfPreviewState =
@@ -144,6 +148,13 @@ function SoaPeriodDetailBody({
     },
   });
 
+  const manualUpload = useSoaManualUpload(periodId, () => {
+    void utils.soa.getPeriod.invalidate({ periodId });
+    void utils.soa.listPeriods.invalidate();
+    void utils.reminders.listDue.invalidate();
+    void utils.overview.stats.invalidate();
+  });
+
   const paidDues = useMemo(
     () =>
       (dues ?? []).map((due) => ({
@@ -178,6 +189,28 @@ function SoaPeriodDetailBody({
         title={period.label}
         actions={
           <div className="flex flex-wrap gap-2 items-center">
+            <input
+              ref={manualUpload.fileRef}
+              type="file"
+              accept="application/pdf,image/jpeg,image/png,image/webp,image/gif"
+              multiple
+              className="hidden"
+              onChange={manualUpload.handleFileInputChange}
+            />
+            <Button
+              variant="outline"
+              onClick={() => manualUpload.triggerFilePicker()}
+              disabled={manualUpload.isPending || runPipeline.isPending}
+            >
+              {manualUpload.isPending ? (
+                <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 w-4 h-4" />
+              )}
+              {manualUpload.progressLabel
+                ? `Uploading ${manualUpload.progressLabel}`
+                : "Upload"}
+            </Button>
             <Button onClick={() => openRun()} disabled={runPipeline.isPending}>
               <Play className="mr-2 w-4 h-4" />
               Re-run
@@ -210,6 +243,16 @@ function SoaPeriodDetailBody({
       />
 
       <RunSoaDialog {...runDialogProps} />
+      <ManualSoaMonthConfirmDialog
+        pending={manualUpload.confirmPending}
+        onSkip={() => manualUpload.resolveConfirm({ action: "skip" })}
+        onForce={(month, year) =>
+          manualUpload.resolveConfirm({ action: "force", month, year })
+        }
+        onSaveDetected={() =>
+          manualUpload.resolveConfirm({ action: "outOfRange" })
+        }
+      />
 
       <SoaPdfPreview
         open={pdfPreview.kind !== "closed"}
@@ -310,7 +353,7 @@ function SoaPeriodDetailBody({
                   />
                 ) : (
                   <p className="py-12 text-sm text-center text-muted-foreground">
-                    No statements in this period. Re-run SOA to fetch data.
+                    No statements in this period.
                   </p>
                 )
               }
@@ -357,7 +400,7 @@ function SoaPeriodDetailBody({
 
                   {!period.statements.length && (
                     <p className="py-12 text-sm text-center text-muted-foreground">
-                      No statements in this period. Re-run SOA to fetch data.
+                      No statements in this period.
                     </p>
                   )}
                 </>

@@ -55,13 +55,26 @@ export async function searchAndDownloadPdfs(options: {
   maxResults?: number;
 }): Promise<{ pdfs: DownloadedPdf[]; messageCount: number }> {
   const { gmail, query, bankId, bankLabel, downloadsDir } = options;
-  const maxResults = options.maxResults ?? 15;
-  const list = await gmail.users.messages.list({
-    userId: "me",
-    q: query,
-    maxResults,
-  });
-  const ids = list.data.messages?.map((m) => m.id).filter(Boolean) ?? [];
+  // Raised from 15 and paginated: a single monthly query should rarely return this
+  // many matches, but users with several cards per issuer, multiple Gmail search
+  // configs (subject/offset overrides), or a noisy inbox can exceed the old cap —
+  // silently truncating the result page would drop a real card's SOA even though
+  // Gmail actually has the message. Page until maxResults or Gmail runs out.
+  const maxResults = options.maxResults ?? 40;
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+  do {
+    const list = await gmail.users.messages.list({
+      userId: "me",
+      q: query,
+      maxResults: Math.min(100, maxResults - ids.length),
+      pageToken,
+    });
+    for (const m of list.data.messages ?? []) {
+      if (m.id) ids.push(m.id);
+    }
+    pageToken = list.data.nextPageToken ?? undefined;
+  } while (pageToken && ids.length < maxResults);
   const results: DownloadedPdf[] = [];
 
   for (const id of ids) {

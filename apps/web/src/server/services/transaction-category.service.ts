@@ -7,6 +7,7 @@ import {
   transactionCategoryRules,
   userTransactionCategories,
 } from "@/lib/db/schema";
+import { cachedPerRequest } from "@/server/lib/request-cache";
 import {
   BUILTIN_CATEGORY_RULES,
   CANNOT_ANALYZE_SLUG,
@@ -138,12 +139,37 @@ export function categorizeTransaction(
   };
 }
 
+function listUserCategoryRows(userId: string) {
+  return db.query.userTransactionCategories.findMany({
+    where: eq(userTransactionCategories.userId, userId),
+    orderBy: (t, { asc }) => [asc(t.label)],
+  });
+}
+
+/** Reads on the hot categorization path — deduped for the life of one request. */
+const cachedRulesForUser = cachedPerRequest(
+  "transactionCategory.rules",
+  (userId: string): Promise<RuleRow[]> =>
+    db.query.transactionCategoryRules.findMany({
+      where: eq(transactionCategoryRules.userId, userId),
+      orderBy: [
+        desc(transactionCategoryRules.priority),
+        desc(transactionCategoryRules.updatedAt),
+      ],
+    }),
+);
+
+const cachedCustomLabelMap = cachedPerRequest(
+  "transactionCategory.customLabels",
+  async (userId: string): Promise<Map<string, string>> => {
+    const rows = await listUserCategoryRows(userId);
+    return new Map(rows.map((row) => [row.slug, row.label]));
+  },
+);
+
 export const transactionCategoryService = {
   async listUserCategories(userId: string) {
-    return db.query.userTransactionCategories.findMany({
-      where: eq(userTransactionCategories.userId, userId),
-      orderBy: (t, { asc }) => [asc(t.label)],
-    });
+    return listUserCategoryRows(userId);
   },
 
   async listOptions(userId: string) {
@@ -258,23 +284,16 @@ export const transactionCategoryService = {
     return Boolean(custom);
   },
 
-  async getCustomLabelMap(userId: string) {
-    const rows = await this.listUserCategories(userId);
-    return new Map(rows.map((row) => [row.slug, row.label]));
+  getCustomLabelMap(userId: string): Promise<Map<string, string>> {
+    return cachedCustomLabelMap(userId);
   },
 
-  async listRules(userId: string) {
-    return db.query.transactionCategoryRules.findMany({
-      where: eq(transactionCategoryRules.userId, userId),
-      orderBy: [
-        desc(transactionCategoryRules.priority),
-        desc(transactionCategoryRules.updatedAt),
-      ],
-    });
+  async listRules(userId: string): Promise<RuleRow[]> {
+    return cachedRulesForUser(userId);
   },
 
-  async getRulesForUser(userId: string) {
-    return this.listRules(userId);
+  getRulesForUser(userId: string): Promise<RuleRow[]> {
+    return cachedRulesForUser(userId);
   },
 
   async createRule(
@@ -391,8 +410,10 @@ export const transactionCategoryService = {
     userId: string,
     transactions: T[],
   ): Promise<(T & CategorizedTransaction)[]> {
-    const rules = await this.getRulesForUser(userId);
-    const customLabels = await this.getCustomLabelMap(userId);
+    const [rules, customLabels] = await Promise.all([
+      this.getRulesForUser(userId),
+      this.getCustomLabelMap(userId),
+    ]);
     const customSlugs = new Set(customLabels.keys());
     return transactions.map((tx) => {
       const categorized = categorizeTransaction(tx, rules, customSlugs);

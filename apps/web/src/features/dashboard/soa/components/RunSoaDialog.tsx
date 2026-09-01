@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/tooltip";
 import { api } from "@/lib/api/client";
 import { WORKFLOW_DONE_DISMISS_MS } from "@/lib/constants/workflow-ui";
+import { computeSoaGmailPlan } from "@/lib/credit-cards/soa-gmail-plan";
 import { cn } from "@/lib/utils/cn";
 
 import { useRunSoaProgress } from "../hooks/use-run-soa-progress";
@@ -103,6 +104,17 @@ export function RunSoaDialog({
   const { data: integrations } = api.integrations.list.useQuery(undefined, {
     enabled: open,
   });
+  const { data: cards } = api.creditCards.list.useQuery(undefined, {
+    enabled: open,
+  });
+  const { data: googleAccounts } = api.integrations.listGoogleAccounts.useQuery(
+    undefined,
+    { enabled: open },
+  );
+  const soaGmailPlan = useMemo(
+    () => computeSoaGmailPlan(cards, googleAccounts),
+    [cards, googleAccounts],
+  );
   const connected = new Set(integrations?.map((i) => i.provider) ?? []);
   const [form, setForm] = useState<RunSoaFormValues>(defaultValues);
   const [runningValues, setRunningValues] = useState<RunSoaFormValues | null>(
@@ -224,6 +236,15 @@ export function RunSoaDialog({
           </>
         ) : (
           <div className="space-y-6 py-2">
+            {soaGmailPlan.activeCardCount > 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {soaGmailPlan.activeCardCount} active card
+                {soaGmailPlan.activeCardCount === 1 ? "" : "s"}
+                {soaGmailPlan.inboxCount > 0
+                  ? ` · ${soaGmailPlan.inboxCount} Gmail inbox${soaGmailPlan.inboxCount === 1 ? "" : "es"}`
+                  : ""}
+              </p>
+            ) : null}
             <div className="space-y-3">
               <Label>Period</Label>
               <RadioGroup

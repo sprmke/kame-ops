@@ -1,6 +1,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
+import { normalizeCardLast4 } from "@/lib/due/normalize";
 import {
   banks,
   buildGmailQuery,
@@ -8,6 +9,7 @@ import {
   ensureDirs,
   loadCardCredentials,
 } from "@/lib/soa/config";
+import { dedupeDownloadedPdfs } from "@/lib/soa/dedupe-downloaded-pdfs";
 import {
   getGmailClient,
   searchAndDownloadPdfs,
@@ -22,6 +24,17 @@ import {
   extractPdfLinesReadingOrderDualAxis,
   tryUnlockAndExtractText,
 } from "@/lib/soa/pdf";
+import { findMissingCards } from "@/lib/soa/soa-coverage";
+import {
+  ocrDisabledForIssuer,
+  ocrForcedForIssuer,
+  ocrTuningForIssuer,
+} from "@/lib/soa/ocr-env";
+import { ocrPdfToPlainText, parseSoaOcrPsmEnv } from "@/lib/soa/pdf-ocr";
+import {
+  assessSoaTextQuality,
+  pickBetterSoaText,
+} from "@/lib/soa/text-quality";
 import type { SoaRunMonthProgressContext } from "@/server/services/soa-run-progress.service";
 import type {
   CardCredential,
@@ -99,17 +112,23 @@ function enrichSoaRowFromCredentials(
 function gmailSearchConfigsForIssuer(
   issuerId: string,
   cards: CardCredential[],
-): { offset: number; soaSubject?: string }[] {
-  const map = new Map<string, { offset: number; soaSubject?: string }>();
+): { offset: number; soaSubject?: string; googleAccountId?: string }[] {
+  const map = new Map<
+    string,
+    { offset: number; soaSubject?: string; googleAccountId?: string }
+  >();
   for (const c of cards) {
     if (c.issuer.toLowerCase() !== issuerId.toLowerCase()) continue;
     const offset =
       typeof c.gmailMonthOffset === "number" ? c.gmailMonthOffset : 0;
     const subject = c.soaSubject?.trim() || undefined;
-    const key = `${offset}\0${subject ?? ""}`;
-    if (!map.has(key)) map.set(key, { offset, soaSubject: subject });
+    const googleAccountId = c.googleAccountId?.trim() || undefined;
+    const key = `${googleAccountId ?? ""}\0${offset}\0${subject ?? ""}`;
+    if (!map.has(key)) {
+      map.set(key, { offset, soaSubject: subject, googleAccountId });
+    }
   }
-  if (map.size === 0) map.set("0\0", { offset: 0 });
+  if (map.size === 0) map.set("\x00\x00", { offset: 0 });
   return [...map.values()].sort((a, b) => a.offset - b.offset);
 }
 
@@ -132,6 +151,30 @@ function unavailableRow(
   };
 }
 
+/** Placeholder row for one specific card whose bank had SOA email(s) this period, but no PDF/row matched this card. */
+function unavailableCardRow(
+  bank: { id: string; label: string },
+  card: CardCredential,
+  ctx: ReturnType<typeof buildMonthContext>,
+): SoaRow {
+  return {
+    bankLabel: bank.label,
+    issuerId: bank.id,
+    cardLast4: normalizeCardLast4(card.last4),
+    cardDisplayLabel: card.label,
+    fullPan: card.fullPan,
+    contactLine: card.contactLine,
+    sourceEmailSubject: `${ctx.monthLong} ${ctx.year}`,
+    sourceMessageId: "—",
+    pdfFileName: "—",
+    minimumDue: "—",
+    totalDue: "—",
+    statementDate: "—",
+    dueDate: "—",
+    soaUnavailable: true,
+  };
+}
+
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
@@ -143,6 +186,8 @@ export type SoaGmailSearchLog = {
   messageCount: number;
   pdfCount: number;
   monthOffset: number;
+  googleAccountId?: string | null;
+  mailboxEmail?: string | null;
 };
 
 export type SoaParseError = {
@@ -177,8 +222,15 @@ export async function runSoaSingleMonth(options: {
   year: string;
   skipBanner?: boolean;
   progress?: SoaRunMonthProgressContext;
+  beforeGmailSearch?: (googleAccountId: string | null) => Promise<void>;
 }): Promise<SoaSingleMonthResult> {
-  const { month, year, skipBanner = false, progress } = options;
+  const {
+    month,
+    year,
+    skipBanner = false,
+    progress,
+    beforeGmailSearch,
+  } = options;
   const ctx = buildMonthContext(month, year);
   const cards = loadCardCredentials();
 
@@ -207,15 +259,25 @@ export async function runSoaSingleMonth(options: {
   log.kv("Output folder", monthOutputDir);
 
   log.header("Gmail · search & download");
-  const gmail = await getGmailClient();
+  let gmail = await getGmailClient();
   log.success("Gmail API client ready");
   const monthLabel = `${ctx.monthLong} ${ctx.year}`;
 
-  const downloaded: DownloadedPdf[] = [];
-  const seenMessage = new Set<string>();
+  const rawDownloaded: DownloadedPdf[] = [];
   const gmailSearches: SoaGmailSearchLog[] = [];
   const activeIssuerIds = new Set(cards.map((c) => c.issuer.toLowerCase()));
   const banksToSearch = banks.filter((b) => activeIssuerIds.has(b.id));
+  let activeGmailAccountId: string | null = null;
+
+  async function ensureGmailClient(googleAccountId: string | null) {
+    const nextAccountId = googleAccountId ?? null;
+    if (nextAccountId === activeGmailAccountId && gmail) return;
+    if (beforeGmailSearch) {
+      await beforeGmailSearch(nextAccountId);
+    }
+    gmail = await getGmailClient();
+    activeGmailAccountId = nextAccountId;
+  }
 
   for (const bank of banksToSearch) {
     await progress?.reporter.setGmailProgress(
@@ -232,6 +294,7 @@ export async function runSoaSingleMonth(options: {
     }
 
     for (const config of searchConfigs) {
+      await ensureGmailClient(config.googleAccountId ?? null);
       const gctx = shiftMonthContext(ctx, config.offset);
       const q = config.soaSubject
         ? buildGmailQueryWithSubject(bank, gctx, config.soaSubject)
@@ -243,6 +306,9 @@ export async function runSoaSingleMonth(options: {
       }
       if (config.soaSubject) {
         log.detail(`SOA subject: ${config.soaSubject}`);
+      }
+      if (config.googleAccountId) {
+        log.detail(`Gmail account: ${config.googleAccountId}`);
       }
       log.detail(`Query: ${q}`);
       const { pdfs, messageCount } = await searchAndDownloadPdfs({
@@ -259,13 +325,9 @@ export async function runSoaSingleMonth(options: {
         messageCount,
         pdfCount: pdfs.length,
         monthOffset: config.offset,
+        googleAccountId: config.googleAccountId ?? null,
       });
-      for (const p of pdfs) {
-        const key = `${p.bankId}\0${p.messageId}`;
-        if (seenMessage.has(key)) continue;
-        seenMessage.add(key);
-        downloaded.push(p);
-      }
+      rawDownloaded.push(...pdfs);
       if (pdfs.length === 0) {
         log.warn(
           searchConfigs.length > 1
@@ -282,6 +344,10 @@ export async function runSoaSingleMonth(options: {
       }
     }
   }
+
+  // Dedupe once across all banks/search configs — see dedupeDownloadedPdfs for why
+  // this keys on filePath (attachment-level) rather than messageId (message-level).
+  const downloaded = dedupeDownloadedPdfs(rawDownloaded);
 
   log.header("PDFs · unlock & parse");
   const rows: SoaRow[] = [];
@@ -336,41 +402,26 @@ export async function runSoaSingleMonth(options: {
       }
 
       let parseText = unlocked.text;
-      let bpiUsedOcrText = false;
+      let usedOcrText = false;
+      let ocrAttempted = false;
 
-      const bpiOcrOn =
-        item.bankId === "bpi" &&
-        /^(1|true|yes)$/i.test(process.env.BPI_OCR?.trim() ?? "");
-      if (bpiOcrOn) {
-        const rawPages = process.env.BPI_OCR_PAGES?.trim();
-        const parsed =
-          rawPages !== undefined && rawPages !== ""
-            ? Number.parseInt(rawPages, 10)
-            : 0;
-        const maxPages =
-          !Number.isFinite(parsed) || parsed <= 0
-            ? 0
-            : Math.min(50, Math.max(1, parsed));
-        const scale = Math.min(
-          4,
-          Math.max(
-            1.5,
-            Number.parseFloat(process.env.BPI_OCR_SCALE ?? "3") || 3,
-          ),
-        );
-        const dualSparse = /^(1|true|yes)$/i.test(
-          process.env.BPI_OCR_DUAL?.trim() ?? "",
-        );
-        const ocrDebug = /^(1|true|yes)$/i.test(
-          process.env.BPI_OCR_DEBUG?.trim() ?? "",
-        );
+      const textQuality = assessSoaTextQuality(parseText);
+      const shouldTryOcr =
+        !ocrDisabledForIssuer(item.bankId) &&
+        (!textQuality.looksUsable || ocrForcedForIssuer(item.bankId));
+
+      if (shouldTryOcr) {
+        ocrAttempted = true;
+        const { maxPages, scale, psmRaw, dualSparse, debug } =
+          ocrTuningForIssuer(item.bankId);
+        const psm = parseSoaOcrPsmEnv(psmRaw);
         try {
-          const { ocrPdfToPlainText, parseBpiPsmEnv } =
-            await import("./bpi-ocr");
-          const psm = parseBpiPsmEnv(process.env.BPI_OCR_PSM);
           log.info(
             [
-              "BPI OCR",
+              `${item.bankLabel} OCR`,
+              textQuality.looksUsable
+                ? "forced"
+                : `auto (${textQuality.reasons.join(", ")})`,
               maxPages === 0 ? "all pages" : `max ${maxPages} pg`,
               `scale ${scale}`,
               `psm ${psm}`,
@@ -382,30 +433,26 @@ export async function runSoaSingleMonth(options: {
           const ocrText = await ocrPdfToPlainText(
             item.filePath,
             unlocked.password,
-            {
-              maxPages,
-              scale,
-              psm,
-              dualSparse,
-            },
+            { maxPages, scale, psm, dualSparse },
           );
-          if (ocrDebug && ocrText.trim().length > 0) {
-            const debugName = `bpi-ocr-${unlocked.last4}-${periodKey}.txt`;
+          if (debug && ocrText.trim().length > 0) {
+            const debugName = `ocr-${item.bankId}-${unlocked.last4}-${periodKey}.txt`;
             const debugPath = path.join(monthOutputDir, debugName);
             fs.writeFileSync(debugPath, ocrText, "utf8");
-            log.detail(`BPI_OCR_DEBUG → ${debugPath}`);
+            log.detail(`SOA_OCR_DEBUG → ${debugPath}`);
           }
-          if (ocrText.trim().length >= 40) {
-            parseText = ocrText;
-            bpiUsedOcrText = true;
-            log.success("BPI · using OCR text for parse");
-          } else {
+          const picked = pickBetterSoaText(parseText, ocrText);
+          if (picked.usedCandidate) {
+            parseText = picked.text;
+            usedOcrText = true;
+            log.success(`${item.bankLabel} · using OCR text for parse`);
+          } else if (!textQuality.looksUsable) {
             log.warn(
-              "BPI OCR returned almost no text — falling back to pdf.js extract",
+              `${item.bankLabel} OCR did not improve on extracted text (${picked.quality.reasons.join(", ") || "still unusable"})`,
             );
           }
         } catch (ocrErr) {
-          log.warn(`BPI OCR failed: ${errMsg(ocrErr)}`);
+          log.warn(`${item.bankLabel} OCR failed: ${errMsg(ocrErr)}`);
         }
       }
 
@@ -460,7 +507,7 @@ export async function runSoaSingleMonth(options: {
         item.messageId,
         unlockedFileName,
         parseText,
-        { bpiFromOcr: bpiUsedOcrText },
+        { usedOcr: usedOcrText, ocrAttempted },
       );
       row.transactions = extractTransactions(item.bankId, txnSourceText);
       enrichSoaRowFromCredentials(row, cards);
@@ -506,6 +553,25 @@ export async function runSoaSingleMonth(options: {
     for (const b of missingBanks) {
       log.warn(`${b.label} — placeholder row will appear in summary PDF`);
       rows.push(unavailableRow(b, ctx));
+    }
+  }
+
+  // Card-level completeness check: a bank can have SOA email(s)/PDF(s) this period
+  // while a *specific* card still ends up with no row — e.g. its password failed to
+  // unlock the shared-password PDF, or the SOA text couldn't be matched back to this
+  // card's last-4. Surface those individually instead of letting a card silently
+  // disappear from the run when its bank "looks" fine overall.
+  const missingCards = findMissingCards(cards, rows, banksWithPdf);
+  if (missingCards.length > 0) {
+    log.header("Cards with no matching SOA in downloaded PDFs");
+    for (const card of missingCards) {
+      const bank = banks.find((b) => b.id === card.issuer.toLowerCase());
+      if (!bank) continue;
+      const label = card.label?.trim() || `${bank.label} •••• ${card.last4}`;
+      log.warn(
+        `${label} — SOA email(s) found for ${bank.label} this period, but none matched this card. Check the card password and last-4/label, then re-run.`,
+      );
+      rows.push(unavailableCardRow(bank, card, ctx));
     }
   }
 

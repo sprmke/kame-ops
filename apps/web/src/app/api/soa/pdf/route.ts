@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth/auth-config";
+import { extensionForMime, sniffUploadMime } from "@/lib/files/sniff-upload";
 import { soaPeriodService } from "@/server/services/soa-period.service";
 import { soaService } from "@/server/services/soa.service";
 
 /** HTTP header values must be ASCII; period labels use "May 2026 → June 2026". */
-function safePdfFileName(name: string): string {
+function safeBaseFileName(name: string): string {
   const ascii = name
+    .replace(/\.[a-z0-9]+$/i, "")
     .replace(/\s+/g, "-")
     .replace(/[^\w.-]/g, "")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
-  return ascii.length > 0 ? `${ascii}.pdf` : "soa-summary.pdf";
+  return ascii.length > 0 ? ascii : "soa";
 }
 
 function summaryFileName(period: {
@@ -29,14 +31,21 @@ function summaryFileName(period: {
   ) {
     return `soa-summary-range-${period.fromYear}-${pad(period.fromMonth)}-to-${period.toYear}-${pad(period.toMonth)}.pdf`;
   }
-  return safePdfFileName(`soa-summary-${period.label}`);
+  return `${safeBaseFileName(`soa-summary-${period.label}`)}.pdf`;
 }
 
-function pdfResponse(buffer: Buffer, fileName: string) {
+function fileResponse(
+  buffer: Buffer,
+  fileName: string,
+  fallbackMime = "application/pdf",
+) {
+  const sniffed = sniffUploadMime(new Uint8Array(buffer));
+  const mime = sniffed ?? fallbackMime;
+  const downloadName = `${safeBaseFileName(fileName)}.${extensionForMime(mime)}`;
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${safePdfFileName(fileName.replace(/\.pdf$/i, ""))}"`,
+      "Content-Type": mime,
+      "Content-Disposition": `inline; filename="${downloadName}"`,
       "Cache-Control": "private, max-age=60",
     },
   });
@@ -71,7 +80,7 @@ export async function GET(request: Request) {
       if (!buffer) {
         return NextResponse.json({ error: "PDF not found" }, { status: 404 });
       }
-      return pdfResponse(buffer, summaryFileName(period));
+      return fileResponse(buffer, summaryFileName(period));
     }
 
     const month = Number(searchParams.get("month"));
@@ -98,7 +107,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "PDF not found" }, { status: 404 });
     }
     const fileName = `soa-summary-${year}-${String(month).padStart(2, "0")}.pdf`;
-    return pdfResponse(buffer, fileName);
+    return fileResponse(buffer, fileName);
   }
 
   const statementId = searchParams.get("statementId");
@@ -115,5 +124,5 @@ export async function GET(request: Request) {
   if (!buffer) {
     return NextResponse.json({ error: "PDF not found" }, { status: 404 });
   }
-  return pdfResponse(buffer, "statement.pdf");
+  return fileResponse(buffer, "statement");
 }

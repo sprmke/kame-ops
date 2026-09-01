@@ -19,12 +19,22 @@ type SoaPdfPreviewProps = {
   pdfUrl: string | null;
 };
 
-function downloadFilename(title: string): string {
+type PreviewKind = "pdf" | "image";
+
+function previewKindFromType(contentType: string): PreviewKind | null {
+  const type = contentType.toLowerCase();
+  if (type.includes("pdf")) return "pdf";
+  if (type.startsWith("image/")) return "image";
+  return null;
+}
+
+function downloadFilename(title: string, kind: PreviewKind | null): string {
   const base = title
     .replace(/[^\w\s-]/g, "")
     .trim()
     .replace(/\s+/g, "-");
-  return `${base || "soa-summary"}.pdf`;
+  const ext = kind === "image" ? "jpg" : "pdf";
+  return `${base || "soa-summary"}.${ext}`;
 }
 
 export function SoaPdfPreview({
@@ -34,12 +44,14 @@ export function SoaPdfPreview({
   pdfUrl,
 }: SoaPdfPreviewProps) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [previewKind, setPreviewKind] = useState<PreviewKind | null>(null);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!open || !pdfUrl) {
       setBlobUrl(null);
+      setPreviewKind(null);
       setFailed(false);
       setLoading(false);
       return;
@@ -48,10 +60,11 @@ export function SoaPdfPreview({
     let revoked: string | null = null;
     const controller = new AbortController();
 
-    async function loadPdf() {
+    async function loadPreview() {
       setLoading(true);
       setFailed(false);
       setBlobUrl(null);
+      setPreviewKind(null);
 
       try {
         const res = await fetch(pdfUrl!, {
@@ -59,11 +72,14 @@ export function SoaPdfPreview({
           credentials: "same-origin",
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const contentType = res.headers.get("content-type") ?? "";
-        if (!contentType.includes("pdf")) throw new Error("Not a PDF");
         const blob = await res.blob();
+        const kind = previewKindFromType(
+          blob.type || res.headers.get("content-type") || "",
+        );
+        if (!kind) throw new Error("Unsupported preview type");
         const url = URL.createObjectURL(blob);
         revoked = url;
+        setPreviewKind(kind);
         setBlobUrl(url);
       } catch {
         if (!controller.signal.aborted) setFailed(true);
@@ -72,7 +88,7 @@ export function SoaPdfPreview({
       }
     }
 
-    void loadPdf();
+    void loadPreview();
 
     return () => {
       controller.abort();
@@ -88,6 +104,7 @@ export function SoaPdfPreview({
       onOpenChange={(next) => {
         if (!next) {
           setBlobUrl(null);
+          setPreviewKind(null);
           setFailed(false);
           setLoading(false);
         }
@@ -107,7 +124,10 @@ export function SoaPdfPreview({
               <>
                 {downloadHref && !loading && (
                   <Button variant="outline" size="sm" asChild>
-                    <a href={downloadHref} download={downloadFilename(title)}>
+                    <a
+                      href={downloadHref}
+                      download={downloadFilename(title, previewKind)}
+                    >
                       <Download className="mr-1.5 h-3.5 w-3.5" />
                       Download
                     </a>
@@ -134,21 +154,27 @@ export function SoaPdfPreview({
           {!pdfUrl ? (
             <div className="flex h-[70vh] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
               <FileText className="h-8 w-8 opacity-50" />
-              PDF unavailable
+              Unavailable
             </div>
           ) : loading ? (
             <PdfPreviewSkeleton />
           ) : failed || !blobUrl ? (
             <div className="flex h-[70vh] flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
               <FileText className="h-8 w-8 opacity-50" />
-              <p>
-                PDF not found. Re-run SOA to regenerate, or open in a new tab.
-              </p>
+              <p>File not found. Open in a new tab.</p>
               <Button variant="outline" size="sm" asChild>
                 <a href={pdfUrl} target="_blank" rel="noopener noreferrer">
                   Open in new tab
                 </a>
               </Button>
+            </div>
+          ) : previewKind === "image" ? (
+            <div className="flex h-[70vh] items-center justify-center overflow-auto bg-muted/30 p-4">
+              <img
+                src={blobUrl}
+                alt={title}
+                className="max-h-full max-w-full object-contain"
+              />
             </div>
           ) : (
             <iframe

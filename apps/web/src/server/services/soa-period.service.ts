@@ -10,6 +10,7 @@ import {
 
 import { enrichDueEntriesWithSoaPeriod } from "./due-statement-period.service";
 import { ensureDueEntryCardIdentity } from "./statement-card-identity.service";
+import { loadDueEntryRows, loadSoaStatementRows } from "./user-rows.service";
 
 import { transactionCategoryService } from "./transaction-category.service";
 import { creditCardService } from "./credit-card.service";
@@ -172,28 +173,24 @@ function findCoveringMultiMonthPeriod(
   );
 }
 
-async function aggregatePeriodStats(userId: string, period: SoaPeriodRecord) {
+type PeriodStatsInputs = {
+  statements: (typeof soaStatements.$inferSelect)[];
+  dueRows: DuePaymentLookupRow[];
+};
+
+/**
+ * Statement and due rows are identical for every period of a user, so load them
+ * once and let each period filter in memory rather than re-scanning per period.
+ */
+async function loadPeriodStatsInputs(
+  userId: string,
+): Promise<PeriodStatsInputs> {
   await ensureDueEntryCardIdentity(userId);
 
   const [statements, dues] = await Promise.all([
-    db.query.soaStatements.findMany({
-      where: eq(soaStatements.userId, userId),
-    }),
-    db.query.dueEntries.findMany({
-      where: eq(dueEntries.userId, userId),
-    }),
+    loadSoaStatementRows(userId),
+    loadDueEntryRows(userId),
   ]);
-
-  const inRange = statements.filter((s) =>
-    isMonthInRange(
-      s.statementMonth,
-      s.statementYear,
-      period.fromMonth,
-      period.fromYear,
-      period.toMonth,
-      period.toYear,
-    ),
-  );
 
   const enrichedDues = await enrichDueEntriesWithSoaPeriod(userId, dues);
   const dueRows: DuePaymentLookupRow[] = enrichedDues.map((due) => ({
@@ -208,6 +205,24 @@ async function aggregatePeriodStats(userId: string, period: SoaPeriodRecord) {
     totalDue: due.totalDue,
     minimumDue: due.minimumDue,
   }));
+
+  return { statements, dueRows };
+}
+
+function periodStatsFrom(
+  { statements, dueRows }: PeriodStatsInputs,
+  period: SoaPeriodRecord,
+) {
+  const inRange = statements.filter((s) =>
+    isMonthInRange(
+      s.statementMonth,
+      s.statementYear,
+      period.fromMonth,
+      period.fromYear,
+      period.toMonth,
+      period.toYear,
+    ),
+  );
 
   const outstanding = computeOutstandingTotals(inRange, dueRows);
 
@@ -226,6 +241,10 @@ async function aggregatePeriodStats(userId: string, period: SoaPeriodRecord) {
   };
 }
 
+async function aggregatePeriodStats(userId: string, period: SoaPeriodRecord) {
+  return periodStatsFrom(await loadPeriodStatsInputs(userId), period);
+}
+
 export const soaPeriodService = {
   /** Drop single-month periods that fall inside an existing range period. */
   async pruneRedundantSinglePeriods(userId: string) {
@@ -240,13 +259,12 @@ export const soaPeriodService = {
   },
 
   async ensureBackfillFromStatements(userId: string) {
-    const statements = await db.query.soaStatements.findMany({
-      where: eq(soaStatements.userId, userId),
-    });
-
-    const existing = await db.query.soaPeriods.findMany({
-      where: eq(soaPeriods.userId, userId),
-    });
+    const [statements, existing] = await Promise.all([
+      loadSoaStatementRows(userId),
+      db.query.soaPeriods.findMany({
+        where: eq(soaPeriods.userId, userId),
+      }),
+    ]);
     const existingKeys = new Set(
       existing.map(
         (p) => `${p.fromYear}-${p.fromMonth}-${p.toYear}-${p.toMonth}`,
@@ -285,39 +303,39 @@ export const soaPeriodService = {
   async listPeriods(userId: string) {
     await this.ensureBackfillFromStatements(userId);
 
-    const periods = await db.query.soaPeriods.findMany({
-      where: eq(soaPeriods.userId, userId),
-      orderBy: [
-        desc(soaPeriods.lastRunAt),
-        desc(soaPeriods.fromYear),
-        desc(soaPeriods.fromMonth),
-        desc(soaPeriods.createdAt),
-      ],
-    });
+    const [periods, statsInputs] = await Promise.all([
+      db.query.soaPeriods.findMany({
+        where: eq(soaPeriods.userId, userId),
+        orderBy: [
+          desc(soaPeriods.lastRunAt),
+          desc(soaPeriods.fromYear),
+          desc(soaPeriods.fromMonth),
+          desc(soaPeriods.createdAt),
+        ],
+      }),
+      loadPeriodStatsInputs(userId),
+    ]);
 
     const multiMonthPeriods = periods.filter(isMultiMonthPeriod);
 
-    return Promise.all(
-      periods.map(async (period) => {
-        const stats = await aggregatePeriodStats(userId, period);
-        const coveringRange = isMultiMonthPeriod(period)
-          ? null
-          : findCoveringMultiMonthPeriod(
-              period.fromMonth,
-              period.fromYear,
-              multiMonthPeriods,
-            );
+    return periods.map((period) => {
+      const coveringRange = isMultiMonthPeriod(period)
+        ? null
+        : findCoveringMultiMonthPeriod(
+            period.fromMonth,
+            period.fromYear,
+            multiMonthPeriods,
+          );
 
-        return {
-          ...period,
-          label: formatSoaPeriodRange(period),
-          withinRangeLabel: coveringRange
-            ? formatSoaPeriodRange(coveringRange)
-            : null,
-          ...stats,
-        };
-      }),
-    );
+      return {
+        ...period,
+        label: formatSoaPeriodRange(period),
+        withinRangeLabel: coveringRange
+          ? formatSoaPeriodRange(coveringRange)
+          : null,
+        ...periodStatsFrom(statsInputs, period),
+      };
+    });
   },
 
   async getStatement(userId: string, periodId: string, statementId: string) {

@@ -8,6 +8,7 @@ import {
   FileText,
   PhilippinePeso,
   Play,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -25,7 +26,10 @@ import { startNavigationProgress } from "@/lib/navigation-progress";
 import { usePersistedViewMode } from "@/hooks/use-persisted-view-mode";
 import { useListPagination } from "@/lib/hooks/use-list-pagination";
 import { formatPhpAmount } from "@/lib/utils/format-money";
-import { deletedStatementsMessage } from "@/lib/utils/toast-messages";
+import {
+  dedupedStatementsMessage,
+  deletedStatementsMessage,
+} from "@/lib/utils/toast-messages";
 
 import { EditSoaPeriodDialog } from "./EditSoaPeriodDialog";
 import { RunSoaDialog } from "./RunSoaDialog";
@@ -79,6 +83,17 @@ export function SoaListPage() {
     onError: (e) => toast.error(e.message),
   });
 
+  const dedupe = api.soa.dedupe.useMutation({
+    onSuccess: (r) => {
+      toast.success(dedupedStatementsMessage(r.removed));
+      void utils.soa.listPeriods.invalidate();
+      void utils.soa.getPeriod.invalidate();
+      void utils.reminders.listDue.invalidate();
+      void utils.overview.stats.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   function openRerun(period: SoaPeriodRow) {
     openRun(periodToRunInitial(period));
   }
@@ -88,10 +103,20 @@ export function SoaListPage() {
       <DashboardPageHeader
         title="Statement of account"
         actions={
-          <Button className="shadow-glow" onClick={() => openRun()}>
-            <Play className="mr-2 h-4 w-4" />
-            Run SOA
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              disabled={dedupe.isPending}
+              onClick={() => dedupe.mutate()}
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              Clean up duplicates
+            </Button>
+            <Button className="shadow-glow" onClick={() => openRun()}>
+              <Play className="mr-2 h-4 w-4" />
+              Run SOA
+            </Button>
+          </div>
         }
       />
 

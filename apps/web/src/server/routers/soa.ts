@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { protectedProcedure, router } from "@/server/trpc";
+import { soaManualUploadService } from "@/server/services/soa-manual-upload.service";
 import { soaPeriodService } from "@/server/services/soa-period.service";
 import { soaRunProgressService } from "@/server/services/soa-run-progress.service";
 import { soaService } from "@/server/services/soa.service";
@@ -87,4 +88,20 @@ export const soaRouter = router({
   clearHistory: protectedProcedure.mutation(({ ctx }) =>
     soaService.clearHistory(ctx.user.id),
   ),
+
+  processManualUpload: protectedProcedure
+    .input(
+      z.object({
+        periodId: z.string().uuid(),
+        storagePath: z.string().min(1),
+        originalFileName: z.string().min(1).max(512),
+        mimeType: z.string().max(128).optional(),
+        forceMonth: z.number().int().min(1).max(12).optional(),
+        forceYear: z.number().int().min(2000).max(2100).optional(),
+        allowOutOfRange: z.boolean().optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      soaManualUploadService.process(ctx.user.id, input),
+    ),
 });

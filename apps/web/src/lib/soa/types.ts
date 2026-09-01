@@ -21,6 +21,8 @@ export type CardCredential = {
   reminderIntervalMinutes?: number;
   /** Gmail subject line for SOA search (overrides bank default when set). */
   soaSubject?: string;
+  /** Google OAuth account id for Gmail SOA fetch. */
+  googleAccountId?: string;
 };
 
 export type TransactionLine = {
@@ -42,6 +44,8 @@ export type SoaRow = {
   sourceEmailSubject: string;
   sourceMessageId: string;
   pdfFileName: string;
+  /** Supabase/local storage key for the source PDF (manual upload or Gmail persist). */
+  pdfStoragePath?: string | null;
   minimumDue: string;
   totalDue: string;
   statementDate: string;
