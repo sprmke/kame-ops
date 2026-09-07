@@ -95,7 +95,7 @@ User-friendly errors, loading/empty states, WCAG 2.1 AA, light/dark theme via CS
 | Storage | Supabase Storage (SOA PDFs, receipts) |
 | Email | Resend, React Email |
 | Cron | Supabase Cron (pg_cron) |
-| OCR | Tesseract.js (BPI SOA PDFs when `BPI_OCR=1`; not used for payment receipts) |
+| OCR | Tesseract.js (auto-fallback for any bank's SOA PDF when text quality looks unusable, `SOA_OCR_*` env overrides; not used for payment receipts) |
 | AI | OpenAI / Anthropic (receipt analysis, optional) |
 
 ## AI Assistant Guidelines

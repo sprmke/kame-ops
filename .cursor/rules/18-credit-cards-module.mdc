@@ -23,7 +23,7 @@ Philippine bank credit card SOA automation. This module must preserve behavior f
 | --------- | ----- | ----- |
 | `metrobank` | Metrobank | MSOA / SOA Gmail queries |
 | `rcbc` | RCBC | FLEX VISA; geometry-ordered PDF lines |
-| `bpi` | BPI | Often needs OCR (`BPI_OCR`) |
+| `bpi` | BPI | Often needs OCR (auto-detected; `BPI_OCR` forces it) |
 | `unionbank` | Unionbank | REWARDS VISA patterns |
 
 ## SOA Pipeline (service layer)
@@ -33,11 +33,15 @@ Order of operations (`lib/soa/run.ts`):
 1. Build month context (`gmailMonthOffset` per card)
 2. Gmail search per bank → download PDFs
 3. Unlock PDF with card password(s)
-4. Parse SOA fields + transactions
-5. Upsert `due_entries` via `due-entry-upsert.service`
-6. Write summary PDF (paid column from Postgres via `overview-paid-label`)
-7. Notify via `notification.service` (Telegram PDF + Slack text)
-8. Optional: calendar events via `google-calendar.service` → `lib/soa/google-calendar.ts`
+4. Assess extracted text quality (`lib/soa/text-quality.ts`); auto-OCR fallback
+   (`lib/soa/pdf-ocr.ts`) for **any** issuer when text looks unusable — override via
+   `SOA_OCR_FORCE` / `SOA_OCR_DISABLE` (`lib/soa/ocr-env.ts`); legacy `BPI_OCR*` are
+   BPI-only aliases
+5. Parse SOA fields + transactions
+6. Upsert `due_entries` via `due-entry-upsert.service`
+7. Write summary PDF (paid column from Postgres via `overview-paid-label`)
+8. Notify via `notification.service` (Telegram PDF + Slack text)
+9. Optional: calendar events via `google-calendar.service` → `lib/soa/google-calendar.ts`
 
 ## Due Entries
 

@@ -40,8 +40,11 @@ See **`docs/temp/supabase-setup.md`** for the full walkthrough.
 ### Google OAuth (required)
 
 - [ ] Create Google Cloud project + OAuth **Web application** client
-- [ ] Authorized redirect URI: `{NEXT_PUBLIC_APP_URL}/api/auth/callback/google`
+- [ ] Authorized redirect URIs (Google Cloud → Credentials → OAuth client):
+  - `{NEXT_PUBLIC_APP_URL}/api/auth/callback/google` — sign-in
+  - `{NEXT_PUBLIC_APP_URL}/api/auth/google/link/callback` — Connect / Add Google account in Settings
 - [ ] Enable Gmail API and Google Calendar API
+- [ ] **OAuth consent screen → Publishing status = "In production"** (not "Testing"). While in Testing, refresh tokens for test users **expire after 7 days**, which silently kills SOA check / reminders for every linked account until manual reconnect — this was the root cause of the 2026-08 automation outage (see `docs/temp/scheduled-jobs-and-testing.md#incident-2026-08-runaway-retry-storm`). Sensitive scopes (`gmail.readonly`, `calendar.events`) will show an "unverified app" warning during consent for a personal-use app — expected, click through it.
 - [ ] Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in Vercel
 - [ ] Sign in at `/login` — grants `gmail.readonly` + `calendar.events`
 - [ ] After first sign-in, copy your user UUID from the DB for `TELEGRAM_DEFAULT_USER_ID` if using Telegram webhook
@@ -59,6 +62,8 @@ See **`docs/temp/supabase-setup.md`** for the full walkthrough.
 - [ ] Expand test suite (bank parsers, mark-paid, tRPC)
 - [ ] Error monitoring (Sentry or Vercel logs alerts)
 - [ ] Formal Drizzle migrations instead of `db:push` only
+- [ ] Apply `0000_exotic_masque.sql` + `0001_tired_katie_power.sql` (or `bun run db:migrate`) — `0001` dedupes `due_entries` before adding the unique index
+- [ ] Set recurring **due day** (1–31) on every active card — required for missing-SOA fallback; cards with `due_day` NULL are skipped until edited (`SELECT id, label FROM credit_cards WHERE due_day IS NULL AND deleted_at IS NULL`)
 
 ## Required production env vars
 
@@ -76,8 +81,8 @@ See **`docs/temp/supabase-setup.md`** for the full walkthrough.
 
 ## Automation dispatch (Supabase pg_cron)
 
-| Target                                            | Schedule (UTC) | Notes                                                                                                    |
-| ------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------- |
+| Target                                            | Schedule (UTC) | Notes                                                                                                                    |
+| ------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `GET /api/cron/dispatch` on `NEXT_PUBLIC_APP_URL` | `0 4 * * *`    | Once daily via **`pg_cron` + `pg_net`** in Supabase (12:00 PM Manila); see **`docs/temp/scheduled-jobs-and-testing.md`** |
 
 `apps/web/vercel.json` schedules the same route **once daily** at `0 4 * * *` UTC as a redundant Hobby-plan tick. Do **not** use `* * * * *` — that burns Fluid CPU. Dispatcher runs overdue jobs when `next_run_at` is in the past.

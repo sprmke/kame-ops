@@ -21,6 +21,7 @@
 - [x] Due list with paid/unpaid sections
 - [x] Send reminders + cron route
 - [x] Integration secrets applied before SOA pipeline runs
+- [x] Missing-SOA fallback from each card’s recurring due day
 
 ## Phase 4 — Automations ✅
 

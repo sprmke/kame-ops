@@ -100,17 +100,42 @@ curl -sS -H "Authorization: Bearer $CRON_SECRET" \
 
 ## Troubleshooting
 
-| Symptom                            | Check                                                                                                          |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| High Vercel Fluid CPU / invocations | Confirm `cron.job` is **not** `* * * * *`; expect `0 4 * * *` or unscheduled                                  |
-| Deploy blocked on Vercel Hobby     | `vercel.json` allows **one** daily cron (`0 4 * * *`); that is enough for once-daily dispatch                  |
-| Jobs stuck with "Next run" overdue | Confirm daily cron is active; run dispatch manually to verify; overdue catch-up runs on next tick              |
-| `401 Unauthorized` from dispatch   | `kame_ops_cron_secret` in Vault must match Vercel `CRON_SECRET`                                                |
-| Jobs never run at scheduled time   | Daily cron fires at 04:00 UTC; user schedule is timezone-aware (`users.timezone`)                              |
-| `sync_…` returns missing Vault     | Create both `kame_ops_app_url` and `kame_ops_cron_secret` first                                                |
-| Need sub-daily reminder intervals  | Temporarily raise pg_cron (e.g. `0 * * * *` hourly) — avoid `* * * * *`                                       |
+| Symptom                             | Check                                                                                             |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------- |
+| High Vercel Fluid CPU / invocations | Confirm `cron.job` is **not** `* * * * *`; expect `0 4 * * *` or unscheduled                      |
+| Deploy blocked on Vercel Hobby      | `vercel.json` allows **one** daily cron (`0 4 * * *`); that is enough for once-daily dispatch     |
+| Jobs stuck with "Next run" overdue  | Confirm daily cron is active; run dispatch manually to verify; overdue catch-up runs on next tick |
+| `401 Unauthorized` from dispatch    | `kame_ops_cron_secret` in Vault must match Vercel `CRON_SECRET`                                   |
+| Jobs never run at scheduled time    | Daily cron fires at 04:00 UTC; user schedule is timezone-aware (`users.timezone`)                 |
+| `sync_…` returns missing Vault      | Create both `kame_ops_app_url` and `kame_ops_cron_secret` first                                   |
+| Need sub-daily reminder intervals   | Temporarily raise pg_cron (e.g. `0 * * * *` hourly) — avoid `* * * * *`                           |
+
+## Incident: 2026-08 runaway retry storm (root cause of "automations not working")
+
+**Symptom:** SOA check / reminders appeared broken for some accounts despite the Reminders page showing "Active" schedules.
+
+**Root cause (two compounding bugs, confirmed via live DB inspection):**
+
+1. The deployed `public.sync_kame_ops_automation_dispatch_cron_job()` function had drifted to `cron_expr := '* * * * *'` (every minute) instead of the documented `'0 4 * * *'` — likely left over from ad-hoc debugging and never reverted. `cron.job` showed the job firing every minute for weeks; every `net.http_get` call also **timed out** at pg_net's default 5000ms budget (visible via `net._http_response.timed_out`), since dispatching all users' jobs from one request routinely took longer than that.
+2. `automationService.dispatchDueJobs()` never advanced `automation_jobs.next_run_at` when `executeJob()` threw (e.g. Google `invalid_grant` / reconnect required). Combined with bug 1, any account whose Google refresh token died got its `run_soa_pipeline` job retried **every single minute, forever**, hammering the Google token endpoint and generating 100k+ garbage rows in `automation_runs` for 3+ weeks with zero user-visible alert (the only reconnect prompt is `GoogleReconnectMonitor`, which only polls while a browser tab is open).
+
+**Fix applied:**
+
+- Redeployed the correct `'0 4 * * *'` cron function and re-ran `sync_kame_ops_automation_dispatch_cron_job()` (verified `cron.job.schedule = '0 4 * * *'`).
+- `automation.service.ts#dispatchDueJobs` now **always advances `next_run_at`** to the next scheduled slot on failure (via `computeNextRunAt`), so a permanently-failing job backs off to once-per-schedule instead of retrying on every dispatch tick.
+- Cron-triggered failures that match `isGoogleReconnectRequiredMessage` now send a best-effort Telegram/Slack ping (`notifyReconnectRequired`) so the user finds out without opening the app.
+- Cleaned up `automation_runs` (kept latest 20 failed rows per job; deleted ~107k retry-storm rows).
+
+**Suspected upstream trigger:** Google refresh tokens were dying (`invalid_grant`) every 1–4 weeks across multiple linked accounts — the classic signature of a Google Cloud OAuth **consent screen still in "Testing" publishing status** (test-user refresh tokens auto-expire after 7 days). Verify in Google Cloud Console → APIs & Services → OAuth consent screen and move to "In production" if confirmed; `gmail.readonly`/`calendar.events` are sensitive scopes so Google will show an "unverified app" warning during consent until formally verified, which is expected for a personal-use app.
+
+**Prevention:** periodically re-run the verification query below; if `schedule <> '0 4 * * *'`, something modified the live function directly instead of going through the versioned snippet.
+
+```sql
+select jobid, schedule, active from cron.job where jobname = 'kame-ops-automation-dispatch';
+```
 
 ## Related
 
 - `docs/temp/production-checklist.md` — Vercel env vars including `CRON_SECRET`
 - `apps/web/src/app/api/cron/dispatch/route.ts` — HTTP handler (unchanged)
+- `apps/web/src/server/services/automation.service.ts` — `dispatchDueJobs` failure backoff + reconnect notification

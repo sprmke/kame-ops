@@ -52,26 +52,25 @@ describe("computeReceiptUploadProgressPercent", () => {
       markPaid: true,
       updateCalendar: false,
     });
-
-    const afterFirst = markPerItemStepsDone(
-      plan.map((step) =>
-        step.id === "upload" || step.id === "prepare"
-          ? { ...step, status: "done" as const }
-          : step,
-      ),
+    const preludeDone = plan.map((step) =>
+      step.id === "upload" || step.id === "prepare"
+        ? { ...step, status: "done" as const }
+        : step,
     );
-    const afterFirstPercent = computeReceiptUploadProgressPercent(afterFirst, {
-      total: 2,
-      completed: 1,
-    });
 
-    const nextReceiptStart = resetPerItemSteps(afterFirst);
-    const nextReceiptPercent = computeReceiptUploadProgressPercent(
-      nextReceiptStart,
+    const endOfFirstReceipt = markPerItemStepsDone(preludeDone);
+    const endOfFirstPercent = computeReceiptUploadProgressPercent(
+      endOfFirstReceipt,
+      { total: 2, completed: 0 },
+    );
+
+    const startOfSecondReceipt = resetPerItemSteps(endOfFirstReceipt);
+    const startOfSecondPercent = computeReceiptUploadProgressPercent(
+      startOfSecondReceipt,
       { total: 2, completed: 1 },
     );
 
-    expect(nextReceiptPercent).toBeGreaterThanOrEqual(afterFirstPercent);
+    expect(startOfSecondPercent).toBeGreaterThanOrEqual(endOfFirstPercent);
   });
 
   test("completed batch group returns 100%", () => {

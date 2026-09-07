@@ -30,11 +30,28 @@ DB table `credit_cards` (replaces `CARDS_JSON`). Loaded via `creditCardService.l
 
 `tRPC` → `soa.service.runSoaPipeline` → `prepareSoaWorkdir` → `lib/soa/run.ts`.
 
+## Manual SOA upload
+
+Period detail **Upload** accepts PDF/image when the bank does not email SOA. Detects issuer + last-4 **only if that last-4 exists on the user's cards**, picks the statement month inside a multi-month period, and prompts when the file is outside the current period. AI (`ai_api_keys`) fills fields parsers cannot read. Persist + due upsert reuse the Gmail pipeline. Uploads are MIME-sniffed; `storagePath` must belong to the user.
+
 ## Parsing Notes
 
 - **RCBC**: prefer geometry-ordered lines when it improves transaction count
-- **BPI**: enable OCR path when pdf.js text is empty
+- **OCR fallback (any bank)**: `run.ts` auto-triggers OCR (`lib/soa/pdf-ocr.ts`) for
+  ANY issuer once `assessSoaTextQuality` (`lib/soa/text-quality.ts`) flags the pdf.js
+  text as unusable (empty, no peso/date tokens, garbled glyphs) — not BPI-only.
+  `pickBetterSoaText` chooses OCR vs. original text; `SOA_OCR_FORCE` /
+  `SOA_OCR_DISABLE` override per issuer or `all`; legacy `BPI_OCR*` vars remain
+  BPI-only aliases. See `apps/web/.env.example`.
 - **Unavailable SOA**: set `soaUnavailable` flag; UI shows em dash in overview
+- **Multi-card completeness**: `run.ts` dedupes downloaded PDFs by `filePath`
+  (attachment-level), not `messageId` — a single Gmail message can carry
+  multiple card statements as separate attachments; keying on `messageId`
+  alone silently drops every attachment after the first. After parsing,
+  `findMissingCards` (`lib/soa/soa-coverage.ts`) flags any card whose issuer
+  had PDF(s) this period but no row matched its last-4 (wrong/shared password,
+  unresolved last-4, etc.) and adds a per-card `unavailableCardRow` placeholder
+  instead of letting the card silently disappear from the run.
 
 ## Mark Paid
 

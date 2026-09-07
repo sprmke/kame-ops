@@ -10,6 +10,7 @@
 - `user_transaction_categories` — per-user custom category slugs/labels (e.g. AI-created)
 - `due_entries` — payment due tracking; `source` is `soa` or preventive `expected`
 - `receipts` — uploaded receipt images + AI validation fields
+- `receipt_upload_progress` — ephemeral DB-backed progress rows for receipt batch upload UI (`item_index`, `item_total`, `items_completed` for monotonic multi-receipt progress)
 - `reminders`, `reminder_logs` — generic reminder engine
 - `integrations` — Gmail, Telegram, Slack, Calendar per user
 - `ai_api_keys` — encrypted Gemini/Groq API keys per user (receipt AI)
