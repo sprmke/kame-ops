@@ -7,7 +7,7 @@ Track statement-of-account PDFs from Gmail, parse dues across multiple PH banks,
 <p align="center">
   <a href="#features">Features</a> ·
   <a href="#tech-stack">Tech Stack</a> ·
-  <a href="#getting-started">Getting Started</a> ·
+  <a href="#project-structure">Project Structure</a> ·
   <a href="#routes">Routes</a>
 </p>
 
@@ -87,98 +87,6 @@ Track statement-of-account PDFs from Gmail, parse dues across multiple PH banks,
 
 ---
 
-## Getting Started
-
-### Prerequisites
-
-- [Bun](https://bun.sh/) 1.1+ and Node.js 20+
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (local Postgres) **or** a [Supabase](https://supabase.com/) project
-- [Google Cloud](https://console.cloud.google.com/) OAuth 2.0 **Web application** credentials (Gmail + Calendar scopes)
-
-### 1. Clone and install
-
-```bash
-git clone https://github.com/sprmke/kame-ops.git
-cd kame-ops
-bun install
-```
-
-### 2. Environment variables
-
-Create `apps/web/.env.local`. Minimum for local Docker Postgres:
-
-| Variable               | Description                                    |
-| ---------------------- | ---------------------------------------------- |
-| `DATABASE_URL`         | Postgres connection string                     |
-| `AUTH_SECRET`          | Random string, 32+ chars                       |
-| `ENCRYPTION_KEY`       | Random string, 32+ chars (integration secrets) |
-| `NEXT_PUBLIC_APP_URL`  | `http://localhost:3005`                        |
-| `GOOGLE_CLIENT_ID`     | Google OAuth client ID                         |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret                     |
-
-For **Supabase** (Postgres + Storage in production), also set `DIRECT_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and storage bucket names. Full walkthrough: [`docs/temp/supabase-setup.md`](./docs/temp/supabase-setup.md).
-
-**Google OAuth setup**
-
-1. Create OAuth credentials (Web application) in Google Cloud Console.
-2. Enable Gmail API and Google Calendar API.
-3. Add authorized redirect URI: `http://localhost:3005/api/auth/callback/google`
-4. Add authorized JavaScript origins: `http://localhost:3005` (and your production URL).
-
-### 3. Bootstrap local stack
-
-One command installs deps, starts Docker Postgres, pushes schema, and prints sign-in instructions:
-
-```bash
-bun run setup:local
-```
-
-Or bootstrap and start the dev server in one step:
-
-```bash
-bun run dev:local
-```
-
-For Supabase instead of Docker:
-
-```bash
-bun run setup:supabase
-```
-
-### 4. Run locally
-
-```bash
-bun run dev
-```
-
-Open [http://localhost:3005](http://localhost:3005).
-
-- **`/`** — public landing page
-- **`/login`** — Google sign-in
-- **`/dashboard`** — overview (after auth)
-
----
-
-## Scripts
-
-| Command                  | Description                                              |
-| ------------------------ | -------------------------------------------------------- |
-| `bun run dev`            | Start Next.js dev server (port 3005)                     |
-| `bun run dev:local`      | Bootstrap local stack + start dev server                 |
-| `bun run setup:local`    | Install, Docker Postgres, schema push, seed instructions |
-| `bun run setup:supabase` | Create storage buckets + apply schema to Supabase        |
-| `bun run build`          | Production build (Turborepo)                             |
-| `bun run lint`           | ESLint across workspace                                  |
-| `bun run type-check`     | TypeScript check                                         |
-| `bun run test`           | Vitest unit tests                                        |
-| `bun run db:generate`    | Generate Drizzle migrations                              |
-| `bun run db:migrate`     | Run migrations                                           |
-| `bun run db:push`        | Push schema (dev only)                                   |
-| `bun run db:studio`      | Open Drizzle Studio                                      |
-| `bun run format`         | Prettier write                                           |
-
----
-
 ## Project structure
 
 ```text
@@ -227,13 +135,6 @@ scripts/                      # Local setup, Supabase bootstrap, CLI migration
 | [`.cursor/rules/`](./.cursor/rules/)   | Modular rules                                      |
 | [`.cursor/skills/`](./.cursor/skills/) | Agent skills (`/credit-cards`, `/integrations`, …) |
 | [`docs/`](./docs/)                     | Product and technical docs                         |
-
----
-
-## Related projects
-
-- [`property-management-app`](https://github.com/sprmke) — Kame Homes (reference stack)
-- [`automated-tasks/pay-credit-cards`](../automated-tasks/pay-credit-cards) — legacy CLI source (ported into KameOps services)
 
 ---
 
